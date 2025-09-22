@@ -132,12 +132,27 @@ jobs:
     - name: Generate coverage report
       run: npm run test:coverage
 
-    - name: Coverage Report as Comment
+    - name: Find PR number (for push events)
+      uses: jwalton/gh-find-current-pr@v1
+      id: findpr
+      if: github.event_name == 'push'
+
+    - name: Coverage Report as Comment (PR event)
       uses: romeovs/lcov-reporter-action@v0.3.1
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         lcov-file: ./coverage/lcov.info
         delete-old-comments: true
+      if: github.event_name == 'pull_request'
+
+    - name: Coverage Report as Comment (Push event)
+      uses: danhuynhdev/lcov-reporter-action@v0.3.0
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        lcov-file: ./coverage/lcov.info
+        delete-old-comments: true
+        pr-number: ${{ steps.findpr.outputs.number }}
+      if: github.event_name == 'push' && steps.findpr.outputs.number
 
   # Final job that requires all quality checks to pass
   all-checks:

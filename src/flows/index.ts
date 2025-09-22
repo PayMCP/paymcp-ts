@@ -13,6 +13,9 @@ const FLOW_MAP: Record<string, FlowModule> = {
 
 /** Выбрать flow по имени (case-insensitive), иначе ошибка. */
 export function makeFlow(name: string): PaidWrapperFactory {
+  if (!name) {
+    throw new Error(`[PayMCP] Unknown payment flow: ${name}`);
+  }
   const key = name.toLowerCase();
   const mod = FLOW_MAP[key];
   if (!mod) {

@@ -88,6 +88,10 @@ export class SquareProvider extends BasePaymentProvider {
     this.logger.debug(`[SquareProvider] ready - locationId: ${this.locationId}, apiVersion: ${this.apiVersion}`);
   }
 
+  getName(): string {
+    return "square";
+  }
+
   /**
    * Square uses Bearer token authentication.
    */

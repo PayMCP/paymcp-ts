@@ -10,6 +10,9 @@ export abstract class BasePaymentProvider {
     this.logger = logger ?? console;
   }
 
+  /** Get provider name for session management */
+  abstract getName(): string;
+
   /** Default headers (can be overridden). */
   protected buildHeaders(): Record<string, string> {
     return {

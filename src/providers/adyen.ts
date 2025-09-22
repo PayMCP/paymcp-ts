@@ -28,6 +28,10 @@ export class AdyenProvider extends BasePaymentProvider {
     this.logger?.debug("Adyen ready");
   }
 
+  getName(): string {
+    return "adyen";
+  }
+
   protected buildHeaders(): Record<string, string> {
     return {
       "X-API-Key": this.apiKey,

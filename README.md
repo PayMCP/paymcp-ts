@@ -164,6 +164,18 @@ See `src/providers/walleot.ts` and `src/providers/stripe.ts` for examples. Add y
 
 ---
 
+## 📚 Documentation
+
+For detailed guides and API documentation, see the [`docs/`](docs/) directory:
+
+- [Installation Guide](docs/installation.md)
+- [Payment Flows](docs/payment-flows.md)
+- [Provider Setup](docs/providers.md)
+- [API Reference](docs/api.md)
+- [Testing Guide](docs/testing.md)
+
+---
+
 ## 📄 License
 
 MIT License

@@ -1,14 +1,18 @@
 import { Logger } from "../types/logger.js";
 import { type CreatePaymentResult } from "../types/payment.js";
 import { BasePaymentProvider } from "./base.js";
-import pkg from '../../package.json' with { type: 'json' };
+// import pkg from '../../package.json' with { type: 'json' };
 
 const BASE_URL = "https://api.walleot.com/v1";
 
 export class WalleotProvider extends BasePaymentProvider {
   constructor(opts: { apiKey: string; logger?: Logger }) {
     super(opts.apiKey, opts.logger);
-    this.logger.debug(`[WalleotProvider] ready v${pkg.version}`);
+    this.logger.debug(`[WalleotProvider] ready`);
+  }
+
+  getName(): string {
+    return "walleot";
   }
 
   protected override buildHeaders(): Record<string, string> {

@@ -85,6 +85,10 @@ export class PayPalProvider extends BasePaymentProvider {
     this.logger.debug("[PayPalProvider] ready");
   }
 
+  getName(): string {
+    return "paypal";
+  }
+
   /**
    * PayPal uses Bearer token authentication (OAuth 2.0).
    * We override to provide the access token instead of API key.
@@ -262,6 +266,7 @@ export class PayPalProvider extends BasePaymentProvider {
         return "paid";
       case "VOIDED":
       case "EXPIRED":
+      case "CANCELLED":
         return "canceled";
       default:
         return "pending";

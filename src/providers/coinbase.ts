@@ -31,10 +31,15 @@ export class CoinbaseProvider extends BasePaymentProvider {
     this.logger.debug("[CoinbaseProvider] ready");
   }
 
+  getName(): string {
+    return "coinbase";
+  }
+
   /** Coinbase Commerce requires JSON and X-CC-Api-Key. */
   protected override buildHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       "X-CC-Api-Key": this.apiKey,
+      "X-CC-Version": "2018-03-22",
       "Content-Type": "application/json",
     };
     return headers;

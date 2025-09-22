@@ -31,9 +31,13 @@ export class StripeProvider extends BasePaymentProvider {
     this.logger.debug("[StripeProvider] ready");
   }
 
+  getName(): string {
+    return "stripe";
+  }
+
   /**
    * Stripe expects a form-encoded body (we inherit from BasePaymentProvider with
-   * application/x-www-form-urlencoded standard). 
+   * application/x-www-form-urlencoded standard).
    */
   protected override buildHeaders(): Record<string, string> {
     return {

@@ -4,6 +4,7 @@ import { PaymentFlow } from "../types/payment.js";
 import { buildProviders, ProviderInstances } from "../providers/index.js";
 import { appendPriceToDescription } from "../utils/messages.js";
 import { makeFlow } from "../flows/index.js";
+import { SessionManager } from "../session/manager.js";
 
 export class PayMCP {
     private server: McpServerLike;
@@ -36,6 +37,9 @@ export class PayMCP {
         if (!this.installed) return;
         (this.server as any).registerTool = this.originalRegisterTool;
         this.installed = false;
+        
+        // Clean up SessionManager to prevent hanging tests
+        SessionManager.reset();
     }
 
     /** Main monkey-patch */

@@ -6,10 +6,15 @@ import type { PriceConfig, ToolExtraLike } from "../types/config.js";
 import { Logger } from "../types/logger.js";
 import { normalizeStatus } from "../utils/payment.js";
 import { paymentPromptMessage } from "../utils/messages.js";
+import { SessionManager } from "../session/manager.js";
+import type { SessionKey, SessionData } from "../session/types.js";
 import { z } from "zod";
 
 // Used for extra.sendRequest() result validation; accept any response shape.
 const Z_ANY = z.any();
+
+// Session storage for payment args
+const sessionStorage = SessionManager.getStorage();
 
 /**
  * Minimal "blank" schema: request no structured fields.
@@ -33,13 +38,54 @@ const SimpleActionSchema = {
  */
 export const makePaidWrapper: PaidWrapperFactory = (
   func,
-  _server: McpServerLike,
+  server: McpServerLike,
   provider: BasePaymentProvider,
   priceInfo: PriceConfig,
   toolName: string,
   logger?: Logger
 ) => {
   const log: Logger = logger ?? (provider as any).logger ?? console;
+  const confirmToolName = `confirm_${toolName}_payment`;
+
+  // Register confirmation tool (like Python implementation)
+  server.registerTool(
+    confirmToolName,
+    {
+      description: `Confirm payment and execute ${toolName}() after elicitation timeout`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          payment_id: {
+            type: 'string',
+            description: 'The payment ID to confirm'
+          }
+        },
+        required: ['payment_id']
+      }
+    },
+    async (params: any, extra: ToolExtraLike) => {
+      const paymentId = params.payment_id;
+      log.info?.(`[elicitation_confirm_tool] Received payment_id=${paymentId}`);
+      const providerName = provider.getName();
+      const sessionKey: SessionKey = { provider: providerName, paymentId: String(paymentId) };
+
+      const stored = await sessionStorage.get(sessionKey);
+      log.debug?.(`[elicitation_confirm_tool] Looking up session with provider=${providerName} payment_id=${paymentId}`);
+
+      if (stored === undefined) {
+        throw new Error("Unknown or expired payment_id");
+      }
+
+      const status = await provider.getPaymentStatus(paymentId);
+      if (normalizeStatus(status) !== "paid") {
+        throw new Error(`Payment status is ${status}, expected 'paid'`);
+      }
+      log.debug?.(`[elicitation_confirm_tool] Calling ${toolName} with stored args`);
+
+      await sessionStorage.delete(sessionKey);
+      return await callOriginal(func, stored.args, extra);
+    }
+  );
 
   async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
     log.debug?.(`[PayMCP:Elicitation] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`);
@@ -69,6 +115,17 @@ export const makePaidWrapper: PaidWrapperFactory = (
       `${toolName}() execution fee`
     );
     log.debug?.(`[PayMCP:Elicitation] created payment id=${paymentId} url=${paymentUrl}`);
+
+    // Store session for later confirmation (in case of timeout)
+    const providerName = provider.getName();
+    const sessionKey: SessionKey = { provider: providerName, paymentId: String(paymentId) };
+    const sessionData: SessionData = {
+      args: { toolArgs, extra },
+      ts: Date.now(),
+      providerName: providerName
+    };
+    await sessionStorage.set(sessionKey, sessionData);
+    log.debug?.(`[PayMCP:Elicitation] Stored session for payment_id=${paymentId}`);
 
     // 2. Run elicitation loop (client confirms payment)
     let userAction: "accept" | "decline" | "cancel" | "unknown" = "unknown";
@@ -116,6 +173,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
     if (normalizeStatus(paymentStatus) === "paid" || userAction === "accept") {
       log.info?.(`[PayMCP:Elicitation] payment confirmed; invoking original tool ${toolName}`);
+      // Clean up session after successful payment
+      await sessionStorage.delete(sessionKey);
       const toolResult = await callOriginal(func, toolArgs, extra);
       // Ensure toolResult has required MCP 'content' field; if not, synthesize text.
       if (!toolResult || !Array.isArray((toolResult as any).content)) {
@@ -137,6 +196,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
     if (normalizeStatus(paymentStatus) === "canceled" || userAction === "cancel") {
       log.info?.(`[PayMCP:Elicitation] payment canceled by user or provider (status=${paymentStatus}, action=${userAction})`);
+      // Clean up session on cancellation
+      await sessionStorage.delete(sessionKey);
       return {
         content: [{ type: "text", text: "Payment canceled by user." }],
         annotations: { payment: { status: "canceled", payment_id: paymentId } },
@@ -148,14 +209,15 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
     // Otherwise payment not yet received
     log.info?.(`[PayMCP:Elicitation] payment still pending after elicitation attempts; returning pending result.`);
+    // Session remains for later confirmation
     return {
       content: [{ type: "text", text: "Payment not yet received. Open the link and try again." }],
-      annotations: { payment: { status: "pending", payment_id: paymentId, next_step: toolName } },
+      annotations: { payment: { status: "pending", payment_id: paymentId, next_step: confirmToolName } },
       payment_url: paymentUrl,
       status: "pending",
       message: "Payment not yet received. Open the link and try again.",
       payment_id: String(paymentId),
-      next_step: toolName,
+      next_step: confirmToolName,  // Use confirmation tool
     };
   }
 
@@ -182,7 +244,16 @@ async function runElicitationLoop(
   maxAttempts = 5,
   log: Logger = console
 ): Promise<ElicitLoopResult> {
+  const RETRY_DELAY_MS = 3000; // 3 seconds between attempts
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // Add delay between attempts (except for the first one) to handle ENG-114
+    // where users may take 1-2 minutes to approve the payment
+    if (attempt > 0) {
+      log.debug?.(`[PayMCP:Elicitation] waiting ${RETRY_DELAY_MS}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+    }
+
     log.debug?.(`[PayMCP:Elicitation] loop attempt=${attempt + 1}/${maxAttempts}`);
     // Send an elicitation/create request. See MCP spec. citeturn1view2
     const req = {
@@ -230,7 +301,11 @@ async function runElicitationLoop(
     if (normalizeStatus(status) === "paid") {
       return { action: "accept", status: "paid" };
     }
-    // otherwise: pending; fall through to next attempt
+
+    if (normalizeStatus(status) === "canceled") {
+      return { action: "cancel", status: "canceled" };
+    }
+    // otherwise: pending; fall through to next attempt after delay
 
   }
   // Exhausted attempts; still not paid.

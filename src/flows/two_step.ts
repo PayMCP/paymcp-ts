@@ -27,19 +27,12 @@ import type { BasePaymentProvider } from "../providers/base.js";
 import type { PriceConfig } from "../types/config.js";
 import { paymentPromptMessage } from "../utils/messages.js";
 import { Logger } from "../types/logger.js";
+import { SessionManager, SessionKey, SessionData } from "../session/index.js";
 
 import { z } from "zod";
 
-// Simple in‑memory arg storage. Keyed by paymentId string.
-const PENDING_ARGS = new Map<
-  string,
-  {
-    // args passed to the original tool (normalized params object or undefined)
-    args: any;
-    // unix ms timestamp when the initiate step ran
-    ts: number;
-  }
->();
+// Session storage for payment args
+const sessionStorage = SessionManager.getStorage();
 
 /**
  * Safely invoke the original tool handler preserving the (args, extra) vs (extra)
@@ -114,9 +107,15 @@ function ensureConfirmTool(
       };
     }
 
-    const stored = PENDING_ARGS.get(String(paymentId));
+    const providerName = provider.getName();
+    const sessionKey: SessionKey = {
+      provider: providerName,
+      paymentId: String(paymentId)
+    };
 
-    log?.debug?.(`[PayMCP:TwoStep] PENDING_ARGS keys=${Array.from(PENDING_ARGS.keys()).join(",")}`);
+    const stored = await sessionStorage.get(sessionKey);
+
+    log?.debug?.(`[PayMCP:TwoStep] Looking up session with provider=${providerName} paymentId=${paymentId}`);
 
     if (!stored) {
       return {
@@ -162,7 +161,7 @@ function ensureConfirmTool(
     }
 
     // We're good—consume stored args and call original.
-    PENDING_ARGS.delete(String(paymentId));
+    await sessionStorage.delete(sessionKey);
     log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
     const toolResult = await callOriginal(
       originalHandler,
@@ -230,9 +229,22 @@ export const makePaidWrapper: PaidWrapperFactory = (
     );
 
     const pidStr = String(paymentId);
+    const providerName = provider.getName();
+    const sessionKey: SessionKey = {
+      provider: providerName,
+      paymentId: pidStr
+    };
 
-    // Stash original args. (We do not store `extra`; new extra will come on confirm.)
-    PENDING_ARGS.set(pidStr, { args: toolArgs, ts: Date.now() });
+    // Stash original args with session storage (15 minutes TTL)
+    const sessionData: SessionData = {
+      args: toolArgs,
+      ts: Date.now(),
+      providerName,
+      metadata: {
+        toolName
+      }
+    };
+    await sessionStorage.set(sessionKey, sessionData, 900); // 15 minutes TTL
 
     // Build message shown to user / LLM.
     const _message = paymentPromptMessage(

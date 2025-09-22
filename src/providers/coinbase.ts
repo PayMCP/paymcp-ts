@@ -51,11 +51,11 @@ export class CoinbaseProvider extends BasePaymentProvider {
   async createPayment(
     amount: number,
     currency: string,
-    description: string
+    description: string,
   ): Promise<CreatePaymentResult> {
     const fiatCurrency = this.toFiatCurrency(currency);
     this.logger.debug(
-      `[CoinbaseProvider] createPayment ${amount} ${currency} -> ${fiatCurrency} "${description}"`
+      `[CoinbaseProvider] createPayment ${amount} ${currency} -> ${fiatCurrency} "${description}"`,
     );
 
     const body = {
@@ -63,7 +63,7 @@ export class CoinbaseProvider extends BasePaymentProvider {
       description: description || "",
       pricing_type: "fixed_price",
       local_price: {
-        amount: amount.toFixed(2), 
+        amount: amount.toFixed(2),
         currency: fiatCurrency,
       },
       redirect_url: this.successUrl,
@@ -75,7 +75,7 @@ export class CoinbaseProvider extends BasePaymentProvider {
     const data = res?.data;
     if (!data?.code || !data?.hosted_url) {
       throw new Error(
-        "[CoinbaseProvider] Invalid response from /charges (missing code/hosted_url)"
+        "[CoinbaseProvider] Invalid response from /charges (missing code/hosted_url)",
       );
     }
     return { paymentId: data.code, paymentUrl: data.hosted_url };
@@ -86,14 +86,20 @@ export class CoinbaseProvider extends BasePaymentProvider {
    */
   async getPaymentStatus(paymentId: string): Promise<string> {
     this.logger.debug(`[CoinbaseProvider] getPaymentStatus ${paymentId}`);
-    const res = await this.request<any>("GET", `${BASE_URL}/charges/${paymentId}`);
+    const res = await this.request<any>(
+      "GET",
+      `${BASE_URL}/charges/${paymentId}`,
+    );
     const data = res?.data ?? {};
     const timeline: Array<{ status?: string }> = data.timeline ?? [];
-    const lastStatus = timeline.length ? String(timeline[timeline.length - 1].status) : undefined;
+    const lastStatus = timeline.length
+      ? String(timeline[timeline.length - 1].status)
+      : undefined;
 
     // Compact mapping with support for confirmOnPending
     if (lastStatus === "COMPLETED" || lastStatus === "RESOLVED") return "paid";
-    if (lastStatus === "PENDING") return this.confirmOnPending ? "paid" : "pending";
+    if (lastStatus === "PENDING")
+      return this.confirmOnPending ? "paid" : "pending";
     if (lastStatus === "EXPIRED" || lastStatus === "CANCELED") return "failed";
 
     // Fallback to completion fields

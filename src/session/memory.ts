@@ -1,4 +1,4 @@
-import { ISessionStorage, SessionData, SessionKey } from './types.js';
+import { ISessionStorage, SessionData, SessionKey } from "./types.js";
 
 interface StoredSession {
   data: SessionData;
@@ -19,15 +19,17 @@ export class InMemorySessionStorage implements ISessionStorage {
     return `${key.provider}:${key.paymentId}`;
   }
 
-  async set(key: SessionKey, data: SessionData, ttlSeconds?: number): Promise<void> {
+  async set(
+    key: SessionKey,
+    data: SessionData,
+    ttlSeconds?: number,
+  ): Promise<void> {
     const compositeKey = this.makeKey(key);
-    const expiresAt = ttlSeconds
-      ? Date.now() + (ttlSeconds * 1000)
-      : undefined;
+    const expiresAt = ttlSeconds ? Date.now() + ttlSeconds * 1000 : undefined;
 
     this.storage.set(compositeKey, {
       data,
-      expiresAt
+      expiresAt,
     });
   }
 

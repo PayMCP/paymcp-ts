@@ -28,7 +28,7 @@ export abstract class BasePaymentProvider {
   protected async request<T = any>(
     method: string,
     url: string,
-    data?: any
+    data?: any,
   ): Promise<T> {
     const headers = this.buildHeaders();
     const init: RequestInit = { method: method.toUpperCase(), headers };
@@ -45,8 +45,8 @@ export abstract class BasePaymentProvider {
       } else {
         init.body = new URLSearchParams(
           Object.fromEntries(
-            Object.entries(data ?? {}).map(([k, v]) => [k, String(v)])
-          )
+            Object.entries(data ?? {}).map(([k, v]) => [k, String(v)]),
+          ),
         );
       }
     }
@@ -55,14 +55,17 @@ export abstract class BasePaymentProvider {
     try {
       resp = await fetch(url, init);
     } catch (err) {
-      this.logger.error(`[BasePaymentProvider] Network error ${method} ${url}`, err);
+      this.logger.error(
+        `[BasePaymentProvider] Network error ${method} ${url}`,
+        err,
+      );
       throw err;
     }
 
     if (!resp.ok) {
       const body = await resp.text();
       this.logger.error(
-        `[BasePaymentProvider] HTTP ${resp.status} ${method} ${url}: ${body}`
+        `[BasePaymentProvider] HTTP ${resp.status} ${method} ${url}: ${body}`,
       );
       throw new Error(`HTTP ${resp.status} ${url}`);
     }
@@ -71,7 +74,7 @@ export abstract class BasePaymentProvider {
     this.logger.debug(
       `[BasePaymentProvider] HTTP ${method} ${url} ->`,
       resp.status,
-      json
+      json,
     );
     return json;
   }
@@ -80,7 +83,7 @@ export abstract class BasePaymentProvider {
   abstract createPayment(
     amount: number,
     currency: string,
-    description: string
+    description: string,
   ): Promise<CreatePaymentResult>;
 
   /** Check status. */

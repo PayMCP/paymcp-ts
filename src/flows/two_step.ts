@@ -1,4 +1,4 @@
-// Two‑step payment flow 
+// Two‑step payment flow
 //
 // Flow:
 //   Step 1 (initiate): when the original tool is called, we create a payment,
@@ -41,7 +41,7 @@ const sessionStorage = SessionManager.getStorage();
 async function callOriginal(
   func: ToolHandler,
   toolArgs: any | undefined,
-  extra: any
+  extra: any,
 ) {
   if (toolArgs !== undefined) {
     return await func(toolArgs, extra);
@@ -59,7 +59,7 @@ function ensureConfirmTool(
   provider: BasePaymentProvider,
   toolName: string,
   originalHandler: ToolHandler,
-  log?: Logger
+  log?: Logger,
 ): string {
   const confirmToolName = `confirm_${toolName}_payment`;
 
@@ -67,10 +67,9 @@ function ensureConfirmTool(
 
   // Detect if already registered (server API shape may vary; we duck‑type).
   const srvAny = server as any;
-  const toolsMap: Map<
-    string,
-    { config: any; handler: ToolHandler }
-  > | undefined = srvAny?.tools;
+  const toolsMap:
+    | Map<string, { config: any; handler: ToolHandler }>
+    | undefined = srvAny?.tools;
   if (toolsMap?.has(confirmToolName)) {
     log?.debug?.(`[PayMCP:TwoStep] confirm tool already registered.`);
     return confirmToolName;
@@ -85,7 +84,7 @@ function ensureConfirmTool(
   // Confirmation handler: verify payment, retrieve saved args, invoke original tool.
   const confirmHandler: ToolHandler = async (
     paramsOrExtra: any,
-    maybeExtra?: any
+    maybeExtra?: any,
   ) => {
     const hasArgs = arguments.length === 2;
     const params = hasArgs ? paramsOrExtra : undefined;
@@ -110,12 +109,14 @@ function ensureConfirmTool(
     const providerName = provider.getName();
     const sessionKey: SessionKey = {
       provider: providerName,
-      paymentId: String(paymentId)
+      paymentId: String(paymentId),
     };
 
     const stored = await sessionStorage.get(sessionKey);
 
-    log?.debug?.(`[PayMCP:TwoStep] Looking up session with provider=${providerName} paymentId=${paymentId}`);
+    log?.debug?.(
+      `[PayMCP:TwoStep] Looking up session with provider=${providerName} paymentId=${paymentId}`,
+    );
 
     if (!stored) {
       return {
@@ -130,7 +131,9 @@ function ensureConfirmTool(
     let status: string;
     try {
       status = await provider.getPaymentStatus(paymentId);
-      log?.debug?.(`[PayMCP:TwoStep] provider.getPaymentStatus(${paymentId}) -> ${status}`);
+      log?.debug?.(
+        `[PayMCP:TwoStep] provider.getPaymentStatus(${paymentId}) -> ${status}`,
+      );
     } catch (err) {
       return {
         content: [
@@ -162,11 +165,13 @@ function ensureConfirmTool(
 
     // We're good—consume stored args and call original.
     await sessionStorage.delete(sessionKey);
-    log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
+    log?.info?.(
+      `[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`,
+    );
     const toolResult = await callOriginal(
       originalHandler,
       stored.args,
-      extra /* pass confirm extra */
+      extra /* pass confirm extra */,
     );
     // If toolResult missing content, synthesize one.
     if (!toolResult || !Array.isArray((toolResult as any).content)) {
@@ -186,9 +191,9 @@ function ensureConfirmTool(
     {
       title: `Confirm payment for ${toolName}`,
       description: `Confirm payment and execute ${toolName}()`,
-      inputSchema
+      inputSchema,
     },
-    confirmHandler
+    confirmHandler,
   );
 
   return confirmToolName;
@@ -200,7 +205,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   provider: BasePaymentProvider,
   priceInfo: PriceConfig,
   toolName: string,
-  logger?: Logger
+  logger?: Logger,
 ) => {
   const log: Logger = logger ?? (provider as any).logger ?? console;
 
@@ -211,7 +216,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     provider,
     toolName,
     func,
-    log
+    log,
   );
 
   async function twoStepWrapper(paramsOrExtra: any, maybeExtra?: any) {
@@ -219,20 +224,22 @@ export const makePaidWrapper: PaidWrapperFactory = (
     const toolArgs = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : paramsOrExtra;
 
-    log?.debug?.(`[PayMCP:TwoStep] initiate wrapper invoked for ${toolName}, hasArgs=${hasArgs}`);
+    log?.debug?.(
+      `[PayMCP:TwoStep] initiate wrapper invoked for ${toolName}, hasArgs=${hasArgs}`,
+    );
 
     // Create payment.
     const { paymentId, paymentUrl } = await provider.createPayment(
       priceInfo.amount,
       priceInfo.currency,
-      `${toolName}() execution fee`
+      `${toolName}() execution fee`,
     );
 
     const pidStr = String(paymentId);
     const providerName = provider.getName();
     const sessionKey: SessionKey = {
       provider: providerName,
-      paymentId: pidStr
+      paymentId: pidStr,
     };
 
     // Stash original args with session storage (15 minutes TTL)
@@ -241,8 +248,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
       ts: Date.now(),
       providerName,
       metadata: {
-        toolName
-      }
+        toolName,
+      },
     };
     await sessionStorage.set(sessionKey, sessionData, 900); // 15 minutes TTL
 
@@ -250,17 +257,19 @@ export const makePaidWrapper: PaidWrapperFactory = (
     const _message = paymentPromptMessage(
       paymentUrl,
       priceInfo.amount,
-      priceInfo.currency
+      priceInfo.currency,
     );
 
     const message = JSON.stringify({
-      "message": _message,
-      "payment_url": paymentUrl,
-      "payment_id": paymentId,
-      "next_step": confirmToolName
-    })
+      message: _message,
+      payment_url: paymentUrl,
+      payment_id: paymentId,
+      next_step: confirmToolName,
+    });
 
-    log?.info?.(`[PayMCP:TwoStep] payment initiated pid=${pidStr} url=${paymentUrl} next=${confirmToolName}`);
+    log?.info?.(
+      `[PayMCP:TwoStep] payment initiated pid=${pidStr} url=${paymentUrl} next=${confirmToolName}`,
+    );
 
     // Return step‑1 response. Include content to satisfy MCP schemas.
     return {

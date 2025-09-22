@@ -4,9 +4,7 @@ import type { BasePaymentProvider } from "../providers/base.js";
 import type { McpServerLike } from "./mcp.js";
 import { Logger } from "./logger.js";
 
-
 export type ToolHandler = (...args: any[]) => Promise<any> | any;
-
 
 export type PaidWrapperFactory = (
   func: ToolHandler,
@@ -14,9 +12,8 @@ export type PaidWrapperFactory = (
   provider: BasePaymentProvider,
   priceInfo: PriceConfig,
   toolName: string,
-  logger?: Logger
+  logger?: Logger,
 ) => ToolHandler;
-
 
 export type FlowModule = {
   makePaidWrapper: PaidWrapperFactory;

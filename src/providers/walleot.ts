@@ -25,10 +25,10 @@ export class WalleotProvider extends BasePaymentProvider {
   async createPayment(
     amount: number,
     currency: string,
-    description: string
+    description: string,
   ): Promise<CreatePaymentResult> {
     this.logger.debug(
-      `[WalleotProvider] createPayment ${amount} ${currency} "${description}"`
+      `[WalleotProvider] createPayment ${amount} ${currency} "${description}"`,
     );
     const payload = {
       amount: Math.round(amount * 100), // amount in cents
@@ -38,12 +38,12 @@ export class WalleotProvider extends BasePaymentProvider {
     const session = await this.request<any>(
       "POST",
       `${BASE_URL}/sessions`,
-      payload
+      payload,
     );
     // API expected: { sessionId, url, ... }
     if (!session?.sessionId || !session?.url) {
       throw new Error(
-        "[WalleotProvider] Invalid response from /sessions (missing sessionId/url)"
+        "[WalleotProvider] Invalid response from /sessions (missing sessionId/url)",
       );
     }
     return { paymentId: session.sessionId, paymentUrl: session.url };
@@ -53,7 +53,7 @@ export class WalleotProvider extends BasePaymentProvider {
     this.logger.debug(`[WalleotProvider] getPaymentStatus ${paymentId}`);
     const session = await this.request<any>(
       "GET",
-      `${BASE_URL}/sessions/${paymentId}`
+      `${BASE_URL}/sessions/${paymentId}`,
     );
     // API expected: { status }
     return String(session?.status ?? "unknown").toLowerCase();

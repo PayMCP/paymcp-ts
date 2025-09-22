@@ -17,10 +17,10 @@ export interface ISessionStorage {
   has(key: SessionKey): Promise<boolean>;
   clear(): Promise<void>;
   cleanup(): Promise<void>;
-  destroy?(): void;  // Optional method to clean up resources like intervals
+  destroy?(): void; // Optional method to clean up resources like intervals
 }
 
 export interface SessionStorageConfig {
-  type: 'memory' | 'redis' | 'custom';
+  type: "memory" | "redis" | "custom";
   options?: Record<string, any>;
 }

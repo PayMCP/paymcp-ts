@@ -42,7 +42,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   provider: BasePaymentProvider,
   priceInfo: PriceConfig,
   toolName: string,
-  logger?: Logger
+  logger?: Logger,
 ) => {
   const log: Logger = logger ?? (provider as any).logger ?? console;
   const confirmToolName = `confirm_${toolName}_payment`;
@@ -53,24 +53,29 @@ export const makePaidWrapper: PaidWrapperFactory = (
     {
       description: `Confirm payment and execute ${toolName}() after elicitation timeout`,
       inputSchema: {
-        type: 'object',
+        type: "object",
         properties: {
           payment_id: {
-            type: 'string',
-            description: 'The payment ID to confirm'
-          }
+            type: "string",
+            description: "The payment ID to confirm",
+          },
         },
-        required: ['payment_id']
-      }
+        required: ["payment_id"],
+      },
     },
     async (params: any, extra: ToolExtraLike) => {
       const paymentId = params.payment_id;
       log.info?.(`[elicitation_confirm_tool] Received payment_id=${paymentId}`);
       const providerName = provider.getName();
-      const sessionKey: SessionKey = { provider: providerName, paymentId: String(paymentId) };
+      const sessionKey: SessionKey = {
+        provider: providerName,
+        paymentId: String(paymentId),
+      };
 
       const stored = await sessionStorage.get(sessionKey);
-      log.debug?.(`[elicitation_confirm_tool] Looking up session with provider=${providerName} payment_id=${paymentId}`);
+      log.debug?.(
+        `[elicitation_confirm_tool] Looking up session with provider=${providerName} payment_id=${paymentId}`,
+      );
 
       if (stored === undefined) {
         throw new Error("Unknown or expired payment_id");
@@ -80,29 +85,44 @@ export const makePaidWrapper: PaidWrapperFactory = (
       if (normalizeStatus(status) !== "paid") {
         throw new Error(`Payment status is ${status}, expected 'paid'`);
       }
-      log.debug?.(`[elicitation_confirm_tool] Calling ${toolName} with stored args`);
+      log.debug?.(
+        `[elicitation_confirm_tool] Calling ${toolName} with stored args`,
+      );
 
       await sessionStorage.delete(sessionKey);
       return await callOriginal(func, stored.args, extra);
-    }
+    },
   );
 
   async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
-    log.debug?.(`[PayMCP:Elicitation] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`);
+    log.debug?.(
+      `[PayMCP:Elicitation] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`,
+    );
 
     // The MCP TS SDK calls tool callbacks as either (args, extra) when an inputSchema is present,
     // or (extra) when no inputSchema is defined. We normalize here. citeturn5view0
     const hasArgs = arguments.length === 2;
     log.debug?.(`[PayMCP:Elicitation] hasArgs=${hasArgs}`);
     const toolArgs = hasArgs ? paramsOrExtra : undefined;
-    const extra: ToolExtraLike = hasArgs ? (maybeExtra as ToolExtraLike) : (paramsOrExtra as ToolExtraLike);
+    const extra: ToolExtraLike = hasArgs
+      ? (maybeExtra as ToolExtraLike)
+      : (paramsOrExtra as ToolExtraLike);
 
     const elicitSupported = typeof (extra as any)?.sendRequest === "function";
     if (!elicitSupported) {
-      log.warn?.(`[PayMCP:Elicitation] client lacks sendRequest(); falling back to error result.`);
+      log.warn?.(
+        `[PayMCP:Elicitation] client lacks sendRequest(); falling back to error result.`,
+      );
       return {
-        content: [{ type: "text", text: "Client does not support the selected payment flow." }],
-        annotations: { payment: { status: "error", reason: "elicitation_not_supported" } },
+        content: [
+          {
+            type: "text",
+            text: "Client does not support the selected payment flow.",
+          },
+        ],
+        annotations: {
+          payment: { status: "error", reason: "elicitation_not_supported" },
+        },
         status: "error",
         message: "Client does not support the selected payment flow",
       };
@@ -112,27 +132,36 @@ export const makePaidWrapper: PaidWrapperFactory = (
     const { paymentId, paymentUrl } = await provider.createPayment(
       priceInfo.amount,
       priceInfo.currency,
-      `${toolName}() execution fee`
+      `${toolName}() execution fee`,
     );
-    log.debug?.(`[PayMCP:Elicitation] created payment id=${paymentId} url=${paymentUrl}`);
+    log.debug?.(
+      `[PayMCP:Elicitation] created payment id=${paymentId} url=${paymentUrl}`,
+    );
 
     // Store session for later confirmation (in case of timeout)
     const providerName = provider.getName();
-    const sessionKey: SessionKey = { provider: providerName, paymentId: String(paymentId) };
+    const sessionKey: SessionKey = {
+      provider: providerName,
+      paymentId: String(paymentId),
+    };
     const sessionData: SessionData = {
       args: { toolArgs, extra },
       ts: Date.now(),
-      providerName: providerName
+      providerName: providerName,
     };
     await sessionStorage.set(sessionKey, sessionData);
-    log.debug?.(`[PayMCP:Elicitation] Stored session for payment_id=${paymentId}`);
+    log.debug?.(
+      `[PayMCP:Elicitation] Stored session for payment_id=${paymentId}`,
+    );
 
     // 2. Run elicitation loop (client confirms payment)
     let userAction: "accept" | "decline" | "cancel" | "unknown" = "unknown";
     let paymentStatus: string | undefined;
 
     try {
-      log.debug?.(`[PayMCP:Elicitation] starting elicitation loop for paymentId=${paymentId}`);
+      log.debug?.(
+        `[PayMCP:Elicitation] starting elicitation loop for paymentId=${paymentId}`,
+      );
       const loopResult = await runElicitationLoop(
         extra,
         paymentPromptMessage(paymentUrl, priceInfo.amount, priceInfo.currency),
@@ -140,9 +169,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
         paymentId,
         paymentUrl,
         5,
-        log
+        log,
       );
-      log.debug?.(`[PayMCP:Elicitation] elicitation loop returned action=${loopResult.action} status=${loopResult.status}`);
+      log.debug?.(
+        `[PayMCP:Elicitation] elicitation loop returned action=${loopResult.action} status=${loopResult.status}`,
+      );
       userAction = loopResult.action;
       paymentStatus = loopResult.status;
     } catch (err) {
@@ -151,28 +182,48 @@ export const makePaidWrapper: PaidWrapperFactory = (
     }
 
     // 3. Double‑check with provider just in case
-    log.debug?.(`[PayMCP:Elicitation] provider status check (initial=${paymentStatus ?? "none"})`);
-    if (paymentStatus === undefined || paymentStatus === null || paymentStatus === "") {
+    log.debug?.(
+      `[PayMCP:Elicitation] provider status check (initial=${paymentStatus ?? "none"})`,
+    );
+    if (
+      paymentStatus === undefined ||
+      paymentStatus === null ||
+      paymentStatus === ""
+    ) {
       try {
         paymentStatus = await provider.getPaymentStatus(paymentId);
-        log.debug?.(`[PayMCP:Elicitation] provider.getPaymentStatus(${paymentId}) -> ${paymentStatus}`);
+        log.debug?.(
+          `[PayMCP:Elicitation] provider.getPaymentStatus(${paymentId}) -> ${paymentStatus}`,
+        );
         paymentStatus = normalizeStatus(paymentStatus);
       } catch {
         paymentStatus = "unknown";
       }
     }
 
-    if (paymentStatus === "unsupported" /* или loopResult.status === "unsupported" */) {
+    if (
+      paymentStatus ===
+      "unsupported" /* или loopResult.status === "unsupported" */
+    ) {
       return {
-        content: [{ type: "text", text: "Client does not support the selected payment flow." }],
-        annotations: { payment: { status: "error", reason: "elicitation_not_supported" } },
+        content: [
+          {
+            type: "text",
+            text: "Client does not support the selected payment flow.",
+          },
+        ],
+        annotations: {
+          payment: { status: "error", reason: "elicitation_not_supported" },
+        },
         status: "error",
         message: "Client does not support the selected payment flow.",
       };
     }
 
     if (normalizeStatus(paymentStatus) === "paid" || userAction === "accept") {
-      log.info?.(`[PayMCP:Elicitation] payment confirmed; invoking original tool ${toolName}`);
+      log.info?.(
+        `[PayMCP:Elicitation] payment confirmed; invoking original tool ${toolName}`,
+      );
       // Clean up session after successful payment
       await sessionStorage.delete(sessionKey);
       const toolResult = await callOriginal(func, toolArgs, extra);
@@ -190,12 +241,19 @@ export const makePaidWrapper: PaidWrapperFactory = (
           ...(toolResult as any).annotations,
           payment: { status: "paid", payment_id: paymentId },
         };
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return toolResult;
     }
 
-    if (normalizeStatus(paymentStatus) === "canceled" || userAction === "cancel") {
-      log.info?.(`[PayMCP:Elicitation] payment canceled by user or provider (status=${paymentStatus}, action=${userAction})`);
+    if (
+      normalizeStatus(paymentStatus) === "canceled" ||
+      userAction === "cancel"
+    ) {
+      log.info?.(
+        `[PayMCP:Elicitation] payment canceled by user or provider (status=${paymentStatus}, action=${userAction})`,
+      );
       // Clean up session on cancellation
       await sessionStorage.delete(sessionKey);
       return {
@@ -208,16 +266,29 @@ export const makePaidWrapper: PaidWrapperFactory = (
     }
 
     // Otherwise payment not yet received
-    log.info?.(`[PayMCP:Elicitation] payment still pending after elicitation attempts; returning pending result.`);
+    log.info?.(
+      `[PayMCP:Elicitation] payment still pending after elicitation attempts; returning pending result.`,
+    );
     // Session remains for later confirmation
     return {
-      content: [{ type: "text", text: "Payment not yet received. Open the link and try again." }],
-      annotations: { payment: { status: "pending", payment_id: paymentId, next_step: confirmToolName } },
+      content: [
+        {
+          type: "text",
+          text: "Payment not yet received. Open the link and try again.",
+        },
+      ],
+      annotations: {
+        payment: {
+          status: "pending",
+          payment_id: paymentId,
+          next_step: confirmToolName,
+        },
+      },
       payment_url: paymentUrl,
       status: "pending",
       message: "Payment not yet received. Open the link and try again.",
       payment_id: String(paymentId),
-      next_step: confirmToolName,  // Use confirmation tool
+      next_step: confirmToolName, // Use confirmation tool
     };
   }
 
@@ -242,7 +313,7 @@ async function runElicitationLoop(
   paymentId: string,
   paymentUrl: string,
   maxAttempts = 5,
-  log: Logger = console
+  log: Logger = console,
 ): Promise<ElicitLoopResult> {
   const RETRY_DELAY_MS = 3000; // 3 seconds between attempts
 
@@ -250,11 +321,15 @@ async function runElicitationLoop(
     // Add delay between attempts (except for the first one) to handle ENG-114
     // where users may take 1-2 minutes to approve the payment
     if (attempt > 0) {
-      log.debug?.(`[PayMCP:Elicitation] waiting ${RETRY_DELAY_MS}ms before retry...`);
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+      log.debug?.(
+        `[PayMCP:Elicitation] waiting ${RETRY_DELAY_MS}ms before retry...`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
     }
 
-    log.debug?.(`[PayMCP:Elicitation] loop attempt=${attempt + 1}/${maxAttempts}`);
+    log.debug?.(
+      `[PayMCP:Elicitation] loop attempt=${attempt + 1}/${maxAttempts}`,
+    );
     // Send an elicitation/create request. See MCP spec. citeturn1view2
     const req = {
       method: "elicitation/create",
@@ -271,7 +346,9 @@ async function runElicitationLoop(
         ? extra.sendRequest(req, Z_ANY) // pass permissive schema; avoids undefined.parse crash
         : Promise.reject(new Error("No sendRequest()")));
     } catch (err: any) {
-      log.warn?.(`[PayMCP:Elicitation] elicitation request failed (attempt=${attempt + 1}): ${String(err)}`);
+      log.warn?.(
+        `[PayMCP:Elicitation] elicitation request failed (attempt=${attempt + 1}): ${String(err)}`,
+      );
       // fall through: we will still poll provider and possibly retry
       //elicitation = { action: "unknown" };
       if (err?.code === -32601 || /Method not found/i.test(String(err))) {
@@ -282,9 +359,10 @@ async function runElicitationLoop(
     }
 
     // FastMCP Python returns either top-level `action` or result.action; accept both.
-    const action = (elicitation && typeof elicitation === "object"
-      ? (elicitation as any).action ?? (elicitation as any).result?.action
-      : undefined) ?? "unknown";
+    const action =
+      (elicitation && typeof elicitation === "object"
+        ? ((elicitation as any).action ?? (elicitation as any).result?.action)
+        : undefined) ?? "unknown";
     log.debug?.(`[PayMCP:Elicitation] elicitation response action=${action}`);
 
     log.debug?.(`Elicitation`, elicitation);
@@ -294,7 +372,9 @@ async function runElicitationLoop(
     log.debug?.(`[PayMCP:Elicitation] provider status during loop: ${status}`);
 
     if (action === "cancel" || action === "decline") {
-      log.info?.(`[PayMCP:Elicitation] user canceled/declined during elicitation.`);
+      log.info?.(
+        `[PayMCP:Elicitation] user canceled/declined during elicitation.`,
+      );
       return { action: "cancel", status: normalizeStatus(status) };
     }
 
@@ -306,14 +386,17 @@ async function runElicitationLoop(
       return { action: "cancel", status: "canceled" };
     }
     // otherwise: pending; fall through to next attempt after delay
-
   }
   // Exhausted attempts; still not paid.
   return { action: "unknown", status: "pending" };
 }
 
 /** Safely invoke the original tool handler preserving args. */
-async function callOriginal(func: ToolHandler, args: any | undefined, extra: ToolExtraLike) {
+async function callOriginal(
+  func: ToolHandler,
+  args: any | undefined,
+  extra: ToolExtraLike,
+) {
   if (args !== undefined) {
     return await func(args, extra);
   } else {

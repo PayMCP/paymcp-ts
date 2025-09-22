@@ -1,8 +1,6 @@
 import { type Logger } from "../types/logger.js";
 import { type CreatePaymentResult } from "../types/payment.js";
-import {
-  BasePaymentProvider,
-} from "./base.js";
+import { BasePaymentProvider } from "./base.js";
 
 const BASE_URL = "https://api.stripe.com/v1";
 
@@ -57,11 +55,11 @@ export class StripeProvider extends BasePaymentProvider {
   async createPayment(
     amount: number,
     currency: string,
-    description: string
+    description: string,
   ): Promise<CreatePaymentResult> {
     const cents = this.toStripeAmount(amount, currency);
     this.logger.debug(
-      `[StripeProvider] createPayment ${amount} ${currency} (${cents}) "${description}"`
+      `[StripeProvider] createPayment ${amount} ${currency} (${cents}) "${description}"`,
     );
 
     const data: Record<string, string | number> = {
@@ -77,12 +75,12 @@ export class StripeProvider extends BasePaymentProvider {
     const session = await this.request<any>(
       "POST",
       `${BASE_URL}/checkout/sessions`,
-      data
+      data,
     );
 
     if (!session?.id || !session?.url) {
       throw new Error(
-        "[StripeProvider] Invalid response from /checkout/sessions (missing id/url)"
+        "[StripeProvider] Invalid response from /checkout/sessions (missing id/url)",
       );
     }
     return { paymentId: session.id, paymentUrl: session.url };
@@ -96,7 +94,7 @@ export class StripeProvider extends BasePaymentProvider {
     this.logger.debug(`[StripeProvider] getPaymentStatus ${paymentId}`);
     const session = await this.request<any>(
       "GET",
-      `${BASE_URL}/checkout/sessions/${paymentId}`
+      `${BASE_URL}/checkout/sessions/${paymentId}`,
     );
     // Return as is; mapping to unified status can be done later.
     return String(session?.payment_status ?? "unknown");

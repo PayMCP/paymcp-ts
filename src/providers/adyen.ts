@@ -1,8 +1,6 @@
 import { type Logger } from "../types/logger.js";
 import { type CreatePaymentResult } from "../types/payment.js";
-import {
-  BasePaymentProvider,
-} from "./base.js";
+import { BasePaymentProvider } from "./base.js";
 
 const ADYEN_API_TEST_URL = "https://checkout-test.adyen.com/v71";
 const ADYEN_API_LIVE_URL = "https://checkout-live.adyen.com/v71";
@@ -42,10 +40,10 @@ export class AdyenProvider extends BasePaymentProvider {
   async createPayment(
     amount: number,
     currency: string,
-    description: string
+    description: string,
   ): Promise<CreatePaymentResult> {
     this.logger?.debug(
-      `Creating Adyen payment: ${amount} ${currency} for '${description}' (MERCHANT: ${this.merchantAccount})`
+      `Creating Adyen payment: ${amount} ${currency} for '${description}' (MERCHANT: ${this.merchantAccount})`,
     );
     const data = {
       amount: {
@@ -59,7 +57,7 @@ export class AdyenProvider extends BasePaymentProvider {
     const payment = await this.request<any>(
       "POST",
       `${this.baseUrl}/paymentLinks`,
-      data
+      data,
     );
     if (!payment?.id || !payment?.url) {
       throw new Error("Adyen createPayment: missing id or url in response");
@@ -74,7 +72,7 @@ export class AdyenProvider extends BasePaymentProvider {
     this.logger?.debug(`Checking Adyen payment status for: ${paymentId}`);
     const payment = await this.request<any>(
       "GET",
-      `${this.baseUrl}/paymentLinks/${paymentId}`
+      `${this.baseUrl}/paymentLinks/${paymentId}`,
     );
     const status = payment?.status;
     if (status === "completed") {

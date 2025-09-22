@@ -10,14 +10,20 @@ import { CoinbaseProvider } from "./coinbase.js";
 /** Registry of known providers. */
 const PROVIDER_MAP: Record<
   string,
-  new (opts: { apiKey: string; logger?: Logger, successUrl?:string, sandbox?: boolean, merchantAccount?:string }) => BasePaymentProvider
+  new (opts: {
+    apiKey: string;
+    logger?: Logger;
+    successUrl?: string;
+    sandbox?: boolean;
+    merchantAccount?: string;
+  }) => BasePaymentProvider
 > = {
   stripe: StripeProvider,
   walleot: WalleotProvider,
   paypal: PayPalProvider,
   square: SquareProvider,
   adyen: AdyenProvider,
-  coinbase: CoinbaseProvider
+  coinbase: CoinbaseProvider,
 };
 
 export type ProviderInstances = Record<string, BasePaymentProvider>;
@@ -28,7 +34,16 @@ export type ProviderInstances = Record<string, BasePaymentProvider>;
  * into { "stripe": StripeProviderInstance, "walleot": WalleotProviderInstance }.
  */
 export function buildProviders(
-  config: Record<string, { apiKey: string; successUrl?: string; cancelUrl?: string; merchantAccount?:string; logger?: Logger }>
+  config: Record<
+    string,
+    {
+      apiKey: string;
+      successUrl?: string;
+      cancelUrl?: string;
+      merchantAccount?: string;
+      logger?: Logger;
+    }
+  >,
 ): ProviderInstances {
   const instances: ProviderInstances = {};
   for (const [name, opts] of Object.entries(config)) {

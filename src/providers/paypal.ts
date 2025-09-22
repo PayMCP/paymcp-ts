@@ -56,16 +56,18 @@ export class PayPalProvider extends BasePaymentProvider {
     let parsedOpts: PayPalProviderOpts;
 
     // Handle standard provider interface (apiKey format)
-    if ('apiKey' in opts) {
-      const parts = opts.apiKey.split(':');
+    if ("apiKey" in opts) {
+      const parts = opts.apiKey.split(":");
       if (parts.length < 2) {
-        throw new Error('[PayPalProvider] apiKey must be in format "clientId:clientSecret" or "clientId:clientSecret:sandbox"');
+        throw new Error(
+          '[PayPalProvider] apiKey must be in format "clientId:clientSecret" or "clientId:clientSecret:sandbox"',
+        );
       }
 
       parsedOpts = {
         clientId: parts[0],
         clientSecret: parts[1],
-        sandbox: parts[2] === 'sandbox',
+        sandbox: parts[2] === "sandbox",
         logger: opts.logger,
       };
     } else {
@@ -113,9 +115,9 @@ export class PayPalProvider extends BasePaymentProvider {
 
     this.logger.debug("[PayPalProvider] Fetching new access token");
 
-    const auth = Buffer.from(
-      `${this.clientId}:${this.clientSecret}`
-    ).toString("base64");
+    const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString(
+      "base64",
+    );
 
     const response = await fetch(`${this.baseUrl}/v1/oauth2/token`, {
       method: "POST",
@@ -128,7 +130,7 @@ export class PayPalProvider extends BasePaymentProvider {
 
     if (!response.ok) {
       throw new Error(
-        `[PayPalProvider] Failed to get access token: ${response.status}`
+        `[PayPalProvider] Failed to get access token: ${response.status}`,
       );
     }
 
@@ -146,7 +148,7 @@ export class PayPalProvider extends BasePaymentProvider {
   protected override async request<T>(
     method: string,
     url: string,
-    data?: any
+    data?: any,
   ): Promise<T> {
     // Ensure we have a valid access token before making the request
     await this.getAccessToken();
@@ -166,9 +168,7 @@ export class PayPalProvider extends BasePaymentProvider {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(
-        `[PayPalProvider] HTTP ${response.status}: ${errorText}`
-      );
+      throw new Error(`[PayPalProvider] HTTP ${response.status}: ${errorText}`);
     }
 
     return response.json() as Promise<T>;
@@ -176,7 +176,7 @@ export class PayPalProvider extends BasePaymentProvider {
 
   /**
    * Create PayPal Order.
-   * 
+   *
    * Important parameters:
    * - intent=CAPTURE for immediate payment capture after approval
    * - purchase_units with amount and description
@@ -185,10 +185,10 @@ export class PayPalProvider extends BasePaymentProvider {
   async createPayment(
     amount: number,
     currency: string,
-    description: string
+    description: string,
   ): Promise<CreatePaymentResult> {
     this.logger.debug(
-      `[PayPalProvider] createPayment ${amount} ${currency} "${description}"`
+      `[PayPalProvider] createPayment ${amount} ${currency} "${description}"`,
     );
 
     const payload = {
@@ -212,15 +212,13 @@ export class PayPalProvider extends BasePaymentProvider {
     const order = await this.request<PayPalOrderResponse>(
       "POST",
       `${this.baseUrl}/v2/checkout/orders`,
-      payload
+      payload,
     );
 
     const approveLink = order.links?.find((link) => link.rel === "approve");
-    
+
     if (!approveLink?.href) {
-      throw new Error(
-        "[PayPalProvider] No approval URL in PayPal response"
-      );
+      throw new Error("[PayPalProvider] No approval URL in PayPal response");
     }
 
     return { paymentId: order.id, paymentUrl: approveLink.href };
@@ -236,25 +234,25 @@ export class PayPalProvider extends BasePaymentProvider {
 
     const order = await this.request<PayPalOrderResponse>(
       "GET",
-      `${this.baseUrl}/v2/checkout/orders/${paymentId}`
+      `${this.baseUrl}/v2/checkout/orders/${paymentId}`,
     );
 
     // Auto-capture approved payments
     if (order.status === "APPROVED") {
       this.logger.debug(`[PayPalProvider] Auto-capturing payment ${paymentId}`);
-      
+
       try {
         const captureResponse = await this.request<PayPalOrderResponse>(
           "POST",
           `${this.baseUrl}/v2/checkout/orders/${paymentId}/capture`,
-          {}
+          {},
         );
-        
+
         return captureResponse.status === "COMPLETED" ? "paid" : "pending";
       } catch (error) {
         this.logger.error(
           `[PayPalProvider] Failed to capture ${paymentId}:`,
-          error
+          error,
         );
         return "pending";
       }

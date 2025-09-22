@@ -146,12 +146,14 @@ jobs:
       if: github.event_name == 'pull_request'
 
     - name: Coverage Report as Comment (Push event)
-      uses: danhuynhdev/lcov-reporter-action@v0.3.0
+      uses: ArtiomTr/jest-coverage-report-action@v2
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        lcov-file: ./coverage/lcov.info
-        delete-old-comments: true
-        pr-number: ${{ steps.findpr.outputs.number }}
+        coverage-file: ./coverage/lcov.info
+        base-coverage-file: ./coverage/lcov.info
+        threshold: 90
+        annotations: all
+        prnumber: ${{ steps.findpr.outputs.number }}
       if: github.event_name == 'push' && steps.findpr.outputs.number
 
   # Final job that requires all quality checks to pass

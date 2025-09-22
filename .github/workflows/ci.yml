@@ -131,20 +131,12 @@ jobs:
     - name: Generate coverage report
       run: npm run test:coverage
 
-    - name: Generate JSON coverage report
-      run: npx vitest run --coverage --reporter=json --outputFile=coverage-summary.json
-
     - name: Coverage Report as Comment
-      uses: ArtiomTr/jest-coverage-report-action@v2
+      uses: romeovs/lcov-reporter-action@v0.3.1
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        coverage-file: ./coverage/lcov.info
-        base-coverage-file: ./coverage/lcov.info
-        threshold: 90
-        working-directory: ./
-        annotations: all
-        package-manager: npm
-        test-script: npm run test:coverage
+        lcov-file: ./coverage/lcov.info
+        delete-old-comments: true
       if: github.event_name == 'pull_request'
 
     - name: Find associated PR for push events
@@ -153,17 +145,12 @@ jobs:
       if: github.event_name == 'push' && github.event.ref != 'refs/heads/main'
 
     - name: Coverage Report as Comment (Push)
-      uses: ArtiomTr/jest-coverage-report-action@v2
+      uses: romeovs/lcov-reporter-action@v0.3.1
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        coverage-file: ./coverage/lcov.info
-        base-coverage-file: ./coverage/lcov.info
-        threshold: 90
-        working-directory: ./
-        annotations: all
-        package-manager: npm
-        test-script: npm run test:coverage
-        prnumber: ${{ steps.finder.outputs.pr }}
+        lcov-file: ./coverage/lcov.info
+        delete-old-comments: true
+        pr-number: ${{ steps.finder.outputs.pr }}
       if: github.event_name == 'push' && steps.finder.outputs.pr
 
   # Final job that requires all quality checks to pass

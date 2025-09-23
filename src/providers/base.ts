@@ -31,16 +31,20 @@ export abstract class BasePaymentProvider {
 
     if (method.toUpperCase() === 'GET') {
       // Simple implementation: query string
-      if (data && Object.keys(data).length) {
-        const qs = new URLSearchParams(data).toString();
-        url += (url.includes('?') ? '&' : '?') + qs;
+      if (data && typeof data === 'object' && data !== null) {
+        const dataRecord = data as Record<string, string>;
+        if (Object.keys(dataRecord).length) {
+          const qs = new URLSearchParams(dataRecord).toString();
+          url += (url.includes('?') ? '&' : '?') + qs;
+        }
       }
     } else {
       if (headers['Content-Type'] === 'application/json') {
         init.body = JSON.stringify(data ?? {});
       } else {
+        const dataObj = (data && typeof data === 'object' && data !== null) ? data as Record<string, unknown> : {};
         init.body = new URLSearchParams(
-          Object.fromEntries(Object.entries(data ?? {}).map(([k, v]) => [k, String(v)]))
+          Object.fromEntries(Object.entries(dataObj).map(([k, v]) => [k, String(v)]))
         );
       }
     }

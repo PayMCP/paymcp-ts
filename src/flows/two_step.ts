@@ -79,7 +79,7 @@ function ensureConfirmTool(
   const confirmHandler: ToolHandler = async (paramsOrExtra: unknown, maybeExtra?: ToolExtraLike) => {
     const hasArgs = arguments.length === 2;
     const params = hasArgs ? paramsOrExtra : undefined;
-    const extra = hasArgs ? maybeExtra : paramsOrExtra;
+    const extra = hasArgs ? maybeExtra : (paramsOrExtra as ToolExtraLike);
 
     log?.info?.(`[PayMCP:TwoStep] confirm handler invoked for ${toolName}`);
 
@@ -158,7 +158,7 @@ function ensureConfirmTool(
     const toolResult = await callOriginal(
       originalHandler,
       stored.args,
-      extra /* pass confirm extra */
+      extra ?? {} as ToolExtraLike /* pass confirm extra */
     );
     // If toolResult missing content, synthesize one.
     if (!toolResult || !Array.isArray((toolResult as { content?: unknown[] }).content)) {
@@ -201,7 +201,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   async function twoStepWrapper(paramsOrExtra: unknown, maybeExtra?: ToolExtraLike) {
     const hasArgs = arguments.length === 2;
     const toolArgs = hasArgs ? paramsOrExtra : undefined;
-    const _extra = hasArgs ? maybeExtra : paramsOrExtra;
+    const _extra = hasArgs ? maybeExtra : (paramsOrExtra as ToolExtraLike);
 
     log?.debug?.(`[PayMCP:TwoStep] initiate wrapper invoked for ${toolName}, hasArgs=${hasArgs}`);
 

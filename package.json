@@ -1,6 +1,6 @@
 {
   "name": "paymcp",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Provider-agnostic payment layer for MCP (Model Context Protocol) tools and agents.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -16,14 +16,28 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --clean --sourcemap"
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean --sourcemap",
+    "watch": "npm run build -- --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/ --ext .ts,.tsx",
+    "lint:fix": "eslint src/ --ext .ts,.tsx --fix",
+    "format": "prettier --write src/",
+    "format:check": "prettier --check src/",
+    "security:audit": "npm audit --audit-level=moderate",
+    "security:audit-ci": "audit-ci --moderate",
+    "security:scan": "python .github/scripts/compliance-scan.py",
+    "prepublishOnly": "npm run lint && npm run format:check && npm run test && npm run build"
   },
-  "author": "Blust Inc",
+  "author": "PayMCP Open Source Contributors",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^24.0.14",
+    "@vitest/utils": "^3.2.4",
     "tsup": "^8.5.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.9"
   },
   "sideEffects": false,
   "keywords": [

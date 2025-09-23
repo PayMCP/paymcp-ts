@@ -21,15 +21,15 @@
 // NOTE: This flow is intentionally light on typing because we support running
 // under multiple MCP server implementations (with or without the official SDK).
 
-import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
-import type { McpServerLike } from "../types/mcp.js";
-import type { BasePaymentProvider } from "../providers/base.js";
-import type { PriceConfig } from "../types/config.js";
-import { paymentPromptMessage } from "../utils/messages.js";
-import { Logger } from "../types/logger.js";
-import { SessionManager, SessionKey, SessionData } from "../session/index.js";
+import type { PaidWrapperFactory, ToolHandler } from '../types/flows.js';
+import type { McpServerLike } from '../types/mcp.js';
+import type { BasePaymentProvider } from '../providers/base.js';
+import type { PriceConfig } from '../types/config.js';
+import { paymentPromptMessage } from '../utils/messages.js';
+import { Logger } from '../types/logger.js';
+import { SessionManager, SessionKey, SessionData } from '../session/index.js';
 
-import { z } from "zod";
+import { z } from 'zod';
 
 // Session storage for payment args
 const sessionStorage = SessionManager.getStorage();
@@ -38,11 +38,7 @@ const sessionStorage = SessionManager.getStorage();
  * Safely invoke the original tool handler preserving the (args, extra) vs (extra)
  * call shapes used by the MCP TS SDK.
  */
-async function callOriginal(
-  func: ToolHandler,
-  toolArgs: any | undefined,
-  extra: any,
-) {
+async function callOriginal(func: ToolHandler, toolArgs: any | undefined, extra: any) {
   if (toolArgs !== undefined) {
     return await func(toolArgs, extra);
   } else {
@@ -59,7 +55,7 @@ function ensureConfirmTool(
   provider: BasePaymentProvider,
   toolName: string,
   originalHandler: ToolHandler,
-  log?: Logger,
+  log?: Logger
 ): string {
   const confirmToolName = `confirm_${toolName}_payment`;
 
@@ -67,9 +63,7 @@ function ensureConfirmTool(
 
   // Detect if already registered (server API shape may vary; we duck‑type).
   const srvAny = server as any;
-  const toolsMap:
-    | Map<string, { config: any; handler: ToolHandler }>
-    | undefined = srvAny?.tools;
+  const toolsMap: Map<string, { config: any; handler: ToolHandler }> | undefined = srvAny?.tools;
   if (toolsMap?.has(confirmToolName)) {
     log?.debug?.(`[PayMCP:TwoStep] confirm tool already registered.`);
     return confirmToolName;
@@ -82,10 +76,7 @@ function ensureConfirmTool(
   };
 
   // Confirmation handler: verify payment, retrieve saved args, invoke original tool.
-  const confirmHandler: ToolHandler = async (
-    paramsOrExtra: any,
-    maybeExtra?: any,
-  ) => {
+  const confirmHandler: ToolHandler = async (paramsOrExtra: any, maybeExtra?: any) => {
     const hasArgs = arguments.length === 2;
     const params = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : paramsOrExtra;
@@ -100,9 +91,9 @@ function ensureConfirmTool(
 
     if (!paymentId) {
       return {
-        content: [{ type: "text", text: "Missing payment_id." }],
-        status: "error",
-        message: "Missing payment_id",
+        content: [{ type: 'text', text: 'Missing payment_id.' }],
+        status: 'error',
+        message: 'Missing payment_id',
       };
     }
 
@@ -115,14 +106,14 @@ function ensureConfirmTool(
     const stored = await sessionStorage.get(sessionKey);
 
     log?.debug?.(
-      `[PayMCP:TwoStep] Looking up session with provider=${providerName} paymentId=${paymentId}`,
+      `[PayMCP:TwoStep] Looking up session with provider=${providerName} paymentId=${paymentId}`
     );
 
     if (!stored) {
       return {
-        content: [{ type: "text", text: "Unknown or expired payment_id." }],
-        status: "error",
-        message: "Unknown or expired payment_id",
+        content: [{ type: 'text', text: 'Unknown or expired payment_id.' }],
+        status: 'error',
+        message: 'Unknown or expired payment_id',
         payment_id: paymentId,
       };
     }
@@ -131,33 +122,31 @@ function ensureConfirmTool(
     let status: string;
     try {
       status = await provider.getPaymentStatus(paymentId);
-      log?.debug?.(
-        `[PayMCP:TwoStep] provider.getPaymentStatus(${paymentId}) -> ${status}`,
-      );
+      log?.debug?.(`[PayMCP:TwoStep] provider.getPaymentStatus(${paymentId}) -> ${status}`);
     } catch (err) {
       return {
         content: [
           {
-            type: "text",
+            type: 'text',
             text: `Failed to check payment status: ${(err as Error).message}`,
           },
         ],
-        status: "error",
-        message: "Failed to check payment status",
+        status: 'error',
+        message: 'Failed to check payment status',
         payment_id: paymentId,
       };
     }
 
     const statusLc = String(status).toLowerCase();
-    if (statusLc !== "paid") {
+    if (statusLc !== 'paid') {
       return {
         content: [
           {
-            type: "text",
+            type: 'text',
             text: `Payment status is ${status}, expected 'paid'.`,
           },
         ],
-        status: "error",
+        status: 'error',
         message: `Payment status is ${status}, expected 'paid'`,
         payment_id: paymentId,
       };
@@ -165,20 +154,16 @@ function ensureConfirmTool(
 
     // We're good—consume stored args and call original.
     await sessionStorage.delete(sessionKey);
-    log?.info?.(
-      `[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`,
-    );
+    log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
     const toolResult = await callOriginal(
       originalHandler,
       stored.args,
-      extra /* pass confirm extra */,
+      extra /* pass confirm extra */
     );
     // If toolResult missing content, synthesize one.
     if (!toolResult || !Array.isArray((toolResult as any).content)) {
       return {
-        content: [
-          { type: "text", text: "Tool completed after confirmed payment." },
-        ],
+        content: [{ type: 'text', text: 'Tool completed after confirmed payment.' }],
         raw: toolResult,
       };
     }
@@ -193,7 +178,7 @@ function ensureConfirmTool(
       description: `Confirm payment and execute ${toolName}()`,
       inputSchema,
     },
-    confirmHandler,
+    confirmHandler
   );
 
   return confirmToolName;
@@ -205,34 +190,26 @@ export const makePaidWrapper: PaidWrapperFactory = (
   provider: BasePaymentProvider,
   priceInfo: PriceConfig,
   toolName: string,
-  logger?: Logger,
+  logger?: Logger
 ) => {
   const log: Logger = logger ?? (provider as any).logger ?? console;
 
   // Eagerly register confirm tool so the client sees it in the initial tool list.
   // (Matches Python behaviour where @mcp.tool registers at import time.)
-  const confirmToolName = ensureConfirmTool(
-    server,
-    provider,
-    toolName,
-    func,
-    log,
-  );
+  const confirmToolName = ensureConfirmTool(server, provider, toolName, func, log);
 
   async function twoStepWrapper(paramsOrExtra: any, maybeExtra?: any) {
     const hasArgs = arguments.length === 2;
     const toolArgs = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : paramsOrExtra;
 
-    log?.debug?.(
-      `[PayMCP:TwoStep] initiate wrapper invoked for ${toolName}, hasArgs=${hasArgs}`,
-    );
+    log?.debug?.(`[PayMCP:TwoStep] initiate wrapper invoked for ${toolName}, hasArgs=${hasArgs}`);
 
     // Create payment.
     const { paymentId, paymentUrl } = await provider.createPayment(
       priceInfo.amount,
       priceInfo.currency,
-      `${toolName}() execution fee`,
+      `${toolName}() execution fee`
     );
 
     const pidStr = String(paymentId);
@@ -254,11 +231,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     await sessionStorage.set(sessionKey, sessionData, 900); // 15 minutes TTL
 
     // Build message shown to user / LLM.
-    const _message = paymentPromptMessage(
-      paymentUrl,
-      priceInfo.amount,
-      priceInfo.currency,
-    );
+    const _message = paymentPromptMessage(paymentUrl, priceInfo.amount, priceInfo.currency);
 
     const message = JSON.stringify({
       message: _message,
@@ -268,19 +241,19 @@ export const makePaidWrapper: PaidWrapperFactory = (
     });
 
     log?.info?.(
-      `[PayMCP:TwoStep] payment initiated pid=${pidStr} url=${paymentUrl} next=${confirmToolName}`,
+      `[PayMCP:TwoStep] payment initiated pid=${pidStr} url=${paymentUrl} next=${confirmToolName}`
     );
 
     // Return step‑1 response. Include content to satisfy MCP schemas.
     return {
       // Human-facing message (shown in most MCP UIs)
-      content: [{ type: "text", text: message }],
+      content: [{ type: 'text', text: message }],
       // Machine-friendly payload (FastMCP Python will expose this as `structured_content`)
       structured_content: {
         payment_url: paymentUrl,
         payment_id: pidStr,
         next_step: confirmToolName,
-        status: "payment_required",
+        status: 'payment_required',
         amount: priceInfo.amount,
         currency: priceInfo.currency,
       },
@@ -289,7 +262,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
         payment_url: paymentUrl,
         payment_id: pidStr,
         next_step: confirmToolName,
-        status: "payment_required",
+        status: 'payment_required',
         amount: priceInfo.amount,
         currency: priceInfo.currency,
       },

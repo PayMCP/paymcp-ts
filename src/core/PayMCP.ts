@@ -1,17 +1,17 @@
-import { PayMCPOptions, PayToolConfig } from "../types/config.js";
-import { McpServerLike } from "../types/mcp.js";
-import { PaymentFlow } from "../types/payment.js";
-import { buildProviders, ProviderInstances } from "../providers/index.js";
-import { appendPriceToDescription } from "../utils/messages.js";
-import { makeFlow } from "../flows/index.js";
-import { SessionManager } from "../session/manager.js";
+import { PayMCPOptions, PayToolConfig } from '../types/config.js';
+import { McpServerLike } from '../types/mcp.js';
+import { PaymentFlow } from '../types/payment.js';
+import { buildProviders, ProviderInstances } from '../providers/index.js';
+import { appendPriceToDescription } from '../utils/messages.js';
+import { makeFlow } from '../flows/index.js';
+import { SessionManager } from '../session/manager.js';
 
 export class PayMCP {
   private server: McpServerLike;
   private providers: ProviderInstances;
   private flow: PaymentFlow;
   private wrapperFactory: ReturnType<typeof makeFlow>;
-  private originalRegisterTool: McpServerLike["registerTool"];
+  private originalRegisterTool: McpServerLike['registerTool'];
   private installed = false;
 
   constructor(server: McpServerLike, opts: PayMCPOptions) {
@@ -50,7 +50,7 @@ export class PayMCP {
     function patchedRegisterTool(
       name: string,
       config: PayToolConfig,
-      handler: (...args: any[]) => Promise<any> | any,
+      handler: (...args: any[]) => Promise<any> | any
     ) {
       const price = config?.price;
       let wrapped = handler;
@@ -59,9 +59,7 @@ export class PayMCP {
         // pick the first provider (or a specific one by name? TBD)
         const provider = Object.values(self.providers)[0];
         if (!provider) {
-          throw new Error(
-            `[PayMCP] No payment provider configured (tool: ${name}).`,
-          );
+          throw new Error(`[PayMCP] No payment provider configured (tool: ${name}).`);
         }
 
         // append price to the description
@@ -71,13 +69,7 @@ export class PayMCP {
         };
 
         // wrap the handler in a payment flow
-        wrapped = self.wrapperFactory(
-          handler,
-          self.server,
-          provider,
-          price,
-          name,
-        );
+        wrapped = self.wrapperFactory(handler, self.server, provider, price, name);
       }
 
       return self.originalRegisterTool(name, config, wrapped);
@@ -107,9 +99,6 @@ export class PayMCP {
   }
 }
 
-export function installPayMCP(
-  server: McpServerLike,
-  opts: PayMCPOptions,
-): PayMCP {
+export function installPayMCP(server: McpServerLike, opts: PayMCPOptions): PayMCP {
   return new PayMCP(server, opts);
 }

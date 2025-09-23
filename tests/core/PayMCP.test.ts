@@ -2,26 +2,26 @@
  * @fileoverview Tests for core PayMCP functionality
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { PayMCP } from "../../src/core/PayMCP.js";
-import { PaymentFlow } from "../../src/types/payment.js";
-import type { McpServerLike } from "../../src/types/mcp.js";
-import type { PayMCPOptions } from "../../src/types/config.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { PayMCP } from '../../src/core/PayMCP.js';
+import { PaymentFlow } from '../../src/types/payment.js';
+import type { McpServerLike } from '../../src/types/mcp.js';
+import type { PayMCPOptions } from '../../src/types/config.js';
 
 // Mock providers
-vi.mock("../../src/providers/stripe", () => ({
+vi.mock('../../src/providers/stripe', () => ({
   StripeProvider: vi.fn().mockImplementation(() => ({
-    getName: () => "stripe",
+    getName: () => 'stripe',
     createPayment: vi.fn().mockResolvedValue({
-      paymentId: "pi_test123",
-      paymentUrl: "https://checkout.stripe.com/pay/cs_test123",
+      paymentId: 'pi_test123',
+      paymentUrl: 'https://checkout.stripe.com/pay/cs_test123',
     }),
-    getPaymentStatus: vi.fn().mockResolvedValue("pending"),
+    getPaymentStatus: vi.fn().mockResolvedValue('pending'),
     buildHeaders: vi.fn().mockReturnValue({}),
   })),
 }));
 
-describe("PayMCP", () => {
+describe('PayMCP', () => {
   let mockServer: anyed<McpServerLike>;
   let basicConfig: PayMCPOptions;
   let paymcpInstances: PayMCP[] = [];
@@ -36,7 +36,7 @@ describe("PayMCP", () => {
     basicConfig = {
       providers: {
         stripe: {
-          apiKey: "sk_test_123",
+          apiKey: 'sk_test_123',
         },
       },
     };
@@ -46,8 +46,8 @@ describe("PayMCP", () => {
 
   afterEach(() => {
     // Clean up all PayMCP instances
-    paymcpInstances.forEach((instance) => {
-      if (instance && typeof instance.uninstall === "function") {
+    paymcpInstances.forEach(instance => {
+      if (instance && typeof instance.uninstall === 'function') {
         instance.uninstall();
       }
     });
@@ -62,15 +62,15 @@ describe("PayMCP", () => {
     return instance;
   };
 
-  describe("constructor", () => {
-    it("should initialize with default configuration", () => {
+  describe('constructor', () => {
+    it('should initialize with default configuration', () => {
       const paymcp = createPayMCP(mockServer, basicConfig);
 
       expect(paymcp).toBeDefined();
       expect(paymcp.getServer()).toBe(mockServer);
     });
 
-    it("should initialize with custom payment flow", () => {
+    it('should initialize with custom payment flow', () => {
       const configWithFlow: PayMCPOptions = {
         ...basicConfig,
         paymentFlow: PaymentFlow.PROGRESS,
@@ -81,11 +81,11 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should handle multiple providers", () => {
+    it('should handle multiple providers', () => {
       const multiProviderConfig: PayMCPOptions = {
         providers: {
-          stripe: { apiKey: "sk_test_stripe" },
-          paypal: { apiKey: "client_id:client_secret" },
+          stripe: { apiKey: 'sk_test_stripe' },
+          paypal: { apiKey: 'client_id:client_secret' },
         },
       };
 
@@ -94,7 +94,7 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should handle empty providers configuration", () => {
+    it('should handle empty providers configuration', () => {
       const emptyConfig: PayMCPOptions = {
         providers: {},
       };
@@ -104,14 +104,14 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should use default payment flow when not specified", () => {
+    it('should use default payment flow when not specified', () => {
       const paymcp = createPayMCP(mockServer, basicConfig);
 
       expect(paymcp).toBeDefined();
       // Default should be TWO_STEP
     });
 
-    it("should handle implemented payment flow types", () => {
+    it('should handle implemented payment flow types', () => {
       const flows = [
         PaymentFlow.TWO_STEP,
         PaymentFlow.ELICITATION,
@@ -119,7 +119,7 @@ describe("PayMCP", () => {
         // OOB is not implemented yet
       ];
 
-      flows.forEach((flow) => {
+      flows.forEach(flow => {
         const config: PayMCPOptions = {
           ...basicConfig,
           paymentFlow: flow,
@@ -129,20 +129,18 @@ describe("PayMCP", () => {
       });
     });
 
-    it("should throw for unimplemented OOB flow", () => {
+    it('should throw for unimplemented OOB flow', () => {
       const config: PayMCPOptions = {
         ...basicConfig,
         paymentFlow: PaymentFlow.OOB,
       };
 
-      expect(() => createPayMCP(mockServer, config)).toThrow(
-        "Unknown payment flow: OOB",
-      );
+      expect(() => createPayMCP(mockServer, config)).toThrow('Unknown payment flow: OOB');
     });
   });
 
-  describe("payment flow selection", () => {
-    it("should handle TWO_STEP flow", () => {
+  describe('payment flow selection', () => {
+    it('should handle TWO_STEP flow', () => {
       const config: PayMCPOptions = {
         ...basicConfig,
         paymentFlow: PaymentFlow.TWO_STEP,
@@ -152,7 +150,7 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should handle ELICITATION flow", () => {
+    it('should handle ELICITATION flow', () => {
       const config: PayMCPOptions = {
         ...basicConfig,
         paymentFlow: PaymentFlow.ELICITATION,
@@ -162,7 +160,7 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should handle PROGRESS flow", () => {
+    it('should handle PROGRESS flow', () => {
       const config: PayMCPOptions = {
         ...basicConfig,
         paymentFlow: PaymentFlow.PROGRESS,
@@ -172,24 +170,22 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should throw for OOB flow (not implemented)", () => {
+    it('should throw for OOB flow (not implemented)', () => {
       const config: PayMCPOptions = {
         ...basicConfig,
         paymentFlow: PaymentFlow.OOB,
       };
 
-      expect(() => createPayMCP(mockServer, config)).toThrow(
-        "Unknown payment flow: OOB",
-      );
+      expect(() => createPayMCP(mockServer, config)).toThrow('Unknown payment flow: OOB');
     });
   });
 
-  describe("provider configuration", () => {
-    it("should handle stripe provider configuration", () => {
+  describe('provider configuration', () => {
+    it('should handle stripe provider configuration', () => {
       const config: PayMCPOptions = {
         providers: {
           stripe: {
-            apiKey: "sk_test_stripe_key",
+            apiKey: 'sk_test_stripe_key',
           },
         },
       };
@@ -198,11 +194,11 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should handle paypal provider configuration", () => {
+    it('should handle paypal provider configuration', () => {
       const config: PayMCPOptions = {
         providers: {
           paypal: {
-            apiKey: "client_id:client_secret:sandbox",
+            apiKey: 'client_id:client_secret:sandbox',
           },
         },
       };
@@ -211,11 +207,11 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should handle square provider configuration", () => {
+    it('should handle square provider configuration', () => {
       const config: PayMCPOptions = {
         providers: {
           square: {
-            apiKey: "sandbox_token:location_id:sandbox",
+            apiKey: 'sandbox_token:location_id:sandbox',
           },
         },
       };
@@ -224,11 +220,11 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should handle adyen provider configuration", () => {
+    it('should handle adyen provider configuration', () => {
       const config: PayMCPOptions = {
         providers: {
           adyen: {
-            apiKey: "test_api_key:test_merchant:sandbox",
+            apiKey: 'test_api_key:test_merchant:sandbox',
           },
         },
       };
@@ -237,11 +233,11 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should handle coinbase provider configuration", () => {
+    it('should handle coinbase provider configuration', () => {
       const config: PayMCPOptions = {
         providers: {
           coinbase: {
-            apiKey: "test_coinbase_api_key",
+            apiKey: 'test_coinbase_api_key',
           },
         },
       };
@@ -250,11 +246,11 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should handle walleot provider configuration", () => {
+    it('should handle walleot provider configuration', () => {
       const config: PayMCPOptions = {
         providers: {
           walleot: {
-            apiKey: "test_walleot_key",
+            apiKey: 'test_walleot_key',
           },
         },
       };
@@ -264,12 +260,12 @@ describe("PayMCP", () => {
     });
   });
 
-  describe("error handling", () => {
-    it("should handle invalid provider configuration gracefully", () => {
+  describe('error handling', () => {
+    it('should handle invalid provider configuration gracefully', () => {
       const invalidConfig: PayMCPOptions = {
         providers: {
           invalid_provider: {
-            apiKey: "test_key",
+            apiKey: 'test_key',
           },
         } as any,
       };
@@ -277,21 +273,21 @@ describe("PayMCP", () => {
       expect(() => createPayMCP(mockServer, invalidConfig)).toThrow();
     });
 
-    it("should handle missing server parameter", () => {
+    it('should handle missing server parameter', () => {
       expect(() => createPayMCP(null as any, basicConfig)).toThrow();
     });
 
-    it("should handle missing config parameter", () => {
+    it('should handle missing config parameter', () => {
       expect(() => createPayMCP(mockServer, null as any)).toThrow();
     });
 
-    it("should handle undefined config", () => {
+    it('should handle undefined config', () => {
       expect(() => createPayMCP(mockServer, undefined as any)).toThrow();
     });
   });
 
-  describe("integration", () => {
-    it("should integrate with server registration", () => {
+  describe('integration', () => {
+    it('should integrate with server registration', () => {
       // Reset the mock to track calls
       mockServer.registerTool.mockClear();
 
@@ -302,12 +298,12 @@ describe("PayMCP", () => {
       expect(paymcp.getServer()).toBe(mockServer);
     });
 
-    it("should handle complex configurations", () => {
+    it('should handle complex configurations', () => {
       const complexConfig: PayMCPOptions = {
         providers: {
-          stripe: { apiKey: "sk_test_stripe" },
-          paypal: { apiKey: "paypal_client:paypal_secret:sandbox" },
-          square: { apiKey: "square_token:location_123:sandbox" },
+          stripe: { apiKey: 'sk_test_stripe' },
+          paypal: { apiKey: 'paypal_client:paypal_secret:sandbox' },
+          square: { apiKey: 'square_token:location_123:sandbox' },
         },
         paymentFlow: PaymentFlow.ELICITATION,
       };
@@ -316,15 +312,15 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should maintain server reference", () => {
+    it('should maintain server reference', () => {
       const paymcp = createPayMCP(mockServer, basicConfig);
 
       expect(paymcp.getServer()).toBe(mockServer);
     });
   });
 
-  describe("edge cases", () => {
-    it("should handle empty provider objects", () => {
+  describe('edge cases', () => {
+    it('should handle empty provider objects', () => {
       const config: PayMCPOptions = {
         providers: {
           stripe: {} as any,
@@ -336,7 +332,7 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should handle null payment flow", () => {
+    it('should handle null payment flow', () => {
       const config: PayMCPOptions = {
         ...basicConfig,
         paymentFlow: null as any,
@@ -346,7 +342,7 @@ describe("PayMCP", () => {
       expect(paymcp).toBeDefined();
     });
 
-    it("should handle very large provider configurations", () => {
+    it('should handle very large provider configurations', () => {
       const largeConfig: PayMCPOptions = {
         providers: {},
       };

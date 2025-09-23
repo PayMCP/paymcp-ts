@@ -1,9 +1,9 @@
-import { type Logger } from "../types/logger.js";
-import { type CreatePaymentResult } from "../types/payment.js";
-import { BasePaymentProvider } from "./base.js";
+import { type Logger } from '../types/logger.js';
+import { type CreatePaymentResult } from '../types/payment.js';
+import { BasePaymentProvider } from './base.js';
 
-const SANDBOX_URL = "https://connect.squareupsandbox.com";
-const PRODUCTION_URL = "https://connect.squareup.com";
+const SANDBOX_URL = 'https://connect.squareupsandbox.com';
+const PRODUCTION_URL = 'https://connect.squareup.com';
 
 /**
  * Square Checkout provider.
@@ -59,18 +59,18 @@ export class SquareProvider extends BasePaymentProvider {
     let parsedOpts: SquareProviderOpts;
 
     // Handle standard provider interface (apiKey format)
-    if ("apiKey" in opts) {
-      const parts = opts.apiKey.split(":");
+    if ('apiKey' in opts) {
+      const parts = opts.apiKey.split(':');
       if (parts.length < 3) {
         throw new Error(
-          '[SquareProvider] apiKey must be in format "accessToken:locationId:sandbox"',
+          '[SquareProvider] apiKey must be in format "accessToken:locationId:sandbox"'
         );
       }
 
       parsedOpts = {
         accessToken: parts[0],
         locationId: parts[1],
-        sandbox: parts[2] === "sandbox",
+        sandbox: parts[2] === 'sandbox',
         logger: opts.logger,
       };
     } else {
@@ -79,22 +79,21 @@ export class SquareProvider extends BasePaymentProvider {
     }
 
     // Square uses access token, but we pass empty string to base
-    super("", parsedOpts.logger);
+    super('', parsedOpts.logger);
 
     this.accessToken = parsedOpts.accessToken;
     this.locationId = parsedOpts.locationId;
     this.baseUrl = parsedOpts.sandbox !== false ? SANDBOX_URL : PRODUCTION_URL;
-    this.redirectUrl = parsedOpts.redirectUrl ?? "https://example.com/success";
-    this.apiVersion =
-      parsedOpts.apiVersion ?? process.env.SQUARE_API_VERSION ?? "2025-03-19";
+    this.redirectUrl = parsedOpts.redirectUrl ?? 'https://example.com/success';
+    this.apiVersion = parsedOpts.apiVersion ?? process.env.SQUARE_API_VERSION ?? '2025-03-19';
 
     this.logger.debug(
-      `[SquareProvider] ready - locationId: ${this.locationId}, apiVersion: ${this.apiVersion}`,
+      `[SquareProvider] ready - locationId: ${this.locationId}, apiVersion: ${this.apiVersion}`
     );
   }
 
   getName(): string {
-    return "square";
+    return 'square';
   }
 
   /**
@@ -103,19 +102,15 @@ export class SquareProvider extends BasePaymentProvider {
   protected override buildHeaders(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.accessToken}`,
-      "Content-Type": "application/json",
-      "Square-Version": this.apiVersion, // Use configurable API version
+      'Content-Type': 'application/json',
+      'Square-Version': this.apiVersion, // Use configurable API version
     };
   }
 
   /**
    * Override request to use JSON for Square.
    */
-  protected override async request<T>(
-    method: string,
-    url: string,
-    data?: any,
-  ): Promise<T> {
+  protected override async request<T>(method: string, url: string, data?: any): Promise<T> {
     const headers = this.buildHeaders();
 
     const options: RequestInit = {
@@ -123,7 +118,7 @@ export class SquareProvider extends BasePaymentProvider {
       headers,
     };
 
-    if (data && method !== "GET") {
+    if (data && method !== 'GET') {
       options.body = JSON.stringify(data);
     }
 
@@ -144,11 +139,11 @@ export class SquareProvider extends BasePaymentProvider {
   async createPayment(
     amount: number,
     currency: string,
-    description: string,
+    description: string
   ): Promise<CreatePaymentResult> {
     const cents = this.toSquareAmount(amount);
     this.logger.debug(
-      `[SquareProvider] createPayment ${amount} ${currency} (${cents}) "${description}"`,
+      `[SquareProvider] createPayment ${amount} ${currency} (${cents}) "${description}"`
     );
 
     // Generate idempotency key for Square (required for payment creation)
@@ -167,23 +162,17 @@ export class SquareProvider extends BasePaymentProvider {
       },
     };
 
-    this.logger.debug(
-      `[SquareProvider] Sending payload: ${JSON.stringify(payload, null, 2)}`,
-    );
-    this.logger.debug(
-      `[SquareProvider] Location ID in payload: ${this.locationId}`,
-    );
+    this.logger.debug(`[SquareProvider] Sending payload: ${JSON.stringify(payload, null, 2)}`);
+    this.logger.debug(`[SquareProvider] Location ID in payload: ${this.locationId}`);
 
     const response = await this.request<SquarePaymentLinkResponse>(
-      "POST",
+      'POST',
       `${this.baseUrl}/v2/online-checkout/payment-links`,
-      payload,
+      payload
     );
 
     if (!response?.payment_link?.id || !response?.payment_link?.url) {
-      throw new Error(
-        "[SquareProvider] Invalid response from Square Payment Links API",
-      );
+      throw new Error('[SquareProvider] Invalid response from Square Payment Links API');
     }
 
     return {
@@ -204,46 +193,45 @@ export class SquareProvider extends BasePaymentProvider {
     try {
       // Get the payment link to find the order ID
       const paymentLinkResponse = await this.request<SquarePaymentLinkResponse>(
-        "GET",
-        `${this.baseUrl}/v2/online-checkout/payment-links/${paymentId}`,
+        'GET',
+        `${this.baseUrl}/v2/online-checkout/payment-links/${paymentId}`
       );
 
       if (!paymentLinkResponse?.payment_link?.order_id) {
-        return "pending";
+        return 'pending';
       }
 
       const orderId = paymentLinkResponse.payment_link.order_id;
 
       // Check the order status
       const orderResponse = await this.request<any>(
-        "GET",
-        `${this.baseUrl}/v2/orders/${orderId}?location_id=${this.locationId}`,
+        'GET',
+        `${this.baseUrl}/v2/orders/${orderId}?location_id=${this.locationId}`
       );
 
       // Check if order is fully paid by looking at net_amount_due
-      const netAmountDue =
-        orderResponse?.order?.net_amount_due_money?.amount ?? null;
+      const netAmountDue = orderResponse?.order?.net_amount_due_money?.amount ?? null;
 
       // If net amount due is 0, the order is fully paid
       if (netAmountDue === 0) {
-        return "paid";
+        return 'paid';
       }
 
       // Map Square order state to unified status
       switch (orderResponse?.order?.state) {
-        case "COMPLETED":
-          return "paid";
-        case "CANCELED":
-          return "canceled";
-        case "OPEN":
-        case "DRAFT":
+        case 'COMPLETED':
+          return 'paid';
+        case 'CANCELED':
+          return 'canceled';
+        case 'OPEN':
+        case 'DRAFT':
         default:
-          return "pending";
+          return 'pending';
       }
     } catch (error) {
       this.logger.error(`[SquareProvider] Error checking status:`, error);
       // If we can't check status, assume it's still pending
-      return "pending";
+      return 'pending';
     }
   }
 

@@ -21,6 +21,6 @@ export interface ISessionStorage {
 }
 
 export interface SessionStorageConfig {
-  type: "memory" | "redis" | "custom";
+  type: 'memory' | 'redis' | 'custom';
   options?: Record<string, any>;
 }

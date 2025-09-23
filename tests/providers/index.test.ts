@@ -1,67 +1,67 @@
-import { describe, it, expect, vi } from "vitest";
-import { buildProviders } from "../../src/providers/index";
+import { describe, it, expect, vi } from 'vitest';
+import { buildProviders } from '../../src/providers/index';
 
-describe("Provider Builder", () => {
-  describe("buildProviders", () => {
-    it("should build stripe provider", () => {
+describe('Provider Builder', () => {
+  describe('buildProviders', () => {
+    it('should build stripe provider', () => {
       const providers = buildProviders({
-        stripe: { apiKey: "sk_test_123" },
+        stripe: { apiKey: 'sk_test_123' },
       });
 
       expect(providers.stripe).toBeDefined();
-      expect(providers.stripe.getName()).toBe("stripe");
+      expect(providers.stripe.getName()).toBe('stripe');
     });
 
-    it("should build paypal provider", () => {
+    it('should build paypal provider', () => {
       const providers = buildProviders({
-        paypal: { apiKey: "client:secret:sandbox" },
+        paypal: { apiKey: 'client:secret:sandbox' },
       });
 
       expect(providers.paypal).toBeDefined();
-      expect(providers.paypal.getName()).toBe("paypal");
+      expect(providers.paypal.getName()).toBe('paypal');
     });
 
-    it("should build square provider", () => {
+    it('should build square provider', () => {
       const providers = buildProviders({
-        square: { apiKey: "token:location:sandbox" },
+        square: { apiKey: 'token:location:sandbox' },
       });
 
       expect(providers.square).toBeDefined();
-      expect(providers.square.getName()).toBe("square");
+      expect(providers.square.getName()).toBe('square');
     });
 
-    it("should build adyen provider", () => {
+    it('should build adyen provider', () => {
       const providers = buildProviders({
-        adyen: { apiKey: "key:merchant:sandbox" },
+        adyen: { apiKey: 'key:merchant:sandbox' },
       });
 
       expect(providers.adyen).toBeDefined();
-      expect(providers.adyen.getName()).toBe("adyen");
+      expect(providers.adyen.getName()).toBe('adyen');
     });
 
-    it("should build coinbase provider", () => {
+    it('should build coinbase provider', () => {
       const providers = buildProviders({
-        coinbase: { apiKey: "test_key" },
+        coinbase: { apiKey: 'test_key' },
       });
 
       expect(providers.coinbase).toBeDefined();
-      expect(providers.coinbase.getName()).toBe("coinbase");
+      expect(providers.coinbase.getName()).toBe('coinbase');
     });
 
-    it("should build walleot provider", () => {
+    it('should build walleot provider', () => {
       const providers = buildProviders({
-        walleot: { apiKey: "test_key" },
+        walleot: { apiKey: 'test_key' },
       });
 
       expect(providers.walleot).toBeDefined();
-      expect(providers.walleot.getName()).toBe("walleot");
+      expect(providers.walleot.getName()).toBe('walleot');
     });
 
-    it("should build multiple providers", () => {
+    it('should build multiple providers', () => {
       const providers = buildProviders({
-        stripe: { apiKey: "sk_test_123" },
-        paypal: { apiKey: "client:secret:sandbox" },
-        square: { apiKey: "token:location:sandbox" },
+        stripe: { apiKey: 'sk_test_123' },
+        paypal: { apiKey: 'client:secret:sandbox' },
+        square: { apiKey: 'token:location:sandbox' },
       });
 
       expect(Object.keys(providers)).toHaveLength(3);
@@ -70,22 +70,22 @@ describe("Provider Builder", () => {
       expect(providers.square).toBeDefined();
     });
 
-    it("should handle empty configuration", () => {
+    it('should handle empty configuration', () => {
       const providers = buildProviders({});
 
       expect(providers).toEqual({});
       expect(Object.keys(providers)).toHaveLength(0);
     });
 
-    it("should throw for unknown provider", () => {
+    it('should throw for unknown provider', () => {
       expect(() => {
         buildProviders({
-          unknown_provider: { apiKey: "test" },
+          unknown_provider: { apiKey: 'test' },
         } as any);
-      }).toThrow("Unknown provider: unknown_provider");
+      }).toThrow('Unknown provider: unknown_provider');
     });
 
-    it("should pass logger to providers if provided", () => {
+    it('should pass logger to providers if provided', () => {
       const logger = {
         debug: vi.fn(),
         info: vi.fn(),
@@ -94,7 +94,7 @@ describe("Provider Builder", () => {
       };
 
       const providers = buildProviders({
-        stripe: { apiKey: "sk_test_123", logger },
+        stripe: { apiKey: 'sk_test_123', logger },
       });
 
       expect(providers.stripe).toBeDefined();
@@ -102,20 +102,20 @@ describe("Provider Builder", () => {
       expect(logger.debug).toHaveBeenCalled();
     });
 
-    it("should create provider even with missing apiKey", () => {
+    it('should create provider even with missing apiKey', () => {
       // The buildProviders function doesn't validate apiKey presence,
       // it passes the options to the provider constructor which accepts undefined
       const providers = buildProviders({
         stripe: {} as any,
       });
       expect(providers.stripe).toBeDefined();
-      expect(providers.stripe.getName()).toBe("stripe");
+      expect(providers.stripe.getName()).toBe('stripe');
     });
 
-    it("should handle provider with invalid configuration", () => {
+    it('should handle provider with invalid configuration', () => {
       expect(() => {
         buildProviders({
-          paypal: { apiKey: "invalid" }, // Missing required parts
+          paypal: { apiKey: 'invalid' }, // Missing required parts
         });
       }).toThrow();
     });

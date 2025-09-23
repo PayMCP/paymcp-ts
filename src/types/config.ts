@@ -1,5 +1,5 @@
-import { PaymentFlow } from "./payment.js";
-import { type Logger } from "../types/logger.js";
+import { PaymentFlow } from './payment.js';
+import { type Logger } from '../types/logger.js';
 
 export interface PriceConfig {
   amount: number;
@@ -21,10 +21,7 @@ export interface PayMCPOptions {
 
 export interface ToolExtraLike {
   // Provided by Protocol to tool handlers. See Server.setRequestHandler in the TS SDK. citeturn5view0
-  sendRequest?: (
-    req: { method: string; params?: any },
-    resultSchema?: unknown,
-  ) => Promise<any>;
+  sendRequest?: (req: { method: string; params?: any }, resultSchema?: unknown) => Promise<any>;
   sendNotification?: (note: { method: string; params?: any }) => Promise<any>;
   sessionId?: string;
   requestId?: number | string;

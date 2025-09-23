@@ -1,11 +1,11 @@
-import { WalleotProvider } from "./walleot.js";
-import { StripeProvider } from "./stripe.js";
-import { PayPalProvider } from "./paypal.js";
-import { SquareProvider } from "./square.js";
-import type { BasePaymentProvider } from "./base.js";
-import { type Logger } from "../types/logger.js";
-import { AdyenProvider } from "./adyen.js";
-import { CoinbaseProvider } from "./coinbase.js";
+import { WalleotProvider } from './walleot.js';
+import { StripeProvider } from './stripe.js';
+import { PayPalProvider } from './paypal.js';
+import { SquareProvider } from './square.js';
+import type { BasePaymentProvider } from './base.js';
+import { type Logger } from '../types/logger.js';
+import { AdyenProvider } from './adyen.js';
+import { CoinbaseProvider } from './coinbase.js';
 
 /** Registry of known providers. */
 const PROVIDER_MAP: Record<
@@ -43,7 +43,7 @@ export function buildProviders(
       merchantAccount?: string;
       logger?: Logger;
     }
-  >,
+  >
 ): ProviderInstances {
   const instances: ProviderInstances = {};
   for (const [name, opts] of Object.entries(config)) {

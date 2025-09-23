@@ -7,11 +7,7 @@
  * only when `retrofitExisting` is enabled; it's best‑effort and safe to omit.
  */
 export interface McpServerLike {
-  registerTool(
-    name: string,
-    config: any,
-    handler: (...args: any[]) => Promise<any> | any,
-  ): any;
+  registerTool(name: string, config: any, handler: (...args: any[]) => Promise<any> | any): any;
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore -- some servers expose a Map<string, {config, handler}>
   tools?: Map<string, { config: any; handler: (...args: any[]) => any }>;

@@ -1,28 +1,28 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { makePaidWrapper } from "../../src/flows/progress";
-import { BasePaymentProvider } from "../../src/providers/base";
-import { SessionManager } from "../../src/session/manager";
-import type { McpServerLike } from "../../src/types/mcp";
-import type { Price } from "../../src/types/payment";
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { makePaidWrapper } from '../../src/flows/progress';
+import { BasePaymentProvider } from '../../src/providers/base';
+import { SessionManager } from '../../src/session/manager';
+import type { McpServerLike } from '../../src/types/mcp';
+import type { Price } from '../../src/types/payment';
 
 class MockProvider extends BasePaymentProvider {
   getName() {
-    return "mock";
+    return 'mock';
   }
 
   async createPayment(amount: number, currency: string, description: string) {
     return {
-      paymentId: "mock_payment_123",
-      paymentUrl: "https://mock.payment.com/pay/123",
+      paymentId: 'mock_payment_123',
+      paymentUrl: 'https://mock.payment.com/pay/123',
     };
   }
 
   async getPaymentStatus(paymentId: string) {
-    return "paid";
+    return 'paid';
   }
 }
 
-describe("ProgressFlow", () => {
+describe('ProgressFlow', () => {
   let mockServer: McpServerLike;
   let mockProvider: MockProvider;
   let originalFunc: any;
@@ -35,15 +35,15 @@ describe("ProgressFlow", () => {
       requestElicitation: vi.fn(),
     } as any;
 
-    mockProvider = new MockProvider("test_key");
-    vi.spyOn(mockProvider, "createPayment");
-    vi.spyOn(mockProvider, "getPaymentStatus");
+    mockProvider = new MockProvider('test_key');
+    vi.spyOn(mockProvider, 'createPayment');
+    vi.spyOn(mockProvider, 'getPaymentStatus');
 
     originalFunc = vi.fn().mockResolvedValue({
-      content: [{ type: "text", text: "Success" }],
+      content: [{ type: 'text', text: 'Success' }],
     });
 
-    price = { amount: 10.0, currency: "USD" };
+    price = { amount: 10.0, currency: 'USD' };
   });
 
   afterEach(() => {
@@ -51,28 +51,16 @@ describe("ProgressFlow", () => {
     vi.clearAllMocks();
   });
 
-  it("should create progress wrapper", () => {
-    const wrapper = makePaidWrapper(
-      originalFunc,
-      mockServer,
-      mockProvider,
-      price,
-      "test_tool",
-    );
+  it('should create progress wrapper', () => {
+    const wrapper = makePaidWrapper(originalFunc, mockServer, mockProvider, price, 'test_tool');
     expect(wrapper).toBeDefined();
-    expect(typeof wrapper).toBe("function");
+    expect(typeof wrapper).toBe('function');
   });
 
-  it("should handle new payment with progress updates", async () => {
-    const wrapper = makePaidWrapper(
-      originalFunc,
-      mockServer,
-      mockProvider,
-      price,
-      "test_tool",
-    );
+  it('should handle new payment with progress updates', async () => {
+    const wrapper = makePaidWrapper(originalFunc, mockServer, mockProvider, price, 'test_tool');
 
-    const args = { test: "data" };
+    const args = { test: 'data' };
     const extra = {};
 
     vi.useFakeTimers();
@@ -88,8 +76,8 @@ describe("ProgressFlow", () => {
 
     expect(mockProvider.createPayment).toHaveBeenCalledWith(
       10.0,
-      "USD",
-      "test_tool() execution fee",
+      'USD',
+      'test_tool() execution fee'
     );
 
     // Progress is reported via extra object or logging, not directly through server
@@ -98,34 +86,28 @@ describe("ProgressFlow", () => {
 
     expect(originalFunc).toHaveBeenCalledWith(args, extra);
     expect(result).toEqual({
-      content: [{ type: "text", text: "Success" }],
+      content: [{ type: 'text', text: 'Success' }],
       annotations: {
         payment: {
-          status: "paid",
-          payment_id: "mock_payment_123",
+          status: 'paid',
+          payment_id: 'mock_payment_123',
         },
       },
     });
   }, 10000);
 
-  it("should poll for payment status", async () => {
-    const wrapper = makePaidWrapper(
-      originalFunc,
-      mockServer,
-      mockProvider,
-      price,
-      "test_tool",
-    );
+  it('should poll for payment status', async () => {
+    const wrapper = makePaidWrapper(originalFunc, mockServer, mockProvider, price, 'test_tool');
 
     // First return pending, then paid
     (mockProvider.getPaymentStatus as vi.Mock)
-      .mockResolvedValueOnce("pending")
-      .mockResolvedValueOnce("pending")
-      .mockResolvedValueOnce("paid");
+      .mockResolvedValueOnce('pending')
+      .mockResolvedValueOnce('pending')
+      .mockResolvedValueOnce('paid');
 
     vi.useFakeTimers();
 
-    const promise = wrapper({ test: "data" }, {});
+    const promise = wrapper({ test: 'data' }, {});
 
     // Run all timers to completion
     await vi.runOnlyPendingTimersAsync();
@@ -140,32 +122,26 @@ describe("ProgressFlow", () => {
 
     expect(originalFunc).toHaveBeenCalled();
     expect(result).toEqual({
-      content: [{ type: "text", text: "Success" }],
+      content: [{ type: 'text', text: 'Success' }],
       annotations: {
         payment: {
-          status: "paid",
-          payment_id: "mock_payment_123",
+          status: 'paid',
+          payment_id: 'mock_payment_123',
         },
       },
     });
   }, 10000);
 
-  it("should handle payment timeout", async () => {
-    const wrapper = makePaidWrapper(
-      originalFunc,
-      mockServer,
-      mockProvider,
-      price,
-      "test_tool",
-    );
+  it('should handle payment timeout', async () => {
+    const wrapper = makePaidWrapper(originalFunc, mockServer, mockProvider, price, 'test_tool');
 
     // Always return pending (will timeout)
-    (mockProvider.getPaymentStatus as vi.Mock).mockResolvedValue("pending");
+    (mockProvider.getPaymentStatus as vi.Mock).mockResolvedValue('pending');
 
     // Use fake timers
     vi.useFakeTimers();
 
-    const promise = wrapper({ test: "data" }, {});
+    const promise = wrapper({ test: 'data' }, {});
 
     // Run all timers until timeout
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
@@ -178,81 +154,57 @@ describe("ProgressFlow", () => {
       expect.objectContaining({
         content: expect.arrayContaining([
           expect.objectContaining({
-            type: "text",
-            text: expect.stringContaining("timeout"),
+            type: 'text',
+            text: expect.stringContaining('timeout'),
           }),
         ]),
-      }),
+      })
     );
 
     expect(originalFunc).not.toHaveBeenCalled();
   }, 10000);
 
-  it("should handle canceled payment", async () => {
-    const wrapper = makePaidWrapper(
-      originalFunc,
-      mockServer,
-      mockProvider,
-      price,
-      "test_tool",
-    );
+  it('should handle canceled payment', async () => {
+    const wrapper = makePaidWrapper(originalFunc, mockServer, mockProvider, price, 'test_tool');
 
-    (mockProvider.getPaymentStatus as vi.Mock).mockResolvedValue("canceled");
+    (mockProvider.getPaymentStatus as vi.Mock).mockResolvedValue('canceled');
 
-    const result = await wrapper({ test: "data" }, {});
+    const result = await wrapper({ test: 'data' }, {});
 
-    expect(result.content).toEqual([
-      { type: "text", text: "Payment canceled." },
-    ]);
-    expect(result.annotations?.payment?.status).toBe("canceled");
+    expect(result.content).toEqual([{ type: 'text', text: 'Payment canceled.' }]);
+    expect(result.annotations?.payment?.status).toBe('canceled');
 
     expect(originalFunc).not.toHaveBeenCalled();
   });
 
-  it("should handle payment creation failure", async () => {
-    const wrapper = makePaidWrapper(
-      originalFunc,
-      mockServer,
-      mockProvider,
-      price,
-      "test_tool",
-    );
+  it('should handle payment creation failure', async () => {
+    const wrapper = makePaidWrapper(originalFunc, mockServer, mockProvider, price, 'test_tool');
 
-    (mockProvider.createPayment as vi.Mock).mockRejectedValue(
-      new Error("Payment API error"),
-    );
+    (mockProvider.createPayment as vi.Mock).mockRejectedValue(new Error('Payment API error'));
 
-    await expect(wrapper({ test: "data" }, {})).rejects.toThrow(
-      "Payment API error",
-    );
+    await expect(wrapper({ test: 'data' }, {})).rejects.toThrow('Payment API error');
 
     expect(originalFunc).not.toHaveBeenCalled();
   });
 
-  it("should handle progress reporting errors gracefully", async () => {
-    const wrapper = makePaidWrapper(
-      originalFunc,
-      mockServer,
-      mockProvider,
-      price,
-      "test_tool",
-    );
+  it('should handle progress reporting errors gracefully', async () => {
+    const wrapper = makePaidWrapper(originalFunc, mockServer, mockProvider, price, 'test_tool');
 
     // Mock reportProgress to throw error
     (mockServer.reportProgress as vi.Mock).mockRejectedValue(
-      new Error("Progress reporting failed"),
+      new Error('Progress reporting failed')
     );
 
-    const result = await wrapper({ test: "data" }, {});
+    const result = await wrapper({ test: 'data' }, {});
 
     // Should still complete successfully despite progress errors
     expect(originalFunc).toHaveBeenCalled();
     expect(result).toEqual({
-      content: [{ type: "text", text: "Success" }],
+      content: [{ type: 'text', text: 'Success' }],
       annotations: {
         payment: {
-          status: "paid",
-          payment_id: "mock_payment_123",
+          status: 'paid',
+          payment_id: 'mock_payment_123',
         },
       },
     });

@@ -1,9 +1,9 @@
-import { type Logger } from "../types/logger.js";
-import { type CreatePaymentResult } from "../types/payment.js";
-import { BasePaymentProvider } from "./base.js";
+import { type Logger } from '../types/logger.js';
+import { type CreatePaymentResult } from '../types/payment.js';
+import { BasePaymentProvider } from './base.js';
 
-const SANDBOX_URL = "https://api-m.sandbox.paypal.com";
-const PRODUCTION_URL = "https://api-m.paypal.com";
+const SANDBOX_URL = 'https://api-m.sandbox.paypal.com';
+const PRODUCTION_URL = 'https://api-m.paypal.com';
 
 /**
  * PayPal Checkout provider.
@@ -56,18 +56,18 @@ export class PayPalProvider extends BasePaymentProvider {
     let parsedOpts: PayPalProviderOpts;
 
     // Handle standard provider interface (apiKey format)
-    if ("apiKey" in opts) {
-      const parts = opts.apiKey.split(":");
+    if ('apiKey' in opts) {
+      const parts = opts.apiKey.split(':');
       if (parts.length < 2) {
         throw new Error(
-          '[PayPalProvider] apiKey must be in format "clientId:clientSecret" or "clientId:clientSecret:sandbox"',
+          '[PayPalProvider] apiKey must be in format "clientId:clientSecret" or "clientId:clientSecret:sandbox"'
         );
       }
 
       parsedOpts = {
         clientId: parts[0],
         clientSecret: parts[1],
-        sandbox: parts[2] === "sandbox",
+        sandbox: parts[2] === 'sandbox',
         logger: opts.logger,
       };
     } else {
@@ -76,19 +76,19 @@ export class PayPalProvider extends BasePaymentProvider {
     }
 
     // PayPal doesn't use a simple API key, but we pass empty string to base
-    super("", parsedOpts.logger);
+    super('', parsedOpts.logger);
 
     this.clientId = parsedOpts.clientId;
     this.clientSecret = parsedOpts.clientSecret;
     this.baseUrl = parsedOpts.sandbox !== false ? SANDBOX_URL : PRODUCTION_URL;
-    this.successUrl = parsedOpts.successUrl ?? "https://example.com/success";
-    this.cancelUrl = parsedOpts.cancelUrl ?? "https://example.com/cancel";
+    this.successUrl = parsedOpts.successUrl ?? 'https://example.com/success';
+    this.cancelUrl = parsedOpts.cancelUrl ?? 'https://example.com/cancel';
 
-    this.logger.debug("[PayPalProvider] ready");
+    this.logger.debug('[PayPalProvider] ready');
   }
 
   getName(): string {
-    return "paypal";
+    return 'paypal';
   }
 
   /**
@@ -98,8 +98,8 @@ export class PayPalProvider extends BasePaymentProvider {
    */
   protected override buildHeaders(): Record<string, string> {
     return {
-      Authorization: `Bearer ${this.accessToken || ""}`,
-      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.accessToken || ''}`,
+      'Content-Type': 'application/json',
     };
   }
 
@@ -113,25 +113,21 @@ export class PayPalProvider extends BasePaymentProvider {
       return this.accessToken;
     }
 
-    this.logger.debug("[PayPalProvider] Fetching new access token");
+    this.logger.debug('[PayPalProvider] Fetching new access token');
 
-    const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString(
-      "base64",
-    );
+    const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
 
     const response = await fetch(`${this.baseUrl}/v1/oauth2/token`, {
-      method: "POST",
+      method: 'POST',
       headers: {
         Authorization: `Basic ${auth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: "grant_type=client_credentials",
+      body: 'grant_type=client_credentials',
     });
 
     if (!response.ok) {
-      throw new Error(
-        `[PayPalProvider] Failed to get access token: ${response.status}`,
-      );
+      throw new Error(`[PayPalProvider] Failed to get access token: ${response.status}`);
     }
 
     const data = (await response.json()) as PayPalTokenResponse;
@@ -145,11 +141,7 @@ export class PayPalProvider extends BasePaymentProvider {
   /**
    * Override request to ensure we have a valid token and use JSON for PayPal.
    */
-  protected override async request<T>(
-    method: string,
-    url: string,
-    data?: any,
-  ): Promise<T> {
+  protected override async request<T>(method: string, url: string, data?: any): Promise<T> {
     // Ensure we have a valid access token before making the request
     await this.getAccessToken();
 
@@ -160,7 +152,7 @@ export class PayPalProvider extends BasePaymentProvider {
       headers,
     };
 
-    if (data && method !== "GET") {
+    if (data && method !== 'GET') {
       options.body = JSON.stringify(data);
     }
 
@@ -185,14 +177,12 @@ export class PayPalProvider extends BasePaymentProvider {
   async createPayment(
     amount: number,
     currency: string,
-    description: string,
+    description: string
   ): Promise<CreatePaymentResult> {
-    this.logger.debug(
-      `[PayPalProvider] createPayment ${amount} ${currency} "${description}"`,
-    );
+    this.logger.debug(`[PayPalProvider] createPayment ${amount} ${currency} "${description}"`);
 
     const payload = {
-      intent: "CAPTURE",
+      intent: 'CAPTURE',
       purchase_units: [
         {
           amount: {
@@ -205,20 +195,20 @@ export class PayPalProvider extends BasePaymentProvider {
       application_context: {
         return_url: this.successUrl,
         cancel_url: this.cancelUrl,
-        user_action: "PAY_NOW", // Shows "Pay Now" instead of "Continue"
+        user_action: 'PAY_NOW', // Shows "Pay Now" instead of "Continue"
       },
     };
 
     const order = await this.request<PayPalOrderResponse>(
-      "POST",
+      'POST',
       `${this.baseUrl}/v2/checkout/orders`,
-      payload,
+      payload
     );
 
-    const approveLink = order.links?.find((link) => link.rel === "approve");
+    const approveLink = order.links?.find(link => link.rel === 'approve');
 
     if (!approveLink?.href) {
-      throw new Error("[PayPalProvider] No approval URL in PayPal response");
+      throw new Error('[PayPalProvider] No approval URL in PayPal response');
     }
 
     return { paymentId: order.id, paymentUrl: approveLink.href };
@@ -233,41 +223,38 @@ export class PayPalProvider extends BasePaymentProvider {
     this.logger.debug(`[PayPalProvider] getPaymentStatus ${paymentId}`);
 
     const order = await this.request<PayPalOrderResponse>(
-      "GET",
-      `${this.baseUrl}/v2/checkout/orders/${paymentId}`,
+      'GET',
+      `${this.baseUrl}/v2/checkout/orders/${paymentId}`
     );
 
     // Auto-capture approved payments
-    if (order.status === "APPROVED") {
+    if (order.status === 'APPROVED') {
       this.logger.debug(`[PayPalProvider] Auto-capturing payment ${paymentId}`);
 
       try {
         const captureResponse = await this.request<PayPalOrderResponse>(
-          "POST",
+          'POST',
           `${this.baseUrl}/v2/checkout/orders/${paymentId}/capture`,
-          {},
+          {}
         );
 
-        return captureResponse.status === "COMPLETED" ? "paid" : "pending";
+        return captureResponse.status === 'COMPLETED' ? 'paid' : 'pending';
       } catch (error) {
-        this.logger.error(
-          `[PayPalProvider] Failed to capture ${paymentId}:`,
-          error,
-        );
-        return "pending";
+        this.logger.error(`[PayPalProvider] Failed to capture ${paymentId}:`, error);
+        return 'pending';
       }
     }
 
     // Map PayPal status to unified status
     switch (order.status) {
-      case "COMPLETED":
-        return "paid";
-      case "VOIDED":
-      case "EXPIRED":
-      case "CANCELLED":
-        return "canceled";
+      case 'COMPLETED':
+        return 'paid';
+      case 'VOIDED':
+      case 'EXPIRED':
+      case 'CANCELLED':
+        return 'canceled';
       default:
-        return "pending";
+        return 'pending';
     }
   }
 }

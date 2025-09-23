@@ -1,8 +1,8 @@
-import { type Logger } from "../types/logger.js";
-import { type CreatePaymentResult } from "../types/payment.js";
-import { BasePaymentProvider } from "./base.js";
+import { type Logger } from '../types/logger.js';
+import { type CreatePaymentResult } from '../types/payment.js';
+import { BasePaymentProvider } from './base.js';
 
-const BASE_URL = "https://api.stripe.com/v1";
+const BASE_URL = 'https://api.stripe.com/v1';
 
 /**
  * Stripe Checkout provider.
@@ -23,14 +23,13 @@ export class StripeProvider extends BasePaymentProvider {
   constructor(opts: StripeProviderOpts) {
     super(opts.apiKey, opts.logger);
     this.successUrl =
-      opts.successUrl ??
-      "https://yoururl.com/success?session_id={CHECKOUT_SESSION_ID}";
-    this.cancelUrl = opts.cancelUrl ?? "https://yoururl.com/cancel";
-    this.logger.debug("[StripeProvider] ready");
+      opts.successUrl ?? 'https://yoururl.com/success?session_id={CHECKOUT_SESSION_ID}';
+    this.cancelUrl = opts.cancelUrl ?? 'https://yoururl.com/cancel';
+    this.logger.debug('[StripeProvider] ready');
   }
 
   getName(): string {
-    return "stripe";
+    return 'stripe';
   }
 
   /**
@@ -40,7 +39,7 @@ export class StripeProvider extends BasePaymentProvider {
   protected override buildHeaders(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.apiKey}`,
-      "Content-Type": "application/x-www-form-urlencoded",
+      'Content-Type': 'application/x-www-form-urlencoded',
     };
   }
 
@@ -55,33 +54,27 @@ export class StripeProvider extends BasePaymentProvider {
   async createPayment(
     amount: number,
     currency: string,
-    description: string,
+    description: string
   ): Promise<CreatePaymentResult> {
     const cents = this.toStripeAmount(amount, currency);
     this.logger.debug(
-      `[StripeProvider] createPayment ${amount} ${currency} (${cents}) "${description}"`,
+      `[StripeProvider] createPayment ${amount} ${currency} (${cents}) "${description}"`
     );
 
     const data: Record<string, string | number> = {
-      mode: "payment",
+      mode: 'payment',
       success_url: this.successUrl,
       cancel_url: this.cancelUrl,
-      "line_items[0][price_data][currency]": currency.toLowerCase(),
-      "line_items[0][price_data][unit_amount]": cents,
-      "line_items[0][price_data][product_data][name]": description,
-      "line_items[0][quantity]": 1,
+      'line_items[0][price_data][currency]': currency.toLowerCase(),
+      'line_items[0][price_data][unit_amount]': cents,
+      'line_items[0][price_data][product_data][name]': description,
+      'line_items[0][quantity]': 1,
     };
 
-    const session = await this.request<any>(
-      "POST",
-      `${BASE_URL}/checkout/sessions`,
-      data,
-    );
+    const session = await this.request<any>('POST', `${BASE_URL}/checkout/sessions`, data);
 
     if (!session?.id || !session?.url) {
-      throw new Error(
-        "[StripeProvider] Invalid response from /checkout/sessions (missing id/url)",
-      );
+      throw new Error('[StripeProvider] Invalid response from /checkout/sessions (missing id/url)');
     }
     return { paymentId: session.id, paymentUrl: session.url };
   }
@@ -92,12 +85,9 @@ export class StripeProvider extends BasePaymentProvider {
    */
   async getPaymentStatus(paymentId: string): Promise<string> {
     this.logger.debug(`[StripeProvider] getPaymentStatus ${paymentId}`);
-    const session = await this.request<any>(
-      "GET",
-      `${BASE_URL}/checkout/sessions/${paymentId}`,
-    );
+    const session = await this.request<any>('GET', `${BASE_URL}/checkout/sessions/${paymentId}`);
     // Return as is; mapping to unified status can be done later.
-    return String(session?.payment_status ?? "unknown");
+    return String(session?.payment_status ?? 'unknown');
   }
 
   /**

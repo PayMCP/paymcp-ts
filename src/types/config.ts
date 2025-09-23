@@ -14,7 +14,16 @@ export interface PayToolConfig extends Record<string, any> {
 }
 
 export interface PayMCPOptions {
-  providers: Record<string, Record<string, any>>;
+  providers: Record<
+    string,
+    {
+      apiKey: string;
+      successUrl?: string;
+      cancelUrl?: string;
+      merchantAccount?: string;
+      logger?: Logger;
+    }
+  >;
   paymentFlow?: PaymentFlow;
   retrofitExisting?: boolean;
 }

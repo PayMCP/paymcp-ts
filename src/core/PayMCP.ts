@@ -49,10 +49,10 @@ export class PayMCP {
 
     function patchedRegisterTool(
       name: string,
-      config: PayToolConfig,
+      config: unknown,
       handler: (...args: unknown[]) => Promise<unknown> | unknown
     ) {
-      const price = config?.price;
+      const price = (config as PayToolConfig)?.price;
       let wrapped = handler;
 
       if (price) {
@@ -63,9 +63,10 @@ export class PayMCP {
         }
 
         // append price to the description
+        const configTyped = config as PayToolConfig;
         config = {
-          ...config,
-          description: appendPriceToDescription(config.description, price),
+          ...configTyped,
+          description: appendPriceToDescription(configTyped.description, price),
         };
 
         // wrap the handler in a payment flow

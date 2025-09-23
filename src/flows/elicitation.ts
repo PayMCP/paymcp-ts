@@ -147,7 +147,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     log.debug?.(`[PayMCP:Elicitation] Stored session for payment_id=${paymentId}`);
 
     // 2. Run elicitation loop (client confirms payment)
-    let userAction: 'accept' | 'decline' | 'cancel' | 'unknown' = 'unknown';
+    let userAction: 'accept' | 'decline' | 'cancel' | 'unknown';
     let paymentStatus: string | undefined;
 
     try {

@@ -162,8 +162,7 @@ export class SquareProvider extends BasePaymentProvider {
       },
     };
 
-    this.logger.debug(`[SquareProvider] Sending payload: ${JSON.stringify(payload, null, 2)}`);
-    this.logger.debug(`[SquareProvider] Location ID in payload: ${this.locationId}`);
+    // Note: Payload logging removed to avoid potential sensitive data exposure
 
     const response = await this.request<SquarePaymentLinkResponse>(
       'POST',

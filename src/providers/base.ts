@@ -42,7 +42,10 @@ export abstract class BasePaymentProvider {
       if (headers['Content-Type'] === 'application/json') {
         init.body = JSON.stringify(data ?? {});
       } else {
-        const dataObj = (data && typeof data === 'object' && data !== null) ? data as Record<string, unknown> : {};
+        const dataObj =
+          data && typeof data === 'object' && data !== null
+            ? (data as Record<string, unknown>)
+            : {};
         init.body = new URLSearchParams(
           Object.fromEntries(Object.entries(dataObj).map(([k, v]) => [k, String(v)]))
         );

@@ -34,7 +34,9 @@ async function safeReportProgress(
   // If we instead send a made-up method (like 'progress/update') the client
   // will raise Pydantic validation errors (you saw those).
   const sendNote = (extra as ToolExtraLike & { sendNotification?: Function })?.sendNotification;
-  const token = (extra as ToolExtraLike & { _meta?: { progressToken?: string }; progressToken?: string })?._meta?.progressToken ?? (extra as ToolExtraLike & { progressToken?: string })?.progressToken;
+  const token =
+    (extra as ToolExtraLike & { _meta?: { progressToken?: string }; progressToken?: string })?._meta
+      ?.progressToken ?? (extra as ToolExtraLike & { progressToken?: string })?.progressToken;
   if (typeof sendNote === 'function' && token !== undefined) {
     try {
       await sendNote({

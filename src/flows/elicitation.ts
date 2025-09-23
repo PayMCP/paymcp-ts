@@ -106,7 +106,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
       ? (maybeExtra as ToolExtraLike)
       : (paramsOrExtra as ToolExtraLike);
 
-    const elicitSupported = typeof (extra as ToolExtraLike & { sendRequest?: Function })?.sendRequest === 'function';
+    const elicitSupported =
+      typeof (extra as ToolExtraLike & { sendRequest?: Function })?.sendRequest === 'function';
     if (!elicitSupported) {
       log.warn?.(`[PayMCP:Elicitation] client lacks sendRequest(); falling back to error result.`);
       return {
@@ -333,7 +334,8 @@ async function runElicitationLoop(
     // FastMCP Python returns either top-level `action` or result.action; accept both.
     const action =
       (elicitation && typeof elicitation === 'object'
-        ? ((elicitation as { action?: string }).action ?? (elicitation as { result?: { action?: string } }).result?.action)
+        ? ((elicitation as { action?: string }).action ??
+          (elicitation as { result?: { action?: string } }).result?.action)
         : undefined) ?? 'unknown';
     log.debug?.(`[PayMCP:Elicitation] elicitation response action=${action}`);
 

@@ -77,7 +77,11 @@ export class StripeProvider extends BasePaymentProvider {
       'line_items[0][quantity]': 1,
     };
 
-    const session = await this.request<StripeSession>('POST', `${BASE_URL}/checkout/sessions`, data);
+    const session = await this.request<StripeSession>(
+      'POST',
+      `${BASE_URL}/checkout/sessions`,
+      data
+    );
 
     if (!session?.id || !session?.url) {
       throw new Error('[StripeProvider] Invalid response from /checkout/sessions (missing id/url)');
@@ -91,7 +95,10 @@ export class StripeProvider extends BasePaymentProvider {
    */
   async getPaymentStatus(paymentId: string): Promise<string> {
     this.logger.debug(`[StripeProvider] getPaymentStatus ${paymentId}`);
-    const session = await this.request<StripeSession>('GET', `${BASE_URL}/checkout/sessions/${paymentId}`);
+    const session = await this.request<StripeSession>(
+      'GET',
+      `${BASE_URL}/checkout/sessions/${paymentId}`
+    );
     // Return as is; mapping to unified status can be done later.
     return String(session?.payment_status ?? 'unknown');
   }

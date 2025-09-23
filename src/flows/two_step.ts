@@ -38,7 +38,11 @@ const sessionStorage = SessionManager.getStorage();
  * Safely invoke the original tool handler preserving the (args, extra) vs (extra)
  * call shapes used by the MCP TS SDK.
  */
-async function callOriginal(func: ToolHandler, toolArgs: unknown | undefined, extra: ToolExtraLike) {
+async function callOriginal(
+  func: ToolHandler,
+  toolArgs: unknown | undefined,
+  extra: ToolExtraLike
+) {
   if (toolArgs !== undefined) {
     return await func(toolArgs, extra);
   } else {
@@ -62,8 +66,11 @@ function ensureConfirmTool(
   log?.debug?.(`[PayMCP:TwoStep] ensureConfirmTool(${confirmToolName})`);
 
   // Detect if already registered (server API shape may vary; we duck‑type).
-  const srvAny = server as McpServerLike & { tools?: Map<string, { config: unknown; handler: ToolHandler }> };
-  const toolsMap: Map<string, { config: unknown; handler: ToolHandler }> | undefined = srvAny?.tools;
+  const srvAny = server as McpServerLike & {
+    tools?: Map<string, { config: unknown; handler: ToolHandler }>;
+  };
+  const toolsMap: Map<string, { config: unknown; handler: ToolHandler }> | undefined =
+    srvAny?.tools;
   if (toolsMap?.has(confirmToolName)) {
     log?.debug?.(`[PayMCP:TwoStep] confirm tool already registered.`);
     return confirmToolName;
@@ -76,7 +83,10 @@ function ensureConfirmTool(
   };
 
   // Confirmation handler: verify payment, retrieve saved args, invoke original tool.
-  const confirmHandler: ToolHandler = async (paramsOrExtra: unknown, maybeExtra?: ToolExtraLike) => {
+  const confirmHandler: ToolHandler = async (
+    paramsOrExtra: unknown,
+    maybeExtra?: ToolExtraLike
+  ) => {
     const hasArgs = arguments.length === 2;
     const params = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : (paramsOrExtra as ToolExtraLike);
@@ -158,7 +168,7 @@ function ensureConfirmTool(
     const toolResult = await callOriginal(
       originalHandler,
       stored.args,
-      extra ?? {} as ToolExtraLike /* pass confirm extra */
+      extra ?? ({} as ToolExtraLike) /* pass confirm extra */
     );
     // If toolResult missing content, synthesize one.
     if (!toolResult || !Array.isArray((toolResult as { content?: unknown[] }).content)) {

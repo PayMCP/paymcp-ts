@@ -35,7 +35,15 @@ export class PayMCP {
   /** Remove patch (for tests / teardown) */
   uninstall() {
     if (!this.installed) return;
-    (this.server as McpServerLike & { registerTool: (name: string, config: unknown, handler: (...args: unknown[]) => Promise<unknown> | unknown) => unknown }).registerTool = this.originalRegisterTool;
+    (
+      this.server as McpServerLike & {
+        registerTool: (
+          name: string,
+          config: unknown,
+          handler: (...args: unknown[]) => Promise<unknown> | unknown
+        ) => unknown;
+      }
+    ).registerTool = this.originalRegisterTool;
     this.installed = false;
 
     // Clean up SessionManager to prevent hanging tests
@@ -77,7 +85,15 @@ export class PayMCP {
     }
 
     // Monkey-patch
-    (this.server as McpServerLike & { registerTool: (name: string, config: unknown, handler: (...args: unknown[]) => Promise<unknown> | unknown) => unknown }).registerTool = patchedRegisterTool;
+    (
+      this.server as McpServerLike & {
+        registerTool: (
+          name: string,
+          config: unknown,
+          handler: (...args: unknown[]) => Promise<unknown> | unknown
+        ) => unknown;
+      }
+    ).registerTool = patchedRegisterTool;
     this.installed = true;
   }
 
@@ -86,7 +102,9 @@ export class PayMCP {
    * SDK may not have a public API; cautiously checking private fields.
    */
   private retrofitExistingTools() {
-    const toolMap: Map<string, unknown> | undefined = (this.server as McpServerLike & { tools?: Map<string, unknown> })?.tools;
+    const toolMap: Map<string, unknown> | undefined = (
+      this.server as McpServerLike & { tools?: Map<string, unknown> }
+    )?.tools;
     if (!toolMap) return;
 
     for (const [name, entry] of toolMap.entries()) {
@@ -95,7 +113,15 @@ export class PayMCP {
       if (!cfg?.price) continue;
 
       // re-register using the patch (it will wrap automatically)
-      (this.server as McpServerLike & { registerTool: (name: string, config: unknown, handler: (...args: unknown[]) => Promise<unknown> | unknown) => unknown }).registerTool(name, cfg, h);
+      (
+        this.server as McpServerLike & {
+          registerTool: (
+            name: string,
+            config: unknown,
+            handler: (...args: unknown[]) => Promise<unknown> | unknown
+          ) => unknown;
+        }
+      ).registerTool(name, cfg, h);
     }
   }
 }

@@ -44,7 +44,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   toolName: string,
   logger?: Logger
 ) => {
-  const log: Logger = logger ?? (provider as any).logger ?? console;
+  const log: Logger = logger ?? console;
   const confirmToolName = `confirm_${toolName}_payment`;
 
   // Register confirmation tool (like Python implementation)
@@ -63,7 +63,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
         required: ['payment_id'],
       },
     },
-    async (params: any, extra: ToolExtraLike) => {
+    async (params: { payment_id: string }, extra: ToolExtraLike) => {
       const paymentId = params.payment_id;
       log.info?.(`[elicitation_confirm_tool] Received payment_id=${paymentId}`);
       const providerName = provider.getName();
@@ -92,7 +92,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     }
   );
 
-  async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
+  async function wrapper(paramsOrExtra: unknown, maybeExtra?: ToolExtraLike) {
     log.debug?.(
       `[PayMCP:Elicitation] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`
     );
@@ -106,7 +106,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
       ? (maybeExtra as ToolExtraLike)
       : (paramsOrExtra as ToolExtraLike);
 
-    const elicitSupported = typeof (extra as any)?.sendRequest === 'function';
+    const elicitSupported = typeof (extra as ToolExtraLike & { sendRequest?: Function })?.sendRequest === 'function';
     if (!elicitSupported) {
       log.warn?.(`[PayMCP:Elicitation] client lacks sendRequest(); falling back to error result.`);
       return {
@@ -207,7 +207,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
       await sessionStorage.delete(sessionKey);
       const toolResult = await callOriginal(func, toolArgs, extra);
       // Ensure toolResult has required MCP 'content' field; if not, synthesize text.
-      if (!toolResult || !Array.isArray((toolResult as any).content)) {
+      if (!toolResult || !Array.isArray((toolResult as { content?: unknown[] }).content)) {
         return {
           content: [{ type: 'text', text: 'Tool completed after payment.' }],
           annotations: { payment: { status: 'paid', payment_id: paymentId } },
@@ -216,8 +216,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
       }
       // augment annotation
       try {
-        (toolResult as any).annotations = {
-          ...(toolResult as any).annotations,
+        (toolResult as { annotations?: Record<string, unknown> }).annotations = {
+          ...(toolResult as { annotations?: Record<string, unknown> }).annotations,
           payment: { status: 'paid', payment_id: paymentId },
         };
       } catch {
@@ -312,18 +312,18 @@ async function runElicitationLoop(
         requestedSchema: SimpleActionSchema,
       },
     } as const;
-    let elicitation: any;
+    let elicitation: unknown;
     try {
       elicitation = await (extra.sendRequest
         ? extra.sendRequest(req, Z_ANY) // pass permissive schema; avoids undefined.parse crash
         : Promise.reject(new Error('No sendRequest()')));
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.warn?.(
         `[PayMCP:Elicitation] elicitation request failed (attempt=${attempt + 1}): ${String(err)}`
       );
       // fall through: we will still poll provider and possibly retry
       //elicitation = { action: "unknown" };
-      if (err?.code === -32601 || /Method not found/i.test(String(err))) {
+      if ((err as { code?: number })?.code === -32601 || /Method not found/i.test(String(err))) {
         log.warn?.(`[PayMCP:Elicitation] Returning unsupported error`);
         return { action: 'unknown', status: 'unsupported' };
       }
@@ -333,7 +333,7 @@ async function runElicitationLoop(
     // FastMCP Python returns either top-level `action` or result.action; accept both.
     const action =
       (elicitation && typeof elicitation === 'object'
-        ? ((elicitation as any).action ?? (elicitation as any).result?.action)
+        ? ((elicitation as { action?: string }).action ?? (elicitation as { result?: { action?: string } }).result?.action)
         : undefined) ?? 'unknown';
     log.debug?.(`[PayMCP:Elicitation] elicitation response action=${action}`);
 
@@ -362,7 +362,7 @@ async function runElicitationLoop(
 }
 
 /** Safely invoke the original tool handler preserving args. */
-async function callOriginal(func: ToolHandler, args: any | undefined, extra: ToolExtraLike) {
+async function callOriginal(func: ToolHandler, args: unknown | undefined, extra: ToolExtraLike) {
   if (args !== undefined) {
     return await func(args, extra);
   } else {

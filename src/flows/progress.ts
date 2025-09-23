@@ -33,8 +33,8 @@ async function safeReportProgress(
   //   params: { progressToken, progress, total, message }
   // If we instead send a made-up method (like 'progress/update') the client
   // will raise Pydantic validation errors (you saw those).
-  const sendNote = (extra as any)?.sendNotification;
-  const token = (extra as any)?._meta?.progressToken ?? (extra as any)?.progressToken;
+  const sendNote = (extra as ToolExtraLike & { sendNotification?: Function })?.sendNotification;
+  const token = (extra as ToolExtraLike & { _meta?: { progressToken?: string }; progressToken?: string })?._meta?.progressToken ?? (extra as ToolExtraLike & { progressToken?: string })?.progressToken;
   if (typeof sendNote === 'function' && token !== undefined) {
     try {
       await sendNote({
@@ -66,7 +66,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   toolName,
   logger
 ) => {
-  const log: Logger = logger ?? (provider as any).logger ?? console;
+  const log: Logger = logger ?? console;
   const confirmToolName = `confirm_${toolName}_payment`;
 
   // Register confirmation tool (like Python implementation)
@@ -85,7 +85,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
         required: ['payment_id'],
       },
     },
-    async (params: any, extra: ToolExtraLike) => {
+    async (params: { payment_id: string }, extra: ToolExtraLike) => {
       const paymentId = params.payment_id;
       log.info?.(`[progress_confirm_tool] Received payment_id=${paymentId}`);
       const providerName = provider.getName();
@@ -114,7 +114,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     }
   );
 
-  async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
+  async function wrapper(paramsOrExtra: unknown, maybeExtra?: ToolExtraLike) {
     log?.debug?.(
       `[PayMCP:Progress] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`
     );
@@ -170,7 +170,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
     while (elapsed < MAX_WAIT_MS) {
       // Allow client aborts (AbortSignal pattern)
-      if ((extra as any)?.signal?.aborted) {
+      if ((extra as ToolExtraLike & { signal?: { aborted?: boolean } })?.signal?.aborted) {
         log?.warn?.(`[PayMCP:Progress] aborted by client while waiting for payment.`);
         return {
           content: [{ type: 'text', text: 'Payment aborted by client.' }],
@@ -252,7 +252,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     log.info?.(`[PayMCP:Progress] payment confirmed; invoking original tool ${toolName}`);
     const toolResult = await callOriginal(func, toolArgs, extra);
     // Ensure toolResult has required MCP 'content' field; if not, synthesize text.
-    if (!toolResult || !Array.isArray((toolResult as any).content)) {
+    if (!toolResult || !Array.isArray((toolResult as { content?: unknown[] }).content)) {
       return {
         content: [{ type: 'text', text: 'Tool completed after payment.' }],
         annotations: { payment: { status: 'paid', payment_id: paymentId } },
@@ -261,8 +261,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
     }
     // augment annotation
     try {
-      (toolResult as any).annotations = {
-        ...(toolResult as any).annotations,
+      (toolResult as { annotations?: Record<string, unknown> }).annotations = {
+        ...(toolResult as { annotations?: Record<string, unknown> }).annotations,
         payment: { status: 'paid', payment_id: paymentId },
       };
     } catch {
@@ -277,7 +277,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
 // ---------------------------------------------------------------------------
 // Helper: safely invoke the original tool handler preserving args shape
 // ---------------------------------------------------------------------------
-async function callOriginal(func: ToolHandler, args: any | undefined, extra: ToolExtraLike) {
+async function callOriginal(func: ToolHandler, args: unknown | undefined, extra: ToolExtraLike) {
   if (args !== undefined) {
     return await func(args, extra);
   } else {

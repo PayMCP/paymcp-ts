@@ -38,7 +38,7 @@ const sessionStorage = SessionManager.getStorage();
  * Safely invoke the original tool handler preserving the (args, extra) vs (extra)
  * call shapes used by the MCP TS SDK.
  */
-async function callOriginal(func: ToolHandler, toolArgs: any | undefined, extra: any) {
+async function callOriginal(func: ToolHandler, toolArgs: unknown | undefined, extra: ToolExtraLike) {
   if (toolArgs !== undefined) {
     return await func(toolArgs, extra);
   } else {
@@ -62,8 +62,8 @@ function ensureConfirmTool(
   log?.debug?.(`[PayMCP:TwoStep] ensureConfirmTool(${confirmToolName})`);
 
   // Detect if already registered (server API shape may vary; we duck‑type).
-  const srvAny = server as any;
-  const toolsMap: Map<string, { config: any; handler: ToolHandler }> | undefined = srvAny?.tools;
+  const srvAny = server as McpServerLike & { tools?: Map<string, { config: unknown; handler: ToolHandler }> };
+  const toolsMap: Map<string, { config: unknown; handler: ToolHandler }> | undefined = srvAny?.tools;
   if (toolsMap?.has(confirmToolName)) {
     log?.debug?.(`[PayMCP:TwoStep] confirm tool already registered.`);
     return confirmToolName;
@@ -76,7 +76,7 @@ function ensureConfirmTool(
   };
 
   // Confirmation handler: verify payment, retrieve saved args, invoke original tool.
-  const confirmHandler: ToolHandler = async (paramsOrExtra: any, maybeExtra?: any) => {
+  const confirmHandler: ToolHandler = async (paramsOrExtra: unknown, maybeExtra?: ToolExtraLike) => {
     const hasArgs = arguments.length === 2;
     const params = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : paramsOrExtra;
@@ -84,8 +84,8 @@ function ensureConfirmTool(
     log?.info?.(`[PayMCP:TwoStep] confirm handler invoked for ${toolName}`);
 
     const paymentId: string | undefined = hasArgs
-      ? (params as any)?.payment_id
-      : (extra as any)?.payment_id; // defensive fallback
+      ? (params as { payment_id?: string })?.payment_id
+      : (extra as ToolExtraLike & { payment_id?: string })?.payment_id; // defensive fallback
 
     log?.debug?.(`[PayMCP:TwoStep] confirm received payment_id=${paymentId}`);
 
@@ -161,7 +161,7 @@ function ensureConfirmTool(
       extra /* pass confirm extra */
     );
     // If toolResult missing content, synthesize one.
-    if (!toolResult || !Array.isArray((toolResult as any).content)) {
+    if (!toolResult || !Array.isArray((toolResult as { content?: unknown[] }).content)) {
       return {
         content: [{ type: 'text', text: 'Tool completed after confirmed payment.' }],
         raw: toolResult,
@@ -192,13 +192,13 @@ export const makePaidWrapper: PaidWrapperFactory = (
   toolName: string,
   logger?: Logger
 ) => {
-  const log: Logger = logger ?? (provider as any).logger ?? console;
+  const log: Logger = logger ?? console;
 
   // Eagerly register confirm tool so the client sees it in the initial tool list.
   // (Matches Python behaviour where @mcp.tool registers at import time.)
   const confirmToolName = ensureConfirmTool(server, provider, toolName, func, log);
 
-  async function twoStepWrapper(paramsOrExtra: any, maybeExtra?: any) {
+  async function twoStepWrapper(paramsOrExtra: unknown, maybeExtra?: ToolExtraLike) {
     const hasArgs = arguments.length === 2;
     const toolArgs = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : paramsOrExtra;

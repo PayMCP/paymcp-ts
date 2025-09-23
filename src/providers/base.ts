@@ -25,7 +25,7 @@ export abstract class BasePaymentProvider {
    * Basic HTTP helper using fetch().
    * Can be replaced with axios if desired.
    */
-  protected async request<T = any>(method: string, url: string, data?: any): Promise<T> {
+  protected async request<T = unknown>(method: string, url: string, data?: unknown): Promise<T> {
     const headers = this.buildHeaders();
     const init: RequestInit = { method: method.toUpperCase(), headers };
 

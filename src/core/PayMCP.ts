@@ -16,7 +16,7 @@ export class PayMCP {
 
   constructor(server: McpServerLike, opts: PayMCPOptions) {
     this.server = server;
-    this.providers = buildProviders(opts.providers as any); //TODO
+    this.providers = buildProviders(opts.providers as Record<string, Record<string, unknown>>);
     this.flow = opts.paymentFlow ?? PaymentFlow.TWO_STEP;
     this.wrapperFactory = makeFlow(this.flow);
     this.originalRegisterTool = server.registerTool.bind(server);
@@ -35,7 +35,7 @@ export class PayMCP {
   /** Remove patch (for tests / teardown) */
   uninstall() {
     if (!this.installed) return;
-    (this.server as any).registerTool = this.originalRegisterTool;
+    (this.server as McpServerLike & { registerTool: Function }).registerTool = this.originalRegisterTool;
     this.installed = false;
 
     // Clean up SessionManager to prevent hanging tests
@@ -50,7 +50,7 @@ export class PayMCP {
     function patchedRegisterTool(
       name: string,
       config: PayToolConfig,
-      handler: (...args: any[]) => Promise<any> | any
+      handler: (...args: unknown[]) => Promise<unknown> | unknown
     ) {
       const price = config?.price;
       let wrapped = handler;
@@ -76,7 +76,7 @@ export class PayMCP {
     }
 
     // Monkey-patch
-    (this.server as any).registerTool = patchedRegisterTool;
+    (this.server as McpServerLike & { registerTool: Function }).registerTool = patchedRegisterTool;
     this.installed = true;
   }
 
@@ -85,16 +85,16 @@ export class PayMCP {
    * SDK may not have a public API; cautiously checking private fields.
    */
   private retrofitExistingTools() {
-    const toolMap: Map<string, any> | undefined = (this.server as any)?.tools;
+    const toolMap: Map<string, unknown> | undefined = (this.server as McpServerLike & { tools?: Map<string, unknown> })?.tools;
     if (!toolMap) return;
 
     for (const [name, entry] of toolMap.entries()) {
-      const cfg: PayToolConfig = entry.config;
-      const h = entry.handler;
+      const cfg: PayToolConfig = (entry as { config: PayToolConfig }).config;
+      const h = (entry as { handler: Function }).handler;
       if (!cfg?.price) continue;
 
       // re-register using the patch (it will wrap automatically)
-      (this.server as any).registerTool(name, cfg, h);
+      (this.server as McpServerLike & { registerTool: Function }).registerTool(name, cfg, h);
     }
   }
 }

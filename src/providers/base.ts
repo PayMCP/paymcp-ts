@@ -31,9 +31,9 @@ export abstract class BasePaymentProvider {
 
     if (method.toUpperCase() === 'GET') {
       // Simple implementation: query string
-      if (data && typeof data === 'object' && data !== null) {
+      if (data !== null && data !== undefined && typeof data === 'object') {
         const dataRecord = data as Record<string, string>;
-        if (Object.keys(dataRecord).length) {
+        if (Object.keys(dataRecord).length > 0) {
           const qs = new URLSearchParams(dataRecord).toString();
           url += (url.includes('?') ? '&' : '?') + qs;
         }
@@ -43,7 +43,7 @@ export abstract class BasePaymentProvider {
         init.body = JSON.stringify(data ?? {});
       } else {
         const dataObj =
-          data && typeof data === 'object' && data !== null
+          data !== null && data !== undefined && typeof data === 'object'
             ? (data as Record<string, unknown>)
             : {};
         init.body = new URLSearchParams(

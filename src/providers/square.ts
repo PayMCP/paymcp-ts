@@ -87,9 +87,7 @@ export class SquareProvider extends BasePaymentProvider {
     this.redirectUrl = parsedOpts.redirectUrl ?? 'https://example.com/success';
     this.apiVersion = parsedOpts.apiVersion ?? '2025-03-19';
 
-    this.logger.debug(
-      `[SquareProvider] ready - locationId: ${this.locationId}, apiVersion: ${this.apiVersion}`
-    );
+    this.logger.debug(`[SquareProvider] ready - apiVersion: ${this.apiVersion}`);
   }
 
   getName(): string {

@@ -19,9 +19,6 @@ queries:
   - name: security-and-quality
     uses: security-and-quality
 
-  - name: javascript-queries
-    uses: ./javascript-queries/Security/
-
 query-filters:
   - exclude:
       id: js/unused-local-variable

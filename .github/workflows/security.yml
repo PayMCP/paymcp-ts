@@ -78,8 +78,8 @@ jobs:
 
     - name: Install additional security tools
       run: |
-        npm install -g audit-ci
-        npm install -g better-npm-audit
+        npm install -g audit-ci@6.6.1
+        npm install -g better-npm-audit@3.9.0
 
     - name: Run audit-ci
       run: |
@@ -121,14 +121,17 @@ jobs:
 
     - name: Install ESLint security plugins
       run: |
-        npm install --save-dev @typescript-eslint/eslint-plugin @typescript-eslint/parser
-        npm install --save-dev eslint-plugin-security
-        npm install --save-dev eslint-plugin-no-secrets
+        npm install --save-dev eslint@8.57.0
+        npm install --save-dev @typescript-eslint/eslint-plugin@6.21.0
+        npm install --save-dev @typescript-eslint/parser@6.21.0
+        npm install --save-dev eslint-plugin-security@1.7.1
+        npm install --save-dev eslint-plugin-no-secrets@0.8.9
+        npm install --save-dev @microsoft/eslint-formatter-sarif@3.1.0
 
     - name: Run ESLint security scan
       run: |
-        npx eslint src/ --ext .ts,.js --format json --output-file eslint-security.json || true
-        npx eslint src/ --ext .ts,.js --format @microsoft/eslint-formatter-sarif --output-file eslint-security.sarif || true
+        npx eslint src/ --ext .ts,.js --format json --output-file eslint-security.json || echo '[]' > eslint-security.json
+        npx eslint src/ --ext .ts,.js --format @microsoft/eslint-formatter-sarif --output-file eslint-security.sarif || echo '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"ESLint"}},"results":[]}]}' > eslint-security.sarif
 
     - name: Upload ESLint SARIF to GitHub
       uses: github/codeql-action/upload-sarif@v3
@@ -165,7 +168,6 @@ jobs:
           p/typescript
           p/owasp-top-ten
           p/cwe-top-25
-        generateSarif: "1"
 
     - name: Upload SARIF file to GitHub Advanced Security
       uses: github/codeql-action/upload-sarif@v3

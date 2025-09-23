@@ -1,0 +1,32 @@
+name: "PayMCP-TS CodeQL Configuration"
+
+disable-default-path-filters: false
+
+paths:
+  - src/
+
+paths-ignore:
+  - "**/tests/"
+  - "**/test/"
+  - "**/*.test.ts"
+  - "**/*.spec.ts"
+  - "**/docs/"
+  - "**/*.md"
+  - ".github/"
+  - "**/node_modules/"
+
+queries:
+  - name: security-and-quality
+    uses: security-and-quality
+
+  - name: javascript-queries
+    uses: ./javascript-queries/Security/
+
+query-filters:
+  - exclude:
+      id: js/unused-local-variable
+      kind: problem
+      
+  - exclude:
+      id: js/useless-conditional
+      kind: problem

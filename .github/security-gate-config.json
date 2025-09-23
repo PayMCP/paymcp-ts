@@ -1,0 +1,36 @@
+{
+  "description": "Security Gate Configuration for PayMCP-TS",
+  "version": "1.0",
+  "gates": {
+    "critical_issues": {
+      "max_allowed": 0,
+      "description": "Maximum critical security issues allowed"
+    },
+    "high_issues": {
+      "max_allowed": 0,
+      "description": "Maximum high security issues allowed"
+    },
+    "secrets": {
+      "max_allowed": 0,
+      "description": "Maximum secrets in code allowed"
+    },
+    "payment_data": {
+      "max_allowed": 0,
+      "description": "Maximum payment data issues allowed"
+    }
+  },
+  "warnings": {
+    "medium_issues": {
+      "threshold": 5,
+      "description": "Warn if medium issues exceed this threshold"
+    },
+    "dependency_vulnerabilities": {
+      "threshold": 10,
+      "description": "Warn if dependency vulnerabilities exceed this threshold"
+    }
+  },
+  "required_scans": [
+    "compliance_scan",
+    "dependency_scan"
+  ]
+}

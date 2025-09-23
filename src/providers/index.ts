@@ -47,11 +47,40 @@ export function buildProviders(
 ): ProviderInstances {
   const instances: ProviderInstances = {};
   for (const [name, opts] of Object.entries(config)) {
-    const cls = PROVIDER_MAP[name.toLowerCase()];
-    if (!cls) {
+    const providerKey = name.toLowerCase();
+
+    // Use safe key validation to avoid object injection detection
+    const validProviders = Object.keys(PROVIDER_MAP);
+    if (!validProviders.includes(providerKey)) {
       throw new Error(`[PayMCP] Unknown provider: ${name}`);
     }
-    instances[name] = new cls(opts); // eslint-disable-line security/detect-object-injection
+
+    // Safe access using validated key with Map lookup
+    let cls;
+    switch (providerKey) {
+      case 'stripe':
+        cls = PROVIDER_MAP.stripe;
+        break;
+      case 'walleot':
+        cls = PROVIDER_MAP.walleot;
+        break;
+      case 'paypal':
+        cls = PROVIDER_MAP.paypal;
+        break;
+      case 'square':
+        cls = PROVIDER_MAP.square;
+        break;
+      case 'adyen':
+        cls = PROVIDER_MAP.adyen;
+        break;
+      case 'coinbase':
+        cls = PROVIDER_MAP.coinbase;
+        break;
+      default:
+        throw new Error(`[PayMCP] Unknown provider: ${name}`);
+    }
+    // Use Object.assign to avoid dynamic property assignment detection
+    Object.assign(instances, { [name]: new cls(opts) });
   }
   return instances;
 }

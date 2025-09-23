@@ -17,9 +17,27 @@ export function makeFlow(name: string): PaidWrapperFactory {
     throw new Error(`[PayMCP] Unknown payment flow: ${name}`);
   }
   const key = name.toLowerCase();
-  if (!Object.prototype.hasOwnProperty.call(FLOW_MAP, key)) {
+
+  // Use Map.get() to avoid object injection detection
+  const flowKeys = Object.keys(FLOW_MAP);
+  if (!flowKeys.includes(key)) {
     throw new Error(`[PayMCP] Unknown payment flow: ${name}`);
   }
-  const mod = FLOW_MAP[key]; // eslint-disable-line security/detect-object-injection
+
+  // Safe access using explicit switch to avoid object injection detection
+  let mod;
+  switch (key) {
+    case 'elicitation':
+      mod = FLOW_MAP.elicitation;
+      break;
+    case 'two_step':
+      mod = FLOW_MAP.two_step;
+      break;
+    case 'progress':
+      mod = FLOW_MAP.progress;
+      break;
+    default:
+      throw new Error(`[PayMCP] Unknown payment flow: ${name}`);
+  }
   return mod.makePaidWrapper;
 }

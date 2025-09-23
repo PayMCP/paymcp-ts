@@ -51,7 +51,7 @@ export function buildProviders(
     if (!cls) {
       throw new Error(`[PayMCP] Unknown provider: ${name}`);
     }
-    instances[name] = new cls(opts);
+    instances[name] = new cls(opts); // eslint-disable-line security/detect-object-injection
   }
   return instances;
 }

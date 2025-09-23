@@ -24,7 +24,7 @@
 import type { PaidWrapperFactory, ToolHandler } from '../types/flows.js';
 import type { McpServerLike } from '../types/mcp.js';
 import type { BasePaymentProvider } from '../providers/base.js';
-import type { PriceConfig } from '../types/config.js';
+import type { PriceConfig, ToolExtraLike } from '../types/config.js';
 import { paymentPromptMessage } from '../utils/messages.js';
 import { Logger } from '../types/logger.js';
 import { SessionManager, SessionKey, SessionData } from '../session/index.js';
@@ -201,7 +201,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   async function twoStepWrapper(paramsOrExtra: unknown, maybeExtra?: ToolExtraLike) {
     const hasArgs = arguments.length === 2;
     const toolArgs = hasArgs ? paramsOrExtra : undefined;
-    const extra = hasArgs ? maybeExtra : paramsOrExtra;
+    const _extra = hasArgs ? maybeExtra : paramsOrExtra;
 
     log?.debug?.(`[PayMCP:TwoStep] initiate wrapper invoked for ${toolName}, hasArgs=${hasArgs}`);
 

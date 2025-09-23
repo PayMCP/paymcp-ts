@@ -4,6 +4,12 @@ import { BasePaymentProvider } from './base.js';
 
 const BASE_URL = 'https://api.stripe.com/v1';
 
+interface StripeSession {
+  id: string;
+  url: string;
+  payment_status: string;
+}
+
 /**
  * Stripe Checkout provider.
  *

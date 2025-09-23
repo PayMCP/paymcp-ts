@@ -85,7 +85,7 @@ export class SquareProvider extends BasePaymentProvider {
     this.locationId = parsedOpts.locationId;
     this.baseUrl = parsedOpts.sandbox !== false ? SANDBOX_URL : PRODUCTION_URL;
     this.redirectUrl = parsedOpts.redirectUrl ?? 'https://example.com/success';
-    this.apiVersion = parsedOpts.apiVersion ?? process.env.SQUARE_API_VERSION ?? '2025-03-19';
+    this.apiVersion = parsedOpts.apiVersion ?? '2025-03-19';
 
     this.logger.debug(
       `[SquareProvider] ready - locationId: ${this.locationId}, apiVersion: ${this.apiVersion}`
@@ -147,7 +147,7 @@ export class SquareProvider extends BasePaymentProvider {
     );
 
     // Generate idempotency key for Square (required for payment creation)
-    const idempotencyKey = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    const idempotencyKey = `${Date.now()}-${crypto.randomUUID().substring(0, 8)}`;
 
     // Use Payment Links API with quick_pay structure
     const payload = {

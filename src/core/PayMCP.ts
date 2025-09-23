@@ -16,7 +16,7 @@ export class PayMCP {
 
   constructor(server: McpServerLike, opts: PayMCPOptions) {
     this.server = server;
-    this.providers = buildProviders(opts.providers as Record<string, Record<string, unknown>>);
+    this.providers = buildProviders(opts.providers);
     this.flow = opts.paymentFlow ?? PaymentFlow.TWO_STEP;
     this.wrapperFactory = makeFlow(this.flow);
     this.originalRegisterTool = server.registerTool.bind(server);
@@ -35,7 +35,7 @@ export class PayMCP {
   /** Remove patch (for tests / teardown) */
   uninstall() {
     if (!this.installed) return;
-    (this.server as McpServerLike & { registerTool: Function }).registerTool = this.originalRegisterTool;
+    (this.server as McpServerLike & { registerTool: (name: string, config: unknown, handler: (...args: unknown[]) => Promise<unknown> | unknown) => unknown }).registerTool = this.originalRegisterTool;
     this.installed = false;
 
     // Clean up SessionManager to prevent hanging tests
@@ -76,7 +76,7 @@ export class PayMCP {
     }
 
     // Monkey-patch
-    (this.server as McpServerLike & { registerTool: Function }).registerTool = patchedRegisterTool;
+    (this.server as McpServerLike & { registerTool: (name: string, config: unknown, handler: (...args: unknown[]) => Promise<unknown> | unknown) => unknown }).registerTool = patchedRegisterTool;
     this.installed = true;
   }
 
@@ -90,11 +90,11 @@ export class PayMCP {
 
     for (const [name, entry] of toolMap.entries()) {
       const cfg: PayToolConfig = (entry as { config: PayToolConfig }).config;
-      const h = (entry as { handler: Function }).handler;
+      const h = (entry as { handler: (...args: unknown[]) => Promise<unknown> | unknown }).handler;
       if (!cfg?.price) continue;
 
       // re-register using the patch (it will wrap automatically)
-      (this.server as McpServerLike & { registerTool: Function }).registerTool(name, cfg, h);
+      (this.server as McpServerLike & { registerTool: (name: string, config: unknown, handler: (...args: unknown[]) => Promise<unknown> | unknown) => unknown }).registerTool(name, cfg, h);
     }
   }
 }

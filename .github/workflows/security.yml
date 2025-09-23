@@ -262,36 +262,43 @@ jobs:
         script: |
           const fs = require('fs');
           const path = './security-summary.md';
-          
+
           if (fs.existsSync(path)) {
             const summary = fs.readFileSync(path, 'utf8');
-            
-            // Find existing security comment
+
+            // Get all comments on the PR
             const comments = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
-            const existingComment = comments.data.find(
-              comment => comment.body.includes('🔒 Security Scan Results')
+
+            // Find and delete ALL existing security comments
+            const securityComments = comments.data.filter(
+              comment => comment.body.includes('🔒 Security Scan Results') ||
+                        comment.body.includes('Security Report') ||
+                        comment.body.includes('Security Summary')
             );
-            
-            if (existingComment) {
-              await github.rest.issues.updateComment({
+
+            // Delete all previous security comments
+            for (const comment of securityComments) {
+              await github.rest.issues.deleteComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                comment_id: existingComment.id,
-                body: summary
+                comment_id: comment.id,
               });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: summary
-              });
+              console.log(`Deleted old security comment ID: ${comment.id}`);
             }
+
+            // Create fresh security comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: summary
+            });
+
+            console.log(`Created new security report comment. Deleted ${securityComments.length} old comments.`);
           }
 
     - name: Upload final security report

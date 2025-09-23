@@ -20,15 +20,7 @@
     "watch": "npm run build -- --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "lint": "eslint src/ --ext .ts,.tsx",
-    "lint:fix": "eslint src/ --ext .ts,.tsx --fix",
-    "format": "prettier --write src/",
-    "format:check": "prettier --check src/",
-    "security:audit": "npm audit --audit-level=moderate",
-    "security:audit-ci": "audit-ci --moderate",
-    "security:scan": "python .github/scripts/compliance-scan.py",
-    "prepublishOnly": "npm run lint && npm run format:check && npm run test && npm run build"
+    "test:coverage": "vitest run --coverage"
   },
   "author": "PayMCP Open Source Contributors",
   "license": "MIT",

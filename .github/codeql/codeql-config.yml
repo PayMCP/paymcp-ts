@@ -18,12 +18,15 @@ paths-ignore:
 queries:
   - name: security-and-quality
     uses: security-and-quality
+  - name: security-extended
+    uses: security-extended
 
 query-filters:
+  # Only exclude low-priority issues that don't affect security
   - exclude:
       id: js/unused-local-variable
       kind: problem
-      
+
   - exclude:
       id: js/useless-conditional
       kind: problem

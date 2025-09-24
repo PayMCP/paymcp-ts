@@ -1,0 +1,332 @@
+{
+  "timestamp": "2025-09-24T17:23:37.307Z",
+  "summary": {
+    "total_issues": 6,
+    "critical": 0,
+    "high": 0,
+    "moderate": 6,
+    "low": 0,
+    "info": 0
+  },
+  "eslint_results": {
+    "version": "2.1.0",
+    "$schema": "http://json.schemastore.org/sarif-2.1.0-rtm.5",
+    "runs": [
+      {
+        "tool": {
+          "driver": {
+            "name": "ESLint",
+            "informationUri": "https://eslint.org",
+            "rules": [],
+            "version": "8.57.1"
+          }
+        },
+        "artifacts": [
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/core/PayMCP.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/flows/elicitation.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/flows/index.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/flows/progress.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/flows/two_step.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/index.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/providers/adyen.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/providers/base.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/providers/coinbase.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/providers/index.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/providers/paypal.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/providers/square.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/providers/stripe.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/providers/walleot.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/session/index.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/session/manager.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/session/memory.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/session/types.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/types/config.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/types/flows.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/types/logger.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/types/mcp.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/types/payment.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/utils/messages.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/utils/payment.ts"
+            }
+          },
+          {
+            "location": {
+              "uri": "file:///Users/dang/dev/walleot/paymcp-ts/src/utils/session.ts"
+            }
+          }
+        ],
+        "results": []
+      }
+    ]
+  },
+  "audit_results": {
+    "auditReportVersion": 2,
+    "vulnerabilities": {
+      "@vitest/coverage-v8": {
+        "name": "@vitest/coverage-v8",
+        "severity": "moderate",
+        "isDirect": true,
+        "via": [
+          "vitest"
+        ],
+        "effects": [],
+        "range": "<=2.2.0-beta.2",
+        "nodes": [
+          "node_modules/@vitest/coverage-v8"
+        ],
+        "fixAvailable": {
+          "name": "@vitest/coverage-v8",
+          "version": "3.2.4",
+          "isSemVerMajor": true
+        }
+      },
+      "@vitest/mocker": {
+        "name": "@vitest/mocker",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          "vite"
+        ],
+        "effects": [
+          "vitest"
+        ],
+        "range": "<=3.0.0-beta.4",
+        "nodes": [
+          "node_modules/@vitest/mocker"
+        ],
+        "fixAvailable": {
+          "name": "vitest",
+          "version": "3.2.4",
+          "isSemVerMajor": true
+        }
+      },
+      "esbuild": {
+        "name": "esbuild",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1102341,
+            "name": "esbuild",
+            "dependency": "esbuild",
+            "title": "esbuild enables any website to send any requests to the development server and read the response",
+            "url": "https://github.com/advisories/GHSA-67mh-4wv8-2f99",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-346"
+            ],
+            "cvss": {
+              "score": 5.3,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"
+            },
+            "range": "<=0.24.2"
+          }
+        ],
+        "effects": [
+          "vite"
+        ],
+        "range": "<=0.24.2",
+        "nodes": [
+          "node_modules/vite/node_modules/esbuild"
+        ],
+        "fixAvailable": {
+          "name": "vitest",
+          "version": "3.2.4",
+          "isSemVerMajor": true
+        }
+      },
+      "vite": {
+        "name": "vite",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          "esbuild"
+        ],
+        "effects": [
+          "@vitest/mocker",
+          "vite-node",
+          "vitest"
+        ],
+        "range": "0.11.0 - 6.1.6",
+        "nodes": [
+          "node_modules/vite"
+        ],
+        "fixAvailable": {
+          "name": "vitest",
+          "version": "3.2.4",
+          "isSemVerMajor": true
+        }
+      },
+      "vite-node": {
+        "name": "vite-node",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          "vite"
+        ],
+        "effects": [
+          "vitest"
+        ],
+        "range": "<=2.2.0-beta.2",
+        "nodes": [
+          "node_modules/vite-node"
+        ],
+        "fixAvailable": {
+          "name": "vitest",
+          "version": "3.2.4",
+          "isSemVerMajor": true
+        }
+      },
+      "vitest": {
+        "name": "vitest",
+        "severity": "moderate",
+        "isDirect": true,
+        "via": [
+          "@vitest/mocker",
+          "vite",
+          "vite-node"
+        ],
+        "effects": [
+          "@vitest/coverage-v8"
+        ],
+        "range": "0.0.1 - 0.0.12 || 0.0.29 - 0.0.122 || 0.3.3 - 3.0.0-beta.4",
+        "nodes": [
+          "node_modules/vitest"
+        ],
+        "fixAvailable": {
+          "name": "vitest",
+          "version": "3.2.4",
+          "isSemVerMajor": true
+        }
+      }
+    },
+    "metadata": {
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 6,
+        "high": 0,
+        "critical": 0,
+        "total": 6
+      },
+      "dependencies": {
+        "prod": 2,
+        "dev": 390,
+        "optional": 71,
+        "peer": 0,
+        "peerOptional": 0,
+        "total": 391
+      }
+    }
+  },
+  "recommendations": [
+    {
+      "priority": "MEDIUM",
+      "message": "📋 6 moderate issues found",
+      "action": "Run npm audit fix to resolve moderate vulnerabilities"
+    },
+    {
+      "priority": "MEDIUM",
+      "message": "📦 Update vulnerable dependencies",
+      "action": "Run npm update to get latest patches, or npm audit fix for automatic fixes"
+    }
+  ]
+}

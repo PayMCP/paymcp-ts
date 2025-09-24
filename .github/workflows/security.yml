@@ -309,6 +309,14 @@ jobs:
 
     - name: Download scan artifacts
       uses: actions/download-artifact@v4
+      continue-on-error: true
+
+    - name: List available files for debugging
+      run: |
+        echo "📁 Files in current directory:"
+        ls -la
+        echo "📁 Checking for artifact directories:"
+        find . -name "*.sarif" -o -name "*.json" | head -20
 
     - name: Generate native security report
       run: |
@@ -354,11 +362,11 @@ jobs:
 
     - name: Upload security report
       uses: actions/upload-artifact@v4
-      if: always()
+      if: always() && (hashFiles('security-summary.md') != '' || hashFiles('security-detailed-report.json') != '')
       with:
         name: security-report
         path: |
           security-summary.md
           security-detailed-report.json
-          security-lint-results.sarif
         retention-days: 90
+        if-no-files-found: warn

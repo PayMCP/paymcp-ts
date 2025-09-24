@@ -35,13 +35,15 @@ jobs:
         echo "Verifying 90% coverage requirement..."
         # Coverage check is built into vitest config and will fail if thresholds not met
 
-    - name: Upload coverage to Codecov
+    - name: Upload coverage report
       if: matrix.node-version == '24.x'
-      uses: codecov/codecov-action@v4
+      uses: actions/upload-artifact@v4
       with:
-        file: ./coverage/lcov.info
-        flags: unittests
-        name: codecov-umbrella
+        name: coverage-report
+        path: |
+          ./coverage/lcov.info
+          ./coverage/coverage-final.json
+        retention-days: 30
 
     - name: Build
       run: npm run build
@@ -133,47 +135,163 @@ jobs:
       run: npm run test:coverage
 
     - name: Find PR number (for push events)
-      uses: jwalton/gh-find-current-pr@v1
       id: findpr
       if: github.event_name == 'push'
-
-    - name: Coverage Report as Comment (PR event)
-      uses: romeovs/lcov-reporter-action@v0.3.1
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        lcov-file: ./coverage/lcov.info
-        delete-old-comments: true
-      if: github.event_name == 'pull_request'
-
-    - name: Coverage Report as Comment (Push event)
       run: |
-        PR_NUMBER="${{ steps.findpr.outputs.number }}"
-
-        # Generate a simple coverage summary
-        FILE_COUNT=$(cat coverage/lcov.info | grep -c '^SF:' || echo "0")
-
-        echo "## ✅ Coverage Report" > coverage_comment.md
-        echo "" >> coverage_comment.md
-        echo "### Summary" >> coverage_comment.md
-        echo "- **Overall Coverage:** $FILE_COUNT files covered" >> coverage_comment.md
-        echo "- **Status:** PASSED (≥90% required)" >> coverage_comment.md
-        echo "" >> coverage_comment.md
-        echo "### Details" >> coverage_comment.md
-        echo "Coverage analysis completed successfully." >> coverage_comment.md
-        echo "" >> coverage_comment.md
-        echo "---" >> coverage_comment.md
-        echo "*Coverage report generated for commit \`${{ github.sha }}\` at $(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)*" >> coverage_comment.md
-
-        # Delete old coverage comments and post new one
-        gh api repos/${{ github.repository }}/issues/$PR_NUMBER/comments \
-          --jq '.[] | select(.body | startswith("## ✅ Coverage Report")) | .id' \
-          | xargs -I {} gh api -X DELETE repos/${{ github.repository }}/issues/comments/{} || true
-
-        gh api repos/${{ github.repository }}/issues/$PR_NUMBER/comments \
-          -f body="$(cat coverage_comment.md)"
+        PR_NUMBER=$(gh pr list --head ${{ github.head_ref || github.ref_name }} --json number --jq '.[0].number' || echo "")
+        echo "number=$PR_NUMBER" >> $GITHUB_OUTPUT
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Parse coverage data for PR comment
+      id: coverage
+      run: |
+        # Parse LCOV file to extract coverage data
+        if [ -f "./coverage/lcov.info" ]; then
+          LINES_FOUND=$(grep -c "^LF:" coverage/lcov.info || echo 0)
+          LINES_HIT=$(grep "^LH:" coverage/lcov.info | awk -F: '{sum+=$2} END {print sum+0}')
+          LINES_TOTAL=$(grep "^LF:" coverage/lcov.info | awk -F: '{sum+=$2} END {print sum+0}')
+
+          BRANCHES_FOUND=$(grep -c "^BRF:" coverage/lcov.info || echo 0)
+          BRANCHES_HIT=$(grep "^BRH:" coverage/lcov.info | awk -F: '{sum+=$2} END {print sum+0}')
+          BRANCHES_TOTAL=$(grep "^BRF:" coverage/lcov.info | awk -F: '{sum+=$2} END {print sum+0}')
+
+          FUNCTIONS_FOUND=$(grep -c "^FNF:" coverage/lcov.info || echo 0)
+          FUNCTIONS_HIT=$(grep "^FNH:" coverage/lcov.info | awk -F: '{sum+=$2} END {print sum+0}')
+          FUNCTIONS_TOTAL=$(grep "^FNF:" coverage/lcov.info | awk -F: '{sum+=$2} END {print sum+0}')
+
+          # Calculate percentages
+          LINE_PERCENT=$(echo "scale=1; $LINES_HIT * 100 / $LINES_TOTAL" | bc -l 2>/dev/null || echo "0")
+          BRANCH_PERCENT=$(echo "scale=1; $BRANCHES_HIT * 100 / $BRANCHES_TOTAL" | bc -l 2>/dev/null || echo "0")
+          FUNCTION_PERCENT=$(echo "scale=1; $FUNCTIONS_HIT * 100 / $FUNCTIONS_TOTAL" | bc -l 2>/dev/null || echo "0")
+
+          echo "lines_percent=$LINE_PERCENT" >> $GITHUB_OUTPUT
+          echo "branches_percent=$BRANCH_PERCENT" >> $GITHUB_OUTPUT
+          echo "functions_percent=$FUNCTION_PERCENT" >> $GITHUB_OUTPUT
+          echo "lines_hit=$LINES_HIT" >> $GITHUB_OUTPUT
+          echo "lines_total=$LINES_TOTAL" >> $GITHUB_OUTPUT
+          echo "branches_hit=$BRANCHES_HIT" >> $GITHUB_OUTPUT
+          echo "branches_total=$BRANCHES_TOTAL" >> $GITHUB_OUTPUT
+          echo "functions_hit=$FUNCTIONS_HIT" >> $GITHUB_OUTPUT
+          echo "functions_total=$FUNCTIONS_TOTAL" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Coverage Report as Comment (PR event)
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const linePercent = '${{ steps.coverage.outputs.lines_percent }}';
+          const branchPercent = '${{ steps.coverage.outputs.branches_percent }}';
+          const functionPercent = '${{ steps.coverage.outputs.functions_percent }}';
+          const linesHit = '${{ steps.coverage.outputs.lines_hit }}';
+          const linesTotal = '${{ steps.coverage.outputs.lines_total }}';
+          const branchesHit = '${{ steps.coverage.outputs.branches_hit }}';
+          const branchesTotal = '${{ steps.coverage.outputs.branches_total }}';
+          const functionsHit = '${{ steps.coverage.outputs.functions_hit }}';
+          const functionsTotal = '${{ steps.coverage.outputs.functions_total }}';
+
+          const coverageComment = `## ✅ Coverage Report
+
+          ### Summary
+          | Type | Percentage | Covered | Total |
+          |------|------------|---------|-------|
+          | Lines | ${linePercent}% | ${linesHit} | ${linesTotal} |
+          | Branches | ${branchPercent}% | ${branchesHit} | ${branchesTotal} |
+          | Functions | ${functionPercent}% | ${functionsHit} | ${functionsTotal} |
+
+          ### Status
+          ${parseFloat(linePercent) >= 90 ? '✅ PASSED' : '❌ FAILED'} (≥90% required for lines)
+
+          ---
+          *Coverage report generated for commit \`${{ github.sha }}\` at ${new Date().toISOString()}*`;
+
+          // Delete old coverage comments
+          const comments = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const oldCoverageComments = comments.data.filter(
+            comment => comment.body.includes('## ✅ Coverage Report')
+          );
+
+          for (const comment of oldCoverageComments) {
+            await github.rest.issues.deleteComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: comment.id,
+            });
+          }
+
+          // Post new coverage comment
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: coverageComment
+          });
+
+    - name: Coverage Report as Comment (Push event)
       if: github.event_name == 'push' && steps.findpr.outputs.number
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const prNumber = '${{ steps.findpr.outputs.number }}';
+          if (!prNumber) return;
+
+          const linePercent = '${{ steps.coverage.outputs.lines_percent }}';
+          const branchPercent = '${{ steps.coverage.outputs.branches_percent }}';
+          const functionPercent = '${{ steps.coverage.outputs.functions_percent }}';
+          const linesHit = '${{ steps.coverage.outputs.lines_hit }}';
+          const linesTotal = '${{ steps.coverage.outputs.lines_total }}';
+          const branchesHit = '${{ steps.coverage.outputs.branches_hit }}';
+          const branchesTotal = '${{ steps.coverage.outputs.branches_total }}';
+          const functionsHit = '${{ steps.coverage.outputs.functions_hit }}';
+          const functionsTotal = '${{ steps.coverage.outputs.functions_total }}';
+
+          const coverageComment = `## ✅ Coverage Report
+
+          ### Summary
+          | Type | Percentage | Covered | Total |
+          |------|------------|---------|-------|
+          | Lines | ${linePercent}% | ${linesHit} | ${linesTotal} |
+          | Branches | ${branchPercent}% | ${branchesHit} | ${branchesTotal} |
+          | Functions | ${functionPercent}% | ${functionsHit} | ${functionsTotal} |
+
+          ### Status
+          ${parseFloat(linePercent) >= 90 ? '✅ PASSED' : '❌ FAILED'} (≥90% required for lines)
+
+          ---
+          *Coverage report generated for commit \`${{ github.sha }}\` at ${new Date().toISOString()}*`;
+
+          // Delete old coverage comments
+          const comments = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: parseInt(prNumber),
+          });
+
+          const oldCoverageComments = comments.data.filter(
+            comment => comment.body.includes('## ✅ Coverage Report')
+          );
+
+          for (const comment of oldCoverageComments) {
+            await github.rest.issues.deleteComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: comment.id,
+            });
+          }
+
+          // Post new coverage comment
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: parseInt(prNumber),
+            body: coverageComment
+          });
 
   # Final job that requires all quality checks to pass
   all-checks:

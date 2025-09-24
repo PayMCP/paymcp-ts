@@ -63,8 +63,8 @@ export function extractSessionId(extra: any, logger?: any): string | undefined {
     if (logger?.warn) {
       logger.warn(
         'MCP session ID not found in HTTP context. ' +
-        'This may cause issues with multi-client scenarios. ' +
-        'Ensure your MCP server provides Mcp-Session-Id header.'
+          'This may cause issues with multi-client scenarios. ' +
+          'Ensure your MCP server provides Mcp-Session-Id header.'
       );
     }
   }

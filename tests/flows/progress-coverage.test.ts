@@ -134,7 +134,7 @@ describe('ProgressFlow - Coverage Tests', () => {
       },
       set annotations(val) {
         throw new Error('Cannot modify annotations');
-      }
+      },
     };
 
     originalFunc.mockResolvedValueOnce(resultWithError);
@@ -231,9 +231,9 @@ describe('ProgressFlow - Coverage Tests', () => {
     const progressCalls: number[] = [];
     const extra = {
       _meta: {
-        progressToken: 'test-token'
+        progressToken: 'test-token',
       },
-      sendNotification: vi.fn().mockImplementation((notification) => {
+      sendNotification: vi.fn().mockImplementation(notification => {
         if (notification.params?.progress !== undefined) {
           progressCalls.push(notification.params.progress);
         }
@@ -303,9 +303,9 @@ describe('ProgressFlow - Coverage Tests', () => {
       content: [{ type: 'text', text: 'Success' }],
       annotations: {
         existing: 'annotation',
-        nested: { value: 123 }
+        nested: { value: 123 },
       },
-      metadata: { foo: 'bar' }
+      metadata: { foo: 'bar' },
     };
 
     originalFunc.mockResolvedValueOnce(complexResult);
@@ -326,7 +326,7 @@ describe('ProgressFlow - Coverage Tests', () => {
       expect(result.annotations.nested).toEqual({ value: 123 });
       expect(result.annotations.payment).toEqual({
         status: 'paid',
-        payment_id: 'test_payment'
+        payment_id: 'test_payment',
       });
       expect(result.metadata).toEqual({ foo: 'bar' });
     });

@@ -13,8 +13,8 @@ describe('extractSessionId', () => {
   it('should extract session ID from headers object', () => {
     const extra = {
       headers: {
-        'Mcp-Session-Id': 'session123'
-      }
+        'Mcp-Session-Id': 'session123',
+      },
     };
     expect(extractSessionId(extra)).toBe('session123');
   });
@@ -22,8 +22,8 @@ describe('extractSessionId', () => {
   it('should extract session ID from headers with different case', () => {
     const extra = {
       headers: {
-        'MCP-SESSION-ID': 'session456'
-      }
+        'MCP-SESSION-ID': 'session456',
+      },
     };
     expect(extractSessionId(extra)).toBe('session456');
   });
@@ -32,9 +32,9 @@ describe('extractSessionId', () => {
     const extra = {
       request: {
         headers: {
-          'mcp-session-id': 'session789'
-        }
-      }
+          'mcp-session-id': 'session789',
+        },
+      },
     };
     expect(extractSessionId(extra)).toBe('session789');
   });
@@ -43,9 +43,9 @@ describe('extractSessionId', () => {
     const extra = {
       _meta: {
         headers: {
-          'Mcp-Session-Id': 'metaSession'
-        }
-      }
+          'Mcp-Session-Id': 'metaSession',
+        },
+      },
     };
     expect(extractSessionId(extra)).toBe('metaSession');
   });
@@ -53,13 +53,13 @@ describe('extractSessionId', () => {
   it('should prioritize direct headers over request.headers', () => {
     const extra = {
       headers: {
-        'Mcp-Session-Id': 'directSession'
+        'Mcp-Session-Id': 'directSession',
       },
       request: {
         headers: {
-          'Mcp-Session-Id': 'requestSession'
-        }
-      }
+          'Mcp-Session-Id': 'requestSession',
+        },
+      },
     };
     expect(extractSessionId(extra)).toBe('directSession');
   });
@@ -68,14 +68,14 @@ describe('extractSessionId', () => {
     const extra = {
       request: {
         headers: {
-          'Mcp-Session-Id': 'requestSession'
-        }
+          'Mcp-Session-Id': 'requestSession',
+        },
       },
       _meta: {
         headers: {
-          'Mcp-Session-Id': 'metaSession'
-        }
-      }
+          'Mcp-Session-Id': 'metaSession',
+        },
+      },
     };
     expect(extractSessionId(extra)).toBe('requestSession');
   });
@@ -84,76 +84,76 @@ describe('extractSessionId', () => {
     const extra = {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer token'
-      }
+        Authorization: 'Bearer token',
+      },
     };
     expect(extractSessionId(extra)).toBeUndefined();
   });
 
   it('should warn when HTTP context has no session ID', () => {
     const logger = {
-      warn: vi.fn()
+      warn: vi.fn(),
     };
     const extra = {
       headers: {
-        'Content-Type': 'application/json'
-      }
+        'Content-Type': 'application/json',
+      },
     };
 
     expect(extractSessionId(extra, logger)).toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith(
       'MCP session ID not found in HTTP context. ' +
-      'This may cause issues with multi-client scenarios. ' +
-      'Ensure your MCP server provides Mcp-Session-Id header.'
+        'This may cause issues with multi-client scenarios. ' +
+        'Ensure your MCP server provides Mcp-Session-Id header.'
     );
   });
 
   it('should warn when request.headers exist but no session ID', () => {
     const logger = {
-      warn: vi.fn()
+      warn: vi.fn(),
     };
     const extra = {
       request: {
         headers: {
-          'Content-Type': 'application/json'
-        }
-      }
+          'Content-Type': 'application/json',
+        },
+      },
     };
 
     expect(extractSessionId(extra, logger)).toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith(
       'MCP session ID not found in HTTP context. ' +
-      'This may cause issues with multi-client scenarios. ' +
-      'Ensure your MCP server provides Mcp-Session-Id header.'
+        'This may cause issues with multi-client scenarios. ' +
+        'Ensure your MCP server provides Mcp-Session-Id header.'
     );
   });
 
   it('should warn when _meta.headers exist but no session ID', () => {
     const logger = {
-      warn: vi.fn()
+      warn: vi.fn(),
     };
     const extra = {
       _meta: {
         headers: {
-          'Content-Type': 'application/json'
-        }
-      }
+          'Content-Type': 'application/json',
+        },
+      },
     };
 
     expect(extractSessionId(extra, logger)).toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith(
       'MCP session ID not found in HTTP context. ' +
-      'This may cause issues with multi-client scenarios. ' +
-      'Ensure your MCP server provides Mcp-Session-Id header.'
+        'This may cause issues with multi-client scenarios. ' +
+        'Ensure your MCP server provides Mcp-Session-Id header.'
     );
   });
 
   it('should not warn when no HTTP context exists', () => {
     const logger = {
-      warn: vi.fn()
+      warn: vi.fn(),
     };
     const extra = {
-      someOtherProperty: 'value'
+      someOtherProperty: 'value',
     };
 
     expect(extractSessionId(extra, logger)).toBeUndefined();
@@ -162,7 +162,7 @@ describe('extractSessionId', () => {
 
   it('should handle headers that are not objects', () => {
     const extra = {
-      headers: 'not-an-object'
+      headers: 'not-an-object',
     };
     expect(extractSessionId(extra)).toBeUndefined();
   });
@@ -170,8 +170,8 @@ describe('extractSessionId', () => {
   it('should handle request.headers that are not objects', () => {
     const extra = {
       request: {
-        headers: null
-      }
+        headers: null,
+      },
     };
     expect(extractSessionId(extra)).toBeUndefined();
   });
@@ -179,18 +179,18 @@ describe('extractSessionId', () => {
   it('should handle _meta.headers that are not objects', () => {
     const extra = {
       _meta: {
-        headers: []
-      }
+        headers: [],
+      },
     };
     expect(extractSessionId(extra)).toBeUndefined();
   });
 
   it('should handle logger without warn method', () => {
     const logger = {
-      info: vi.fn()
+      info: vi.fn(),
     };
     const extra = {
-      headers: {}
+      headers: {},
     };
 
     expect(() => extractSessionId(extra, logger)).not.toThrow();
@@ -200,8 +200,8 @@ describe('extractSessionId', () => {
   it('should handle mixed case in header keys', () => {
     const extra = {
       headers: {
-        'mCp-SeSsIoN-iD': 'mixedCase123'
-      }
+        'mCp-SeSsIoN-iD': 'mixedCase123',
+      },
     };
     expect(extractSessionId(extra)).toBe('mixedCase123');
   });
@@ -209,8 +209,8 @@ describe('extractSessionId', () => {
   it('should handle empty string session ID', () => {
     const extra = {
       headers: {
-        'Mcp-Session-Id': ''
-      }
+        'Mcp-Session-Id': '',
+      },
     };
     expect(extractSessionId(extra)).toBe('');
   });
@@ -218,8 +218,8 @@ describe('extractSessionId', () => {
   it('should handle non-string header values correctly', () => {
     const extra = {
       headers: {
-        'Mcp-Session-Id': 12345
-      }
+        'Mcp-Session-Id': 12345,
+      },
     };
     expect(extractSessionId(extra)).toBe(12345);
   });

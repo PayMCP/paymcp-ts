@@ -19,7 +19,6 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
   let originalFunc: any;
 
   beforeEach(() => {
-
     mockServer = {
       registerTool: vi.fn(),
       reportProgress: vi.fn(),
@@ -88,10 +87,7 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
       const retryResult = await wrapper({ data: 'test', payment_id: 'test_payment_123' }, extra);
 
       // Should successfully execute the original tool
-      expect(originalFunc).toHaveBeenCalledWith(
-        { data: 'test' },
-        extra
-      );
+      expect(originalFunc).toHaveBeenCalledWith({ data: 'test' }, extra);
       expect(retryResult.content[0].text).toBe('Tool executed successfully');
     });
 
@@ -139,13 +135,13 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
       // Even after 10 minutes, session should still be available for retry
       // (In production, TTL is 15 minutes)
       (mockProvider.getPaymentStatus as vi.Mock).mockResolvedValue('paid');
-      const retryResult = await wrapper({ important: 'data', payment_id: 'test_payment_456' }, extra);
-
-      // Should successfully execute the original tool with stored args
-      expect(originalFunc).toHaveBeenCalledWith(
-        { important: 'data' },
+      const retryResult = await wrapper(
+        { important: 'data', payment_id: 'test_payment_456' },
         extra
       );
+
+      // Should successfully execute the original tool with stored args
+      expect(originalFunc).toHaveBeenCalledWith({ important: 'data' }, extra);
       expect(retryResult.content[0].text).toBe('Tool executed successfully');
 
       // Session should be cleaned up after successful retry
@@ -227,10 +223,7 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
       const retryResult = await wrapper({ data: 'test', payment_id: 'timeout_payment_123' }, {});
 
       // Should successfully execute the original tool
-      expect(originalFunc).toHaveBeenCalledWith(
-        { data: 'test' },
-        {}
-      );
+      expect(originalFunc).toHaveBeenCalledWith({ data: 'test' }, {});
       expect(retryResult.content[0].text).toBe('Tool executed successfully');
     }, 10000);
   });

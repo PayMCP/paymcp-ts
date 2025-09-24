@@ -91,7 +91,7 @@ describe('TwoStepFlow - Coverage Tests', () => {
 
   it('should handle original function without arguments', async () => {
     // Original function that expects no arguments
-    const noArgsFunc = vi.fn().mockImplementation((extra) => {
+    const noArgsFunc = vi.fn().mockImplementation(extra => {
       return { content: [{ type: 'text', text: 'No args success' }] };
     });
 

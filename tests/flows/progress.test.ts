@@ -66,21 +66,21 @@ describe('ProgressFlow', () => {
 
     await withFakeTimers(async () => {
       const promise = wrapper(args, extra);
-      
+
       // Advance timer to trigger first poll
       await vi.advanceTimersByTimeAsync(3000);
-      
+
       const result = await promise;
 
-    expect(mockProvider.createPayment).toHaveBeenCalledWith(
-      10.0,
-      'USD',
-      'test_tool() execution fee'
-    );
+      expect(mockProvider.createPayment).toHaveBeenCalledWith(
+        10.0,
+        'USD',
+        'test_tool() execution fee'
+      );
 
-    // Progress is reported via extra object or logging, not directly through server
-    // Verify payment was created instead
-    expect(mockProvider.getPaymentStatus).toHaveBeenCalled();
+      // Progress is reported via extra object or logging, not directly through server
+      // Verify payment was created instead
+      expect(mockProvider.getPaymentStatus).toHaveBeenCalled();
 
       expect(originalFunc).toHaveBeenCalledWith(args, extra);
       expect(result).toEqual({

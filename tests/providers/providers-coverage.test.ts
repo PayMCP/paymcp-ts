@@ -18,7 +18,6 @@ afterEach(() => {
 });
 
 describe('Providers - Coverage Tests', () => {
-
   describe('AdyenProvider - Uncovered Lines', () => {
     it('should handle createPayment error with non-Error object', async () => {
       const provider = new AdyenProvider({ apiKey: 'test_key' });
@@ -43,7 +42,7 @@ describe('Providers - Coverage Tests', () => {
     it('should handle getPaymentStatus with confirmOnPending true and PENDING status', async () => {
       const provider = new CoinbaseProvider({
         apiKey: 'test_key',
-        confirmOnPending: true
+        confirmOnPending: true,
       });
 
       (global.fetch as vi.Mock).mockResolvedValueOnce({
@@ -51,11 +50,9 @@ describe('Providers - Coverage Tests', () => {
         json: async () => ({
           data: {
             id: 'CHARGE123',
-            timeline: [
-              { status: 'PENDING' }
-            ]
-          }
-        })
+            timeline: [{ status: 'PENDING' }],
+          },
+        }),
       });
 
       const status = await provider.getPaymentStatus('CHARGE123');
@@ -70,13 +67,9 @@ describe('Providers - Coverage Tests', () => {
         json: async () => ({
           data: {
             id: 'CHARGE123',
-            timeline: [
-              { status: 'NEW' },
-              { status: 'PENDING' },
-              { status: 'COMPLETED' }
-            ]
-          }
-        })
+            timeline: [{ status: 'NEW' }, { status: 'PENDING' }, { status: 'COMPLETED' }],
+          },
+        }),
       });
 
       const status = await provider.getPaymentStatus('CHARGE123');
@@ -91,9 +84,9 @@ describe('Providers - Coverage Tests', () => {
         json: async () => ({
           data: {
             id: 'CHARGE123',
-            timeline: []
-          }
-        })
+            timeline: [],
+          },
+        }),
       });
 
       const status = await provider.getPaymentStatus('CHARGE123');
@@ -108,9 +101,9 @@ describe('Providers - Coverage Tests', () => {
         json: async () => ({
           data: {
             id: 'CHARGE123',
-            timeline: [{ status: 'EXPIRED' }]
-          }
-        })
+            timeline: [{ status: 'EXPIRED' }],
+          },
+        }),
       });
 
       const status = await provider.getPaymentStatus('CHARGE123');
@@ -122,14 +115,14 @@ describe('Providers - Coverage Tests', () => {
     it('should handle getPaymentStatus with auto-capture and purchase_units', async () => {
       const provider = new PayPalProvider({
         apiKey: 'CLIENT_ID:SECRET',
-        autoCapture: true
+        autoCapture: true,
       });
 
       // Mock access token fetch
       (global.fetch as vi.Mock)
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ access_token: 'test_token' })
+          json: async () => ({ access_token: 'test_token' }),
         })
         // Mock order details fetch - APPROVED status
         .mockResolvedValueOnce({
@@ -140,16 +133,16 @@ describe('Providers - Coverage Tests', () => {
             purchase_units: [
               {
                 payments: {
-                  captures: []
-                }
-              }
-            ]
-          })
+                  captures: [],
+                },
+              },
+            ],
+          }),
         })
         // Mock access token fetch for capture request
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ access_token: 'test_token' })
+          json: async () => ({ access_token: 'test_token' }),
         })
         // Mock capture request
         .mockResolvedValueOnce({
@@ -159,11 +152,11 @@ describe('Providers - Coverage Tests', () => {
             purchase_units: [
               {
                 payments: {
-                  captures: [{ status: 'COMPLETED' }]
-                }
-              }
-            ]
-          })
+                  captures: [{ status: 'COMPLETED' }],
+                },
+              },
+            ],
+          }),
         });
 
       const status = await provider.getPaymentStatus('ORDER123');
@@ -173,14 +166,14 @@ describe('Providers - Coverage Tests', () => {
     it('should handle capture with missing purchase_units in response', async () => {
       const provider = new PayPalProvider({
         apiKey: 'CLIENT_ID:SECRET',
-        autoCapture: true
+        autoCapture: true,
       });
 
       // Mock access token fetch
       (global.fetch as vi.Mock)
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ access_token: 'test_token' })
+          json: async () => ({ access_token: 'test_token' }),
         })
         // Mock order details fetch
         .mockResolvedValueOnce({
@@ -188,18 +181,18 @@ describe('Providers - Coverage Tests', () => {
           json: async () => ({
             id: 'ORDER123',
             status: 'APPROVED',
-            purchase_units: [{ payments: { captures: [] } }]
-          })
+            purchase_units: [{ payments: { captures: [] } }],
+          }),
         })
         // Mock access token fetch for capture request
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ access_token: 'test_token' })
+          json: async () => ({ access_token: 'test_token' }),
         })
         // Mock capture response without purchase_units
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ status: 'COMPLETED' })
+          json: async () => ({ status: 'COMPLETED' }),
         });
 
       const status = await provider.getPaymentStatus('ORDER123');
@@ -209,14 +202,14 @@ describe('Providers - Coverage Tests', () => {
     it('should handle capture with null captures array', async () => {
       const provider = new PayPalProvider({
         apiKey: 'CLIENT_ID:SECRET',
-        autoCapture: true
+        autoCapture: true,
       });
 
       // Mock access token fetch
       (global.fetch as vi.Mock)
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ access_token: 'test_token' })
+          json: async () => ({ access_token: 'test_token' }),
         })
         // Mock order details fetch
         .mockResolvedValueOnce({
@@ -224,21 +217,21 @@ describe('Providers - Coverage Tests', () => {
           json: async () => ({
             id: 'ORDER123',
             status: 'APPROVED',
-            purchase_units: [{ payments: { captures: [] } }]
-          })
+            purchase_units: [{ payments: { captures: [] } }],
+          }),
         })
         // Mock access token fetch for capture request
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ access_token: 'test_token' })
+          json: async () => ({ access_token: 'test_token' }),
         })
         // Mock capture response with null captures
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({
             status: 'COMPLETED',
-            purchase_units: [{ payments: { captures: null } }]
-          })
+            purchase_units: [{ payments: { captures: null } }],
+          }),
         });
 
       const status = await provider.getPaymentStatus('ORDER123');
@@ -255,18 +248,18 @@ describe('Providers - Coverage Tests', () => {
           ok: true,
           json: async () => ({
             payment_link: {
-              order_id: 'order_123'
-            }
-          })
+              order_id: 'order_123',
+            },
+          }),
         })
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({
             order: {
               state: 'COMPLETED',
-              net_amount_due_money: { amount: 100 }
-            }
-          })
+              net_amount_due_money: { amount: 100 },
+            },
+          }),
         });
 
       const status = await provider.getPaymentStatus('pl_123');
@@ -278,15 +271,15 @@ describe('Providers - Coverage Tests', () => {
     it('should handle createPayment with redirect URL in production', async () => {
       const provider = new StripeProvider({
         apiKey: 'sk_live_test',
-        redirectUrl: 'https://example.com/success'
+        redirectUrl: 'https://example.com/success',
       });
 
       (global.fetch as vi.Mock).mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           id: 'cs_test123',
-          url: 'https://checkout.stripe.com/test123'
-        })
+          url: 'https://checkout.stripe.com/test123',
+        }),
       });
 
       const result = await provider.createPayment(10, 'USD', 'Test');
@@ -299,23 +292,27 @@ describe('Providers - Coverage Tests', () => {
   describe('BasePaymentProvider - Uncovered Lines', () => {
     it('should handle GET request with URLSearchParams already in URL', async () => {
       class TestProvider extends BasePaymentProvider {
-        getName() { return 'test'; }
-        async createPayment() { return { paymentId: '1', paymentUrl: 'url' }; }
-        async getPaymentStatus() { return 'paid'; }
+        getName() {
+          return 'test';
+        }
+        async createPayment() {
+          return { paymentId: '1', paymentUrl: 'url' };
+        }
+        async getPaymentStatus() {
+          return 'paid';
+        }
       }
 
       const provider = new TestProvider('key');
 
       (global.fetch as vi.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ success: true })
+        json: async () => ({ success: true }),
       });
 
-      const result = await provider.request(
-        'GET',
-        'https://api.test.com/data?existing=param',
-        { new: 'value' }
-      );
+      const result = await provider.request('GET', 'https://api.test.com/data?existing=param', {
+        new: 'value',
+      });
 
       // Check that URL was constructed correctly
       const fetchCall = (global.fetch as vi.Mock).mock.calls[0];

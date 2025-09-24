@@ -85,7 +85,7 @@ describe('Coverage Final - Uncovered Lines', () => {
 
       // Try to retry with unpaid payment - should trigger elicitation
       const sendRequest = vi.fn().mockResolvedValue({ action: 'unknown' });
-      
+
       const result = await withFakeTimers(async () => {
         const promise = wrapper({ payment_id: 'test_id' }, { sendRequest });
         // Run all timers to completion

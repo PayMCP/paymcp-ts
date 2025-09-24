@@ -71,7 +71,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   logger
 ) => {
   const log: Logger = logger ?? console;
-  
+
   // No tool registration here - pure progress flow
 
   async function wrapper(paramsOrExtra: unknown, maybeExtra?: ToolExtraLike) {
@@ -133,11 +133,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     const providerName = provider.getName();
     // Extract MCP session ID from extra context if available
     const mcpSessionId = extractSessionId(extra, log);
-    const sessionKey = new SessionKey(
-      providerName,
-      String(paymentId),
-      mcpSessionId
-    );
+    const sessionKey = new SessionKey(providerName, String(paymentId), mcpSessionId);
     const sessionData: SessionData = {
       args: { toolArgs, extra },
       ts: Date.now(),
@@ -228,7 +224,12 @@ export const makePaidWrapper: PaidWrapperFactory = (
       // Return pending status WITHOUT a tool reference
       // Client can retry the original tool if needed
       return {
-        content: [{ type: 'text', text: 'Payment timeout reached. Please complete payment and try the tool again.' }],
+        content: [
+          {
+            type: 'text',
+            text: 'Payment timeout reached. Please complete payment and try the tool again.',
+          },
+        ],
         annotations: {
           payment: {
             status: 'pending',

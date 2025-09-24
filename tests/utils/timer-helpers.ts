@@ -12,7 +12,7 @@ export async function withFakeTimers(
   }
 ) {
   const { autoAdvance = false, maxAdvanceTime = 15 * 60 * 1000 } = options || {};
-  
+
   vi.useFakeTimers();
   try {
     if (autoAdvance) {

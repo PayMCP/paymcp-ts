@@ -37,7 +37,7 @@ const SimpleActionSchema = {
  * 4. If paid -> call the original tool handler.
  * 5. If canceled -> return a structured canceled response.
  * 6. If still unpaid after N attempts -> return pending status WITHOUT adding tools.
- * 
+ *
  * This is a pure elicitation flow - no confirmation tools are added.
  */
 export const makePaidWrapper: PaidWrapperFactory = (
@@ -49,7 +49,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   logger?: Logger
 ) => {
   const log: Logger = logger ?? console;
-  
+
   // No tool registration here - pure elicitation flow
 
   async function wrapper(paramsOrExtra: unknown, maybeExtra?: ToolExtraLike) {
@@ -139,11 +139,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     const providerName = provider.getName();
     // Extract MCP session ID from extra context if available
     const mcpSessionId = extractSessionId(extra, log);
-    const sessionKey = new SessionKey(
-      providerName,
-      String(paymentId),
-      mcpSessionId
-    );
+    const sessionKey = new SessionKey(providerName, String(paymentId), mcpSessionId);
     const sessionData: SessionData = {
       args: { toolArgs, extra },
       ts: Date.now(),
@@ -151,7 +147,9 @@ export const makePaidWrapper: PaidWrapperFactory = (
       metadata: { toolName: toolName, forRetry: true },
     };
     await sessionStorage.set(sessionKey, sessionData, 300); // 5 minute TTL for retries
-    log.debug?.(`[PayMCP:Elicitation] Stored session for potential retry of payment_id=${paymentId}`);
+    log.debug?.(
+      `[PayMCP:Elicitation] Stored session for potential retry of payment_id=${paymentId}`
+    );
 
     // 2. Run elicitation loop (client confirms payment)
     let userAction: 'accept' | 'decline' | 'cancel' | 'unknown';

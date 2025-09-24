@@ -85,14 +85,13 @@ function ensureConfirmTool(
   };
 
   // Confirmation handler: verify payment, retrieve saved args, invoke original tool.
-  const confirmHandler: ToolHandler = async function(
+  const confirmHandler: ToolHandler = async function (
     paramsOrExtra: unknown,
     maybeExtra?: ToolExtraLike
   ) {
     const hasArgs = arguments.length === 2;
     const params = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : (paramsOrExtra as ToolExtraLike);
-
 
     log?.info?.(`[PayMCP:TwoStep] confirm handler invoked for ${toolName}`);
 
@@ -113,11 +112,7 @@ function ensureConfirmTool(
     const providerName = provider.getName();
     // Extract MCP session ID from extra context if available
     const mcpSessionId = extractSessionId(extra, log);
-    const sessionKey = new SessionKey(
-      providerName,
-      String(paymentId),
-      mcpSessionId
-    );
+    const sessionKey = new SessionKey(providerName, String(paymentId), mcpSessionId);
 
     const stored = await sessionStorage.get(sessionKey);
 
@@ -232,11 +227,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     const providerName = provider.getName();
     // Extract MCP session ID from extra context if available
     const mcpSessionId = extractSessionId(_extra, log);
-    const sessionKey = new SessionKey(
-      providerName,
-      pidStr,
-      mcpSessionId
-    );
+    const sessionKey = new SessionKey(providerName, pidStr, mcpSessionId);
 
     // Stash original args with session storage (15 minutes TTL)
     const sessionData: SessionData = {

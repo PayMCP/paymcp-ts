@@ -52,13 +52,7 @@ describe('ElicitationFlow', () => {
 
   it('should NOT register confirmation tool', () => {
     // Create wrapper
-    makePaidWrapper(
-      originalFunc,
-      mockServer,
-      mockProvider,
-      price,
-      'test_tool'
-    );
+    makePaidWrapper(originalFunc, mockServer, mockProvider, price, 'test_tool');
 
     // Verify NO tool registration happens (pure elicitation flow)
     expect(mockServer.registerTool).not.toHaveBeenCalled();

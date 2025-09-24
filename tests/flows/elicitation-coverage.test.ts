@@ -59,7 +59,7 @@ describe('ElicitationFlow - Coverage Tests', () => {
     const extra = {
       sendRequest: vi.fn().mockRejectedValue({
         code: -32601,
-        message: 'Method not found'
+        message: 'Method not found',
       }),
     };
 
@@ -89,8 +89,8 @@ describe('ElicitationFlow - Coverage Tests', () => {
     const extra = {
       sendRequest: vi.fn().mockResolvedValue({
         result: {
-          action: 'accept'
-        }
+          action: 'accept',
+        },
       }),
     };
 
@@ -107,7 +107,7 @@ describe('ElicitationFlow - Coverage Tests', () => {
 
     const extra = {
       sendRequest: vi.fn().mockResolvedValue({
-        action: 'accept'
+        action: 'accept',
       }),
     };
 
@@ -125,7 +125,7 @@ describe('ElicitationFlow - Coverage Tests', () => {
 
     const extra = {
       sendRequest: vi.fn().mockResolvedValue({
-        action: 'accept'
+        action: 'accept',
       }),
     };
 
@@ -159,7 +159,8 @@ describe('ElicitationFlow - Coverage Tests', () => {
       .mockResolvedValueOnce('paid');
 
     const extra = {
-      sendRequest: vi.fn()
+      sendRequest: vi
+        .fn()
         .mockResolvedValueOnce({ action: 'unknown' })
         .mockResolvedValueOnce({ action: 'unknown' })
         .mockResolvedValueOnce({ action: 'accept' }),
@@ -186,7 +187,7 @@ describe('ElicitationFlow - Coverage Tests', () => {
 
     const extra = {
       sendRequest: vi.fn().mockResolvedValue({
-        action: 'accept'
+        action: 'accept',
       }),
     };
 
@@ -214,9 +215,9 @@ describe('ElicitationFlow - Coverage Tests', () => {
     const complexResult = {
       content: [
         { type: 'text', text: 'Line 1' },
-        { type: 'text', text: 'Line 2' }
+        { type: 'text', text: 'Line 2' },
       ],
-      metadata: { foo: 'bar' }
+      metadata: { foo: 'bar' },
     };
 
     originalFunc.mockResolvedValueOnce(complexResult);
@@ -225,7 +226,7 @@ describe('ElicitationFlow - Coverage Tests', () => {
 
     const extra = {
       sendRequest: vi.fn().mockResolvedValue({
-        action: 'accept'
+        action: 'accept',
       }),
     };
 
@@ -242,7 +243,7 @@ describe('ElicitationFlow - Coverage Tests', () => {
     // First call with session ID
     const extra1 = {
       sendRequest: vi.fn().mockResolvedValue({ action: 'accept' }),
-      headers: { 'Mcp-Session-Id': 'session1' }
+      headers: { 'Mcp-Session-Id': 'session1' },
     };
 
     await wrapper({ test: 'data' }, extra1);
@@ -250,7 +251,7 @@ describe('ElicitationFlow - Coverage Tests', () => {
     // Second call with different session ID
     const extra2 = {
       sendRequest: vi.fn().mockResolvedValue({ action: 'accept' }),
-      headers: { 'Mcp-Session-Id': 'session2' }
+      headers: { 'Mcp-Session-Id': 'session2' },
     };
 
     await wrapper({ test: 'data' }, extra2);

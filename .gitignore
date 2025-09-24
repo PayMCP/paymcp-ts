@@ -77,6 +77,9 @@ test-results/
 # Optional eslint cache
 .eslintcache
 
+# Static Analysis Results
+*.sarif
+
 # Optional REPL history
 .node_repl_history
 

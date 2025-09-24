@@ -1,4 +1,5 @@
-import { ISessionStorage, SessionData, SessionKey } from './types.js';
+import { ISessionStorage, SessionData } from './types.js';
+import { SessionKey } from './types.js';
 
 interface StoredSession {
   data: SessionData;
@@ -16,7 +17,7 @@ export class InMemorySessionStorage implements ISessionStorage {
   }
 
   private makeKey(key: SessionKey): string {
-    return `${key.provider}:${key.paymentId}`;
+    return key.toString();
   }
 
   async set(key: SessionKey, data: SessionData, ttlSeconds?: number): Promise<void> {

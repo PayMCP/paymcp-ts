@@ -3,7 +3,9 @@ import { makePaidWrapper as makeElicitationWrapper } from '../../src/flows/elici
 import { makePaidWrapper as makeProgressWrapper } from '../../src/flows/progress';
 import { BasePaymentProvider } from '../../src/providers/base';
 import { SessionManager } from '../../src/session/manager';
+import { SessionKey } from '../../src/session/types';
 import type { McpServerLike } from '../../src/types/mcp';
+import { withFakeTimers } from '../utils/timer-helpers';
 
 /**
  * ENG-114 Scenario Test
@@ -17,7 +19,6 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
   let originalFunc: any;
 
   beforeEach(() => {
-    vi.useFakeTimers();
 
     mockServer = {
       registerTool: vi.fn(),
@@ -35,16 +36,12 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
     vi.clearAllMocks();
   });
 
-  afterEach(async () => {
-    vi.useRealTimers();
-    // Small delay to ensure all async operations complete before reset
-    await new Promise(resolve => setTimeout(resolve, 10));
-    // Don't reset session manager during tests
-    // SessionManager.reset();
+  afterEach(() => {
+    vi.clearAllMocks();
   });
 
   describe('ELICITATION Flow', () => {
-    it('should handle 2-minute payment delay via confirmation tool', async () => {
+    it('should handle 2-minute payment delay via retry', async () => {
       // Setup
       mockProvider.createPayment = vi.fn().mockResolvedValue({
         paymentId: 'test_payment_123',
@@ -54,10 +51,7 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
       // Payment is pending initially, then paid after user approves
       mockProvider.getPaymentStatus = vi.fn().mockResolvedValue('pending'); // Always pending during elicitation
 
-      let confirmHandler: any;
-      (mockServer.registerTool as any).mockImplementation((name, config, handler) => {
-        if (name.includes('confirm')) confirmHandler = handler;
-      });
+      // No confirmation tool in new implementation
 
       const wrapper = makeElicitationWrapper(
         originalFunc,
@@ -72,35 +66,34 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
         sendRequest: vi.fn().mockResolvedValue({ action: 'unknown' }), // Simulate timeout
       };
 
-      const promise = wrapper({ data: 'test' }, extra);
+      await withFakeTimers(async () => {
+        const promise = wrapper({ data: 'test' }, extra);
+        // Run all timers to completion (will fast-forward through all 5 elicitation attempts)
+        await vi.runAllTimersAsync();
+        const result = await promise;
 
-      // Run all timers to completion (will fast-forward through all 5 elicitation attempts)
-      await vi.runAllTimersAsync();
-
-      const result = await promise;
-
-      // Should return pending with confirmation tool
-      expect(result.status).toBe('pending');
-      expect(result.next_step).toBe('confirm_test_tool_payment');
-      expect(result.content[0].text).toContain('Payment not yet received');
+        // Should return pending status
+        expect(result.status).toBe('pending');
+        expect(result.payment_id).toBe('test_payment_123');
+        expect(result.content[0].text).toContain('Payment pending');
+      });
 
       // Step 2: User waits 2 minutes, then pays
       // (In real scenario, user goes to payment URL and approves)
 
-      // Step 3: User comes back and uses confirmation tool
+      // Step 3: User comes back and retries with payment_id
       // Payment is now paid
       (mockProvider.getPaymentStatus as vi.Mock).mockResolvedValue('paid');
 
-      const confirmResult = await confirmHandler({ payment_id: 'test_payment_123' }, {});
+      const retryResult = await wrapper({ data: 'test', payment_id: 'test_payment_123' }, extra);
 
       // Should successfully execute the original tool
-      // The stored args are wrapped in { toolArgs, extra } format
       expect(originalFunc).toHaveBeenCalledWith(
-        expect.objectContaining({ toolArgs: { data: 'test' } }),
-        {}
+        { data: 'test' },
+        extra
       );
-      expect(confirmResult.content[0].text).toBe('Tool executed successfully');
-    }, 30000);
+      expect(retryResult.content[0].text).toBe('Tool executed successfully');
+    });
 
     it('should persist session for at least 15 minutes', async () => {
       mockProvider.createPayment = vi.fn().mockResolvedValue({
@@ -109,10 +102,7 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
       });
       mockProvider.getPaymentStatus = vi.fn().mockResolvedValue('pending');
 
-      let confirmHandler: any;
-      (mockServer.registerTool as any).mockImplementation((name, config, handler) => {
-        if (name.includes('confirm')) confirmHandler = handler;
-      });
+      // No confirmation tool in new implementation
 
       const wrapper = makeElicitationWrapper(
         originalFunc,
@@ -127,39 +117,40 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
         sendRequest: vi.fn().mockResolvedValue({ action: 'unknown' }),
       };
 
-      const promise = wrapper({ important: 'data' }, extra);
+      let testResult: any;
+      await withFakeTimers(async () => {
+        const promise = wrapper({ important: 'data' }, extra);
+        // Run all timers to completion (will fast-forward through all 5 elicitation attempts)
+        await vi.runAllTimersAsync();
+        testResult = await promise;
+      });
 
-      // Run all timers to completion (will fast-forward through all 5 elicitation attempts)
-      await vi.runAllTimersAsync();
-
-      const result = await promise;
-
-      // Elicitation should return pending status with confirmation tool
-      expect(result.status).toBe('pending');
-      expect(result.next_step).toBe('confirm_another_tool_payment');
+      // Elicitation should return pending status
+      expect(testResult.status).toBe('pending');
+      expect(testResult.payment_id).toBe('test_payment_456');
 
       // Verify session was stored (should be available after elicitation timeout)
       const storage = SessionManager.getStorage();
-      const sessionKey = { provider: 'mock', paymentId: 'test_payment_456' };
+      const sessionKey = new SessionKey('mock', 'test_payment_456');
       const storedSession = await storage.get(sessionKey);
       expect(storedSession).toBeDefined();
       expect(storedSession?.args.toolArgs).toEqual({ important: 'data' });
 
-      // Even after 10 minutes, session should still be available for confirmation
+      // Even after 10 minutes, session should still be available for retry
       // (In production, TTL is 15 minutes)
       (mockProvider.getPaymentStatus as vi.Mock).mockResolvedValue('paid');
-      const confirmResult = await confirmHandler({ payment_id: 'test_payment_456' }, {});
+      const retryResult = await wrapper({ important: 'data', payment_id: 'test_payment_456' }, extra);
 
       // Should successfully execute the original tool with stored args
       expect(originalFunc).toHaveBeenCalledWith(
-        expect.objectContaining({ toolArgs: { important: 'data' } }),
-        {}
+        { important: 'data' },
+        extra
       );
-      expect(confirmResult.content[0].text).toBe('Tool executed successfully');
+      expect(retryResult.content[0].text).toBe('Tool executed successfully');
 
-      // Session should be cleaned up after successful confirmation
-      const sessionAfterConfirm = await storage.get(sessionKey);
-      expect(sessionAfterConfirm).toBeUndefined();
+      // Session should be cleaned up after successful retry
+      const sessionAfterRetry = await storage.get(sessionKey);
+      expect(sessionAfterRetry).toBeUndefined();
     }, 30000);
   });
 
@@ -186,20 +177,21 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
         'progress_tool'
       );
 
-      const promise = wrapper({ data: 'test' }, {});
-
-      // For the 2-minute payment delay test, run all timers to completion
-      await vi.runAllTimersAsync();
-
-      const result = await promise;
+      let testResult: any;
+      await withFakeTimers(async () => {
+        const promise = wrapper({ data: 'test' }, {});
+        // For the 2-minute payment delay test, run all timers to completion
+        await vi.runAllTimersAsync();
+        testResult = await promise;
+      });
 
       // Should have executed successfully
       expect(originalFunc).toHaveBeenCalledWith({ data: 'test' }, {});
-      expect(result.content[0].text).toBe('Tool executed successfully');
+      expect(testResult.content[0].text).toBe('Tool executed successfully');
       expect(statusCallCount).toBeGreaterThan(40); // Polled many times
-    }, 10000);
+    });
 
-    it('should provide confirmation tool after 15-minute timeout', async () => {
+    it('should allow retry after timeout', async () => {
       mockProvider.createPayment = vi.fn().mockResolvedValue({
         paymentId: 'timeout_payment_123',
         paymentUrl: 'https://payment.test/timeout/123',
@@ -207,11 +199,6 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
 
       // Payment stays pending (user hasn't paid yet)
       mockProvider.getPaymentStatus = vi.fn().mockResolvedValue('pending');
-
-      let confirmHandler: any;
-      (mockServer.registerTool as any).mockImplementation((name, config, handler) => {
-        if (name.includes('confirm')) confirmHandler = handler;
-      });
 
       const wrapper = makeProgressWrapper(
         originalFunc,
@@ -221,29 +208,30 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
         'timeout_tool'
       );
 
-      const promise = wrapper({ data: 'test' }, {});
+      let testResult: any;
+      await withFakeTimers(async () => {
+        const promise = wrapper({ data: 'test' }, {});
+        // Fast-forward exactly 15 minutes (MAX_WAIT_MS) to trigger timeout
+        await vi.runAllTimersAsync();
+        testResult = await promise;
+      });
 
-      // Fast-forward exactly 15 minutes (MAX_WAIT_MS) to trigger timeout
-      await vi.runAllTimersAsync();
-
-      const result = await promise;
-
-      // Should timeout but provide confirmation tool
-      expect(result.status).toBe('pending');
-      expect(result.next_step).toBe('confirm_timeout_tool_payment');
-      expect(result.content[0].text).toContain('timeout');
+      // Should timeout and allow retry with original tool
+      expect(testResult.status).toBe('pending');
+      expect(testResult.payment_id).toBe('timeout_payment_123');
+      expect(testResult.content[0].text).toContain('timeout');
       expect(originalFunc).not.toHaveBeenCalled();
 
-      // User can still confirm later if they pay
+      // User can retry later if they pay
       (mockProvider.getPaymentStatus as vi.Mock).mockResolvedValue('paid');
-      const confirmResult = await confirmHandler({ payment_id: 'timeout_payment_123' }, {});
+      const retryResult = await wrapper({ data: 'test', payment_id: 'timeout_payment_123' }, {});
 
-      // Should successfully execute the original tool with stored args
+      // Should successfully execute the original tool
       expect(originalFunc).toHaveBeenCalledWith(
-        expect.objectContaining({ toolArgs: { data: 'test' } }),
+        { data: 'test' },
         {}
       );
-      expect(confirmResult.content[0].text).toBe('Tool executed successfully');
+      expect(retryResult.content[0].text).toBe('Tool executed successfully');
     }, 10000);
   });
 
@@ -274,7 +262,7 @@ describe('ENG-114 Scenario: Delayed Payment Approval', () => {
 
       // Session should be cleaned up after successful payment
       const storage = SessionManager.getStorage();
-      const sessionKey = { provider: 'mock', paymentId: 'cleanup_test' };
+      const sessionKey = new SessionKey('mock', 'cleanup_test');
       const storedSession = await storage.get(sessionKey);
       expect(storedSession).toBeUndefined();
     });

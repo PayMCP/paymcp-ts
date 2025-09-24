@@ -27,7 +27,9 @@ import type { BasePaymentProvider } from '../providers/base.js';
 import type { PriceConfig, ToolExtraLike } from '../types/config.js';
 import { paymentPromptMessage } from '../utils/messages.js';
 import { Logger } from '../types/logger.js';
-import { SessionManager, SessionKey, SessionData } from '../session/index.js';
+import { SessionManager, SessionData } from '../session/index.js';
+import { SessionKey } from '../session/types.js';
+import { extractSessionId } from '../utils/session.js';
 
 import { z } from 'zod';
 
@@ -83,13 +85,14 @@ function ensureConfirmTool(
   };
 
   // Confirmation handler: verify payment, retrieve saved args, invoke original tool.
-  const confirmHandler: ToolHandler = async (
+  const confirmHandler: ToolHandler = async function(
     paramsOrExtra: unknown,
     maybeExtra?: ToolExtraLike
-  ) => {
+  ) {
     const hasArgs = arguments.length === 2;
     const params = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : (paramsOrExtra as ToolExtraLike);
+
 
     log?.info?.(`[PayMCP:TwoStep] confirm handler invoked for ${toolName}`);
 
@@ -108,10 +111,13 @@ function ensureConfirmTool(
     }
 
     const providerName = provider.getName();
-    const sessionKey: SessionKey = {
-      provider: providerName,
-      paymentId: String(paymentId),
-    };
+    // Extract MCP session ID from extra context if available
+    const mcpSessionId = extractSessionId(extra, log);
+    const sessionKey = new SessionKey(
+      providerName,
+      String(paymentId),
+      mcpSessionId
+    );
 
     const stored = await sessionStorage.get(sessionKey);
 
@@ -224,10 +230,13 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
     const pidStr = String(paymentId);
     const providerName = provider.getName();
-    const sessionKey: SessionKey = {
-      provider: providerName,
-      paymentId: pidStr,
-    };
+    // Extract MCP session ID from extra context if available
+    const mcpSessionId = extractSessionId(_extra, log);
+    const sessionKey = new SessionKey(
+      providerName,
+      pidStr,
+      mcpSessionId
+    );
 
     // Stash original args with session storage (15 minutes TTL)
     const sessionData: SessionData = {

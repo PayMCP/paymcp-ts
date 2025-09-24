@@ -8,7 +8,9 @@ import { Logger } from '../types/logger.js';
 import { ToolExtraLike } from '../types/config.js';
 import { normalizeStatus } from '../utils/payment.js';
 import { SessionManager } from '../session/manager.js';
-import type { SessionKey, SessionData } from '../session/types.js';
+import type { SessionData } from '../session/types.js';
+import { SessionKey } from '../session/types.js';
+import { extractSessionId } from '../utils/session.js';
 
 export const DEFAULT_POLL_MS = 3_000; // poll provider every 3s
 export const MAX_WAIT_MS = 15 * 60 * 1000; // give up after 15 minutes
@@ -69,52 +71,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
   logger
 ) => {
   const log: Logger = logger ?? console;
-  const confirmToolName = `confirm_${toolName}_payment`;
-
-  // Register confirmation tool (like Python implementation)
-  server.registerTool(
-    confirmToolName,
-    {
-      description: `Confirm payment and execute ${toolName}() after progress timeout`,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          payment_id: {
-            type: 'string',
-            description: 'The payment ID to confirm',
-          },
-        },
-        required: ['payment_id'],
-      },
-    },
-    async (params: { payment_id: string }, extra: ToolExtraLike) => {
-      const paymentId = params.payment_id;
-      log.info?.(`[progress_confirm_tool] Received payment_id=${paymentId}`);
-      const providerName = provider.getName();
-      const sessionKey: SessionKey = {
-        provider: providerName,
-        paymentId: String(paymentId),
-      };
-
-      const stored = await sessionStorage.get(sessionKey);
-      log.debug?.(
-        `[progress_confirm_tool] Looking up session with provider=${providerName} payment_id=${paymentId}`
-      );
-
-      if (stored === undefined) {
-        throw new Error('Unknown or expired payment_id');
-      }
-
-      const status = await provider.getPaymentStatus(paymentId);
-      if (normalizeStatus(status) !== 'paid') {
-        throw new Error(`Payment status is ${status}, expected 'paid'`);
-      }
-      log.debug?.(`[progress_confirm_tool] Calling ${toolName} with stored args`);
-
-      await sessionStorage.delete(sessionKey);
-      return await callOriginal(func, stored.args, extra);
-    }
-  );
+  
+  // No tool registration here - pure progress flow
 
   async function wrapper(paramsOrExtra: unknown, maybeExtra?: ToolExtraLike) {
     log?.debug?.(
@@ -128,6 +86,38 @@ export const makePaidWrapper: PaidWrapperFactory = (
       ? (maybeExtra as ToolExtraLike)
       : (paramsOrExtra as ToolExtraLike);
 
+    // Check if there's a payment_id in params (retry scenario)
+    const retryPaymentId = (toolArgs as any)?._payment_id || (toolArgs as any)?.payment_id;
+    if (retryPaymentId) {
+      log?.debug?.(`[PayMCP:Progress] Retry detected for payment_id=${retryPaymentId}`);
+      // Check payment status for retry
+      try {
+        const status = await provider.getPaymentStatus(retryPaymentId);
+        if (normalizeStatus(status) === 'paid') {
+          log?.info?.(`[PayMCP:Progress] Payment ${retryPaymentId} already paid, executing tool`);
+          // Remove payment_id from args before calling original function
+          if (toolArgs && typeof toolArgs === 'object') {
+            const cleanArgs = { ...toolArgs };
+            delete (cleanArgs as any)._payment_id;
+            delete (cleanArgs as any).payment_id;
+            return await callOriginal(func, cleanArgs, extra);
+          }
+          return await callOriginal(func, toolArgs, extra);
+        } else if (normalizeStatus(status) === 'canceled') {
+          log?.info?.(`[PayMCP:Progress] Payment ${retryPaymentId} was canceled`);
+          return {
+            content: [{ type: 'text', text: 'Previous payment was canceled.' }],
+            annotations: { payment: { status: 'canceled' } },
+            status: 'canceled',
+            message: 'Previous payment was canceled',
+          };
+        }
+      } catch (e) {
+        log?.warn?.(`[PayMCP:Progress] Could not check retry payment status: ${String(e)}`);
+        // Continue with new payment
+      }
+    }
+
     // -----------------------------------------------------------------------
     // 1. Create payment session
     // -----------------------------------------------------------------------
@@ -138,19 +128,24 @@ export const makePaidWrapper: PaidWrapperFactory = (
     );
     log?.debug?.(`[PayMCP:Progress] created payment id=${paymentId} url=${paymentUrl}`);
 
-    // Store session for later confirmation (in case of timeout)
+    // Store session for recovery (if client needs to retry after timeout)
+    // But NOT for a confirmation tool - just for potential retry
     const providerName = provider.getName();
-    const sessionKey: SessionKey = {
-      provider: providerName,
-      paymentId: String(paymentId),
-    };
+    // Extract MCP session ID from extra context if available
+    const mcpSessionId = extractSessionId(extra, log);
+    const sessionKey = new SessionKey(
+      providerName,
+      String(paymentId),
+      mcpSessionId
+    );
     const sessionData: SessionData = {
       args: { toolArgs, extra },
       ts: Date.now(),
       providerName: providerName,
+      metadata: { toolName: toolName, forRetry: true },
     };
-    await sessionStorage.set(sessionKey, sessionData);
-    log?.debug?.(`[PayMCP:Progress] Stored session for payment_id=${paymentId}`);
+    await sessionStorage.set(sessionKey, sessionData, 300); // 5 minute TTL for retries
+    log?.debug?.(`[PayMCP:Progress] Stored session for potential retry of payment_id=${paymentId}`);
 
     // -----------------------------------------------------------------------
     // 2. Initial progress message (0%) with payment link
@@ -230,21 +225,21 @@ export const makePaidWrapper: PaidWrapperFactory = (
     if (status !== 'paid') {
       // Timed out waiting for payment
       log?.warn?.(`[PayMCP:Progress] timeout waiting for payment paymentId=${paymentId}`);
-      // Session remains for later confirmation
+      // Return pending status WITHOUT a tool reference
+      // Client can retry the original tool if needed
       return {
-        content: [{ type: 'text', text: 'Payment timeout reached; aborting.' }],
+        content: [{ type: 'text', text: 'Payment timeout reached. Please complete payment and try the tool again.' }],
         annotations: {
           payment: {
             status: 'pending',
             payment_id: paymentId,
-            next_step: confirmToolName,
           },
         },
         status: 'pending',
-        message: 'Payment timeout reached; aborting',
+        message: 'Payment timeout reached. Please complete payment and try the tool again.',
         payment_id: String(paymentId),
         payment_url: paymentUrl,
-        next_step: confirmToolName, // Use confirmation tool
+        // No next_step tool - client retries original tool
       };
     }
 

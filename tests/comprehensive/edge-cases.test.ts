@@ -8,6 +8,7 @@ import { BasePaymentProvider } from '../../src/providers/base';
 import { SessionManager } from '../../src/session/manager';
 import { normalizeStatus } from '../../src/utils/payment';
 import { PaymentFlow } from '../../src/types/payment';
+import { withFakeTimers } from '../utils/timer-helpers';
 import type { McpServerLike } from '../../src/types/mcp';
 
 // Mock global fetch
@@ -380,23 +381,18 @@ describe('100% Coverage Achievement', () => {
       );
 
       // Start a payment flow to store a session
-      vi.useFakeTimers();
-      const promise = wrapper({ data: 'test' }, { extraValue: 'extra' });
+      await withFakeTimers(async () => {
+        const promise = wrapper({ data: 'test' }, { extraValue: 'extra' });
+        await vi.runAllTimersAsync();
+        const result = await promise;
 
-      // Let it create payment and store session
-      await Promise.resolve();
-      vi.advanceTimersByTime(6000); // Two polling cycles
-      vi.useRealTimers();
+        // The wrapper should have been called since payment was paid
+        expect(originalFunc).toHaveBeenCalledWith({ data: 'test' }, { extraValue: 'extra' });
 
-      // Wait for the wrapper to complete
-      const result = await promise;
-
-      // The wrapper should have been called since payment was paid
-      expect(originalFunc).toHaveBeenCalledWith({ data: 'test' }, { extraValue: 'extra' });
-
-      // Also verify the result structure
-      expect(result.annotations?.payment?.status).toBe('paid');
-    }, 10000); // Increase timeout for this test
+        // Also verify the result structure
+        expect(result.annotations?.payment?.status).toBe('paid');
+      });
+    });
   });
 
   describe('Provider coverage', () => {

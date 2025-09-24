@@ -193,9 +193,7 @@ describe('TwoStepFlow', () => {
       const confirmResult = await confirmTool.handler({ payment_id: 'mock_payment_123' }, {});
 
       expect(mockProvider.getPaymentStatus).toHaveBeenCalledWith('mock_payment_123');
-      expect(originalFunc).toHaveBeenCalledWith(testArgs, {
-        payment_id: 'mock_payment_123',
-      });
+      expect(originalFunc).toHaveBeenCalledWith(testArgs, {});
       expect(confirmResult).toEqual({
         content: [{ type: 'text', text: 'Tool executed successfully' }],
       });

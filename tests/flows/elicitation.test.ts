@@ -48,6 +48,20 @@ describe('ElicitationFlow', () => {
 
   afterEach(() => {
     SessionManager.reset();
+  });
+
+  it('should NOT register confirmation tool', () => {
+    // Create wrapper
+    makePaidWrapper(
+      originalFunc,
+      mockServer,
+      mockProvider,
+      price,
+      'test_tool'
+    );
+
+    // Verify NO tool registration happens (pure elicitation flow)
+    expect(mockServer.registerTool).not.toHaveBeenCalled();
     vi.clearAllMocks();
   });
 
@@ -216,6 +230,50 @@ describe('ElicitationFlow', () => {
 
     expect(mockProvider.createPayment).toHaveBeenCalled();
     expect(errorFunc).toHaveBeenCalled();
+  });
+
+  it('should handle retry with payment_id', async () => {
+    const wrapper = makePaidWrapper(originalFunc, mockServer, mockProvider, price, 'test_tool');
+
+    // Mock payment as already paid
+    (mockProvider.getPaymentStatus as vi.Mock).mockResolvedValueOnce('paid');
+
+    const extra = {
+      sendRequest: vi.fn(),
+    };
+
+    // Call with payment_id from previous attempt
+    const result = await wrapper({ payment_id: 'existing_payment_123' }, extra);
+
+    // Should check status and execute immediately without creating new payment
+    expect(mockProvider.getPaymentStatus).toHaveBeenCalledWith('existing_payment_123');
+    expect(mockProvider.createPayment).not.toHaveBeenCalled();
+    expect(originalFunc).toHaveBeenCalledWith(
+      {}, // payment_id should be removed from args
+      extra
+    );
+    expect(result.content).toEqual([{ type: 'text', text: 'Success' }]);
+  });
+
+  it('should handle retry with canceled payment', async () => {
+    const wrapper = makePaidWrapper(originalFunc, mockServer, mockProvider, price, 'test_tool');
+
+    // Mock payment as canceled
+    (mockProvider.getPaymentStatus as vi.Mock).mockResolvedValueOnce('canceled');
+
+    const extra = {
+      sendRequest: vi.fn(),
+    };
+
+    // Call with payment_id from previous attempt
+    const result = await wrapper({ payment_id: 'canceled_payment_123' }, extra);
+
+    // Should return canceled status without executing
+    expect(mockProvider.getPaymentStatus).toHaveBeenCalledWith('canceled_payment_123');
+    expect(mockProvider.createPayment).not.toHaveBeenCalled();
+    expect(originalFunc).not.toHaveBeenCalled();
+    expect(result.status).toBe('canceled');
+    expect(result.message).toContain('Previous payment was canceled');
   });
 
   it('should handle missing elicitation response', async () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { withFakeTimers } from '../utils/timer-helpers';
 import { makePaidWrapper as makeElicitationWrapper } from '../../src/flows/elicitation';
 import { makePaidWrapper as makeProgressWrapper } from '../../src/flows/progress';
 import { makePaidWrapper as makeTwoStepWrapper } from '../../src/flows/two_step';
@@ -25,7 +26,7 @@ describe('Coverage Final - Uncovered Lines', () => {
   });
 
   describe('Elicitation Flow - Error Paths', () => {
-    it('should handle confirm tool with unknown payment_id', async () => {
+    it('should handle retry with unknown payment_id', async () => {
       const mockServer = {
         registerTool: vi.fn(),
         reportProgress: vi.fn(),
@@ -34,17 +35,15 @@ describe('Coverage Final - Uncovered Lines', () => {
 
       const mockProvider = new BasePaymentProvider('test');
       mockProvider.getName = () => 'mock';
-      mockProvider.createPayment = vi.fn();
-      mockProvider.getPaymentStatus = vi.fn();
-
-      let confirmHandler: any;
-      (mockServer.registerTool as any).mockImplementation((name, config, handler) => {
-        if (name.includes('confirm')) confirmHandler = handler;
+      mockProvider.createPayment = vi.fn().mockResolvedValue({
+        paymentId: 'new_id',
+        paymentUrl: 'https://test.com/pay',
       });
+      mockProvider.getPaymentStatus = vi.fn().mockRejectedValue(new Error('Unknown payment'));
 
       const originalFunc = vi.fn();
 
-      makeElicitationWrapper(
+      const wrapper = makeElicitationWrapper(
         originalFunc,
         mockServer,
         mockProvider,
@@ -52,13 +51,14 @@ describe('Coverage Final - Uncovered Lines', () => {
         'test_tool'
       );
 
-      // Try to confirm without stored session
-      await expect(confirmHandler({ payment_id: 'unknown_id' }, {})).rejects.toThrow(
-        'Unknown or expired payment_id'
-      );
+      // Try to retry with unknown payment - should create new payment
+      const result = await wrapper({ payment_id: 'unknown_id' }, { sendRequest: vi.fn() });
+
+      expect(mockProvider.getPaymentStatus).toHaveBeenCalledWith('unknown_id');
+      expect(mockProvider.createPayment).toHaveBeenCalled();
     });
 
-    it('should handle confirm tool with unpaid status', async () => {
+    it('should handle retry with unpaid status', async () => {
       const mockServer = {
         registerTool: vi.fn(),
         reportProgress: vi.fn(),
@@ -67,17 +67,15 @@ describe('Coverage Final - Uncovered Lines', () => {
 
       const mockProvider = new BasePaymentProvider('test');
       mockProvider.getName = () => 'mock';
-      mockProvider.createPayment = vi.fn();
-      mockProvider.getPaymentStatus = vi.fn().mockResolvedValue('pending');
-
-      let confirmHandler: any;
-      (mockServer.registerTool as any).mockImplementation((name, config, handler) => {
-        if (name.includes('confirm')) confirmHandler = handler;
+      mockProvider.createPayment = vi.fn().mockResolvedValue({
+        paymentId: 'new_id',
+        paymentUrl: 'https://test.com/pay',
       });
+      mockProvider.getPaymentStatus = vi.fn().mockResolvedValue('pending');
 
       const originalFunc = vi.fn();
 
-      makeElicitationWrapper(
+      const wrapper = makeElicitationWrapper(
         originalFunc,
         mockServer,
         mockProvider,
@@ -85,17 +83,18 @@ describe('Coverage Final - Uncovered Lines', () => {
         'test_tool'
       );
 
-      // Store session
-      const storage = SessionManager.getStorage();
-      await storage.set(
-        { provider: 'mock', paymentId: 'test_id' },
-        { args: {}, ts: Date.now(), providerName: 'mock' }
-      );
+      // Try to retry with unpaid payment - should trigger elicitation
+      const sendRequest = vi.fn().mockResolvedValue({ action: 'unknown' });
+      
+      const result = await withFakeTimers(async () => {
+        const promise = wrapper({ payment_id: 'test_id' }, { sendRequest });
+        // Run all timers to completion
+        await vi.runAllTimersAsync();
+        return await promise;
+      });
 
-      // Try to confirm with non-paid status
-      await expect(confirmHandler({ payment_id: 'test_id' }, {})).rejects.toThrow(
-        "Payment status is pending, expected 'paid'"
-      );
+      expect(mockProvider.getPaymentStatus).toHaveBeenCalledWith('test_id');
+      expect(mockProvider.createPayment).toHaveBeenCalled();
     });
 
     it('should handle elicitation loop error and provider status check', async () => {
@@ -277,25 +276,19 @@ describe('Coverage Final - Uncovered Lines', () => {
         sendNotification: vi.fn(),
       };
 
-      vi.useFakeTimers();
-      const promise = wrapper({ test: 'data' }, extra);
+      await withFakeTimers(async () => {
+        const promise = wrapper({ test: 'data' }, extra);
+        await vi.runAllTimersAsync();
+        const result = await promise;
 
-      // Advance through creation and initial polling
-      for (let i = 0; i < 5; i++) {
-        await Promise.resolve();
-        vi.advanceTimersByTime(3000);
-      }
-
-      // Check that sendNotification was called
-      expect(extra.sendNotification).toHaveBeenCalled();
-      const callArgs = extra.sendNotification.mock.calls[0][0];
-      expect(callArgs.method).toBe('notifications/progress');
-      expect(callArgs.params.progressToken).toBe('token123');
-      expect(callArgs.params.total).toBe(100);
-
-      vi.useRealTimers();
-      await promise;
-    }, 30000);
+        // Check that sendNotification was called
+        expect(extra.sendNotification).toHaveBeenCalled();
+        const callArgs = extra.sendNotification.mock.calls[0][0];
+        expect(callArgs.method).toBe('notifications/progress');
+        expect(callArgs.params.progressToken).toBe('token123');
+        expect(callArgs.params.total).toBe(100);
+      });
+    });
 
     it('should handle token-based reporting failure', async () => {
       const mockServer = {
@@ -341,94 +334,18 @@ describe('Coverage Final - Uncovered Lines', () => {
         sendNotification: vi.fn().mockRejectedValue(new Error('Notification failed')),
       };
 
-      vi.useFakeTimers();
-      const promise = wrapper({ test: 'data' }, extra);
+      await withFakeTimers(async () => {
+        const promise = wrapper({ test: 'data' }, extra);
+        await vi.runAllTimersAsync();
+        const result = await promise;
 
-      // Advance through creation and polling
-      for (let i = 0; i < 5; i++) {
-        await Promise.resolve();
-        vi.advanceTimersByTime(3000);
-      }
+        // Should have attempted to send notification
+        expect(extra.sendNotification).toHaveBeenCalled();
 
-      // Should have attempted to send notification
-      expect(extra.sendNotification).toHaveBeenCalled();
-
-      vi.useRealTimers();
-      await promise;
-
-      // Check if warning was logged
-      const warnCall = logger.warn.mock.calls.find(call => call[0].includes('notify failed'));
-      expect(warnCall).toBeDefined();
-    }, 30000);
-
-    it('should handle progress confirm with missing session', async () => {
-      const mockServer = {
-        registerTool: vi.fn(),
-        reportProgress: vi.fn(),
-        requestElicitation: vi.fn(),
-      } as any;
-
-      const mockProvider = new BasePaymentProvider('test');
-      mockProvider.getName = () => 'mock';
-
-      let confirmHandler: any;
-      (mockServer.registerTool as any).mockImplementation((name, config, handler) => {
-        if (name.includes('confirm')) confirmHandler = handler;
+        // Check if warning was logged
+        const warnCall = logger.warn.mock.calls.find(call => call[0].includes('notify failed'));
+        expect(warnCall).toBeDefined();
       });
-
-      const originalFunc = vi.fn();
-
-      makeProgressWrapper(
-        originalFunc,
-        mockServer,
-        mockProvider,
-        { amount: 10, currency: 'USD' },
-        'test_tool'
-      );
-
-      // Try to confirm without stored session
-      await expect(confirmHandler({ payment_id: 'unknown_id' }, {})).rejects.toThrow(
-        'Unknown or expired payment_id'
-      );
-    });
-
-    it('should handle progress confirm with unpaid status', async () => {
-      const mockServer = {
-        registerTool: vi.fn(),
-        reportProgress: vi.fn(),
-        requestElicitation: vi.fn(),
-      } as any;
-
-      const mockProvider = new BasePaymentProvider('test');
-      mockProvider.getName = () => 'mock';
-      mockProvider.getPaymentStatus = vi.fn().mockResolvedValue('pending');
-
-      let confirmHandler: any;
-      (mockServer.registerTool as any).mockImplementation((name, config, handler) => {
-        if (name.includes('confirm')) confirmHandler = handler;
-      });
-
-      const originalFunc = vi.fn();
-
-      makeProgressWrapper(
-        originalFunc,
-        mockServer,
-        mockProvider,
-        { amount: 10, currency: 'USD' },
-        'test_tool'
-      );
-
-      // Store session
-      const storage = SessionManager.getStorage();
-      await storage.set(
-        { provider: 'mock', paymentId: 'test_id' },
-        { args: {}, ts: Date.now(), providerName: 'mock' }
-      );
-
-      // Try to confirm with non-paid status
-      await expect(confirmHandler({ payment_id: 'test_id' }, {})).rejects.toThrow(
-        "Payment status is pending, expected 'paid'"
-      );
     });
 
     it('should handle progress flow with no args', async () => {
@@ -462,24 +379,15 @@ describe('Coverage Final - Uncovered Lines', () => {
         'test_tool'
       );
 
-      // Use fake timers to simulate time passing
-      vi.useFakeTimers();
+      await withFakeTimers(async () => {
+        const promise = wrapper({ someData: 'value' });
+        await vi.runAllTimersAsync();
+        const result = await promise;
 
-      // Call with single argument
-      const promise = wrapper({ someData: 'value' });
-
-      // Advance through polling cycles
-      for (let i = 0; i < 5; i++) {
-        await Promise.resolve();
-        vi.advanceTimersByTime(3000);
-      }
-
-      vi.useRealTimers();
-      const result = await promise;
-
-      expect(originalFunc).toHaveBeenCalledWith({ someData: 'value' });
-      expect(result.content[0].text).toBe('Success');
-    }, 30000);
+        expect(originalFunc).toHaveBeenCalledWith({ someData: 'value' });
+        expect(result.content[0].text).toBe('Success');
+      });
+    });
   });
 
   describe('Two-step Flow - Edge Cases', () => {

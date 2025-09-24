@@ -193,7 +193,7 @@ jobs:
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' && github.ref != 'refs/heads/develop')
     permissions:
       contents: read
       pull-requests: write
@@ -203,7 +203,18 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Find associated PR for push event
+      if: github.event_name == 'push'
+      id: find-pr
+      run: |
+        PR_NUMBER=$(gh pr list --head ${{ github.ref_name }} --json number --jq '.[0].number' || echo "")
+        echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+        echo "Found PR number: $PR_NUMBER"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Dependency Review (GitHub Advanced Security)
+      if: github.event_name == 'pull_request'
       uses: actions/dependency-review-action@v4
       continue-on-error: true
       with:
@@ -212,7 +223,7 @@ jobs:
         comment-summary-in-pr: always
 
     - name: Alternative Dependency Check
-      if: failure()
+      if: failure() || github.event_name == 'push'
       run: |
         echo "⚠️ GitHub Advanced Security not available - running alternative dependency check"
 
@@ -248,7 +259,7 @@ jobs:
         fi
 
     - name: Comment PR with dependency summary
-      if: failure() && github.event_name == 'pull_request' && hashFiles('dependency-summary.md') != ''
+      if: (failure() || github.event_name == 'push') && hashFiles('dependency-summary.md') != '' && (github.event_name == 'pull_request' || steps.find-pr.outputs.pr_number != '')
       uses: actions/github-script@v7
       with:
         script: |
@@ -257,11 +268,24 @@ jobs:
           if (fs.existsSync('dependency-summary.md')) {
             const summary = fs.readFileSync('dependency-summary.md', 'utf8');
 
+            // Determine PR number
+            let prNumber;
+            if (context.eventName === 'pull_request') {
+              prNumber = context.issue.number;
+            } else {
+              prNumber = parseInt('${{ steps.find-pr.outputs.pr_number }}');
+            }
+
+            if (!prNumber) {
+              console.log('No PR number found, skipping comment');
+              return;
+            }
+
             // Delete old dependency comments
             const comments = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: prNumber,
             });
 
             const oldComments = comments.data.filter(
@@ -280,7 +304,7 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: prNumber,
               body: summary
             });
           }

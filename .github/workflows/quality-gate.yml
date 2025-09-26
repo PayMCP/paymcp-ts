@@ -34,11 +34,17 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18'
-        # Cache pnpm dependencies for faster builds
-        cache: 'pnpm'
 
     - name: Setup pnpm
       run: npm install -g pnpm@10.12.4
+
+    - name: Cache pnpm dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.pnpm-store
+        key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-
 
     - name: Install dependencies
       run: pnpm install --frozen-lockfile

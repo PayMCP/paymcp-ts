@@ -1,0 +1,44 @@
+name: "Dependency Review"
+
+on:
+  pull_request:
+    branches: [ "main", "develop" ]
+
+# Cancel previous runs if a new one is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: "dependency-review"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    # Skip dependency review for fork PRs to avoid permission issues
+    if: github.event.pull_request.head.repo.fork == false
+    
+    # Least-privilege permissions
+    permissions:
+      # Required to read the repository contents
+      contents: read
+      # Required to write PR comments and reviews
+      pull-requests: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Dependency Review
+      uses: actions/dependency-review-action@v4
+      with:
+        # Fail the job if any vulnerable dependencies are found
+        fail-on-severity: moderate
+        # Optional: Deny specific licenses (uncomment and modify as needed)
+        # deny-licenses: GPL-1.0-only, GPL-2.0-only, GPL-3.0-only
+        # Optional: Allow specific licenses only (uncomment and modify as needed)
+        # allow-licenses: MIT, Apache-2.0, BSD-3-Clause, ISC
+        # Comment on the PR with dependency review results
+        comment-summary-in-pr: always
+        # Show vulnerabilities in the summary
+        show-openssf-scorecard: true

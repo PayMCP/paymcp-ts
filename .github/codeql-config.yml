@@ -1,0 +1,70 @@
+# CodeQL configuration file
+# This file customizes CodeQL analysis behavior
+# To use this config, uncomment the config-file line in .github/workflows/codeql.yml
+
+# Specify which files and directories to exclude from analysis
+paths-ignore:
+  # Exclude generated files
+  - dist/**
+  - build/**
+  - lib/**
+  - out/**
+  
+  # Exclude dependencies
+  - node_modules/**
+  - vendor/**
+  
+  # Exclude test files (optional - you may want to scan tests)
+  - tests/**
+  - test/**
+  - spec/**
+  - "**/*.test.ts"
+  - "**/*.test.js"
+  - "**/*.spec.ts"
+  - "**/*.spec.js"
+  
+  # Exclude configuration files
+  - "**/*.config.js"
+  - "**/*.config.ts"
+  - "**/*.config.mjs"
+  - ".eslintrc.*"
+  - "jest.config.*"
+  - "vitest.config.*"
+  - "rollup.config.*"
+  - "webpack.config.*"
+  
+  # Exclude documentation
+  - docs/**
+  - "**/*.md"
+  
+  # Exclude mock data and fixtures
+  - "**/mockData/**"
+  - "**/fixtures/**"
+  - "**/mocks/**"
+  
+  # Exclude coverage reports
+  - coverage/**
+
+# Specify which files to explicitly include (optional)
+paths:
+  - src/**
+  
+# Configure specific queries to run
+# queries:
+#   - uses: security-extended  # Run all security queries
+#   - uses: security-and-quality  # Run security + code quality queries
+
+# Disable specific queries (if needed)
+# disable-default-queries: false
+
+# Enable experimental features (use with caution)
+# experimental:
+#   - name: "ml-powered-queries"
+#     value: true
+
+# Configure database languages (usually auto-detected)
+# languages:
+#   - javascript-typescript
+
+# Advanced: Configure extraction settings
+# compilation-mode: none  # Use 'none' for interpreted languages like JavaScript

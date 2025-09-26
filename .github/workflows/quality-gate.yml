@@ -1,0 +1,160 @@
+name: "Quality Gate"
+
+on:
+  pull_request:
+    branches: [ "main", "develop" ]
+
+# Cancel previous runs if a new one is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gate:
+    name: "quality-gate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    # Least-privilege permissions
+    permissions:
+      # Required to read repository contents
+      contents: read
+      # Required to write PR comments
+      pull-requests: write
+    
+    # Output coverage percentage for other jobs to use
+    outputs:
+      coverage-percentage: ${{ steps.coverage.outputs.percentage }}
+      
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        # Cache npm dependencies for faster builds
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run tests with coverage
+      run: npm run test:coverage
+
+    - name: Parse coverage report
+      id: coverage
+      run: |
+        # Check if coverage report exists
+        if [ ! -f "coverage/coverage-summary.json" ]; then
+          echo "❌ Coverage report not found at coverage/coverage-summary.json"
+          exit 1
+        fi
+        
+        # Extract total coverage percentage from JSON report
+        # Vitest coverage-summary.json format: {"total":{"lines":{"pct":85.5}}}
+        COVERAGE=$(node -p "
+          try {
+            const coverage = require('./coverage/coverage-summary.json');
+            Math.round(coverage.total.lines.pct);
+          } catch (e) {
+            console.error('Error parsing coverage:', e.message);
+            process.exit(1);
+          }
+        ")
+        
+        echo "Coverage: ${COVERAGE}%"
+        echo "percentage=${COVERAGE}" >> $GITHUB_OUTPUT
+        
+        # Set environment variables for later steps
+        echo "COVERAGE_PERCENTAGE=${COVERAGE}" >> $GITHUB_ENV
+        
+        # Define threshold
+        THRESHOLD=90
+        echo "COVERAGE_THRESHOLD=${THRESHOLD}" >> $GITHUB_ENV
+        
+        # Check if coverage meets threshold
+        if [ "$COVERAGE" -ge "$THRESHOLD" ]; then
+          echo "✅ Coverage ${COVERAGE}% meets threshold of ${THRESHOLD}%"
+          echo "COVERAGE_STATUS=✅ PASSED" >> $GITHUB_ENV
+          echo "COVERAGE_COLOR=28a745" >> $GITHUB_ENV
+        else
+          echo "❌ Coverage ${COVERAGE}% below threshold of ${THRESHOLD}%"
+          echo "COVERAGE_STATUS=❌ FAILED" >> $GITHUB_ENV
+          echo "COVERAGE_COLOR=d73a49" >> $GITHUB_ENV
+          exit 1
+        fi
+
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-reports
+        path: |
+          coverage/
+        retention-days: 30
+        # Include coverage info in artifact
+        if-no-files-found: error
+
+    - name: Comment PR with coverage results
+      uses: actions/github-script@v7
+      # Only comment on PRs, not pushes
+      if: github.event_name == 'pull_request'
+      with:
+        script: |
+          const coverage = process.env.COVERAGE_PERCENTAGE;
+          const threshold = process.env.COVERAGE_THRESHOLD;
+          const status = process.env.COVERAGE_STATUS;
+          const color = process.env.COVERAGE_COLOR;
+          
+          const body = `## 🧪 Test Coverage Report
+          
+          | Metric | Value | Status |
+          |--------|-------|--------|
+          | **Coverage** | \`${coverage}%\` | ${status} |
+          | **Threshold** | \`${threshold}%\` | |
+          
+          ![Coverage Badge](https://img.shields.io/badge/Coverage-${coverage}%25-${color})
+          
+          ${coverage >= threshold 
+            ? '✅ **Quality Gate Passed!** Coverage meets the required threshold.' 
+            : '❌ **Quality Gate Failed!** Coverage is below the required threshold.'}
+          
+          <details>
+          <summary>📊 View detailed coverage report</summary>
+          
+          Download the coverage artifacts from this workflow run to view the detailed HTML coverage report.
+          
+          </details>
+          `;
+          
+          // Find existing coverage comment to update it instead of creating new ones
+          const comments = await github.rest.issues.listComments({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+          });
+          
+          const coverageComment = comments.data.find(comment => 
+            comment.body.includes('🧪 Test Coverage Report')
+          );
+          
+          if (coverageComment) {
+            // Update existing comment
+            await github.rest.issues.updateComment({
+              comment_id: coverageComment.id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+            console.log('Updated existing coverage comment');
+          } else {
+            // Create new comment
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+            console.log('Created new coverage comment');
+          }

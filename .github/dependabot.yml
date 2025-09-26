@@ -1,0 +1,110 @@
+# Dependabot configuration for automated dependency updates
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # Monitor npm dependencies (Node.js/TypeScript)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      # Check for updates weekly on Monday
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    # Limit number of open PRs to avoid spam
+    open-pull-requests-limit: 10
+    # Group patch and minor updates to reduce PR noise
+    groups:
+      # Group all non-major dependency updates
+      dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+          - "minor"
+    # Security updates get their own PRs immediately
+    allow:
+      - dependency-type: "all"
+    # Target branch for PRs (adjust if different)
+    target-branch: "main"
+    # Add semantic commit prefixes
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    # Add reviewers for dependency PRs (customize as needed)
+    reviewers:
+      - "PayMCP/maintainers"  # Adjust to your team/users
+    # Add labels to dependency PRs
+    labels:
+      - "dependencies"
+      - "automated"
+
+  # Monitor GitHub Actions updates
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      # Check for updates weekly on Monday
+      interval: "weekly"
+      day: "monday"
+      time: "10:00"
+      timezone: "UTC"
+    # Limit number of open PRs
+    open-pull-requests-limit: 5
+    # Group all GitHub Actions updates
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    # Target branch for PRs
+    target-branch: "main"
+    # Add semantic commit prefixes
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    # Add labels to GitHub Actions PRs
+    labels:
+      - "github-actions"
+      - "ci"
+      - "automated"
+
+  # Uncomment if using Docker
+  # - package-ecosystem: "docker"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #     day: "monday"
+  #     time: "11:00"
+  #     timezone: "UTC"
+  #   open-pull-requests-limit: 5
+  #   target-branch: "main"
+  #   commit-message:
+  #     prefix: "docker"
+  #   labels:
+  #     - "docker"
+  #     - "automated"
+
+  # Uncomment if using Python dependencies
+  # - package-ecosystem: "pip"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #     day: "monday"
+  #     time: "12:00"
+  #     timezone: "UTC"
+  #   open-pull-requests-limit: 10
+  #   groups:
+  #     python-dependencies:
+  #       patterns:
+  #         - "*"
+  #       update-types:
+  #         - "patch"
+  #         - "minor"
+  #   target-branch: "main"
+  #   commit-message:
+  #     prefix: "chore"
+  #   labels:
+  #     - "python"
+  #     - "dependencies"
+  #     - "automated"

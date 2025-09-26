@@ -124,6 +124,44 @@ Start your MCP transport (stdio / http / ws) as usual. Any MCP client that conne
 
 ---
 
+## Providers: alternative styles (optional)
+
+**Instances instead of config (advanced):**
+```ts
+import { installPayMCP, PaymentFlow } from "paymcp";
+import { WalleotProvider, CoinbaseProvider } from "paymcp/providers";
+
+installPayMCP(server, {
+  providers: [
+    new WalleotProvider({ apiKey: process.env.WALLEOT_API_KEY ?? "" }),
+    new CoinbaseProvider({ apiKey: process.env.COINBASE_COMMERCE_API_KEY ?? "" }),
+  ],
+  paymentFlow: PaymentFlow.TWO_STEP,
+});
+// Note: right now the first configured provider is used.
+```
+
+**Custom provider (minimal):**  
+Any provider must implement `createPayment(...)` and `getPaymentStatus(...)`.
+```ts
+import type { BasePaymentProvider } from "paymcp/providers";
+
+class MyProvider implements BasePaymentProvider {
+  constructor(private opts: { apiKey: string }) {}
+
+  async createPayment(amount: number, currency: string, description: string) {
+    // return { paymentId, paymentUrl }
+    return { paymentId: "demo-1", paymentUrl: "https://example.com/pay" };
+  }
+
+  async getPaymentStatus(paymentId: string) {
+    return "paid";
+  }
+}
+
+installPayMCP(server, { providers: [ new MyProvider({ apiKey: "..." }) ] });
+```
+
 ## 🧩 Supported Providers
 
 - ✅ [Adyen](https://www.adyen.com)
@@ -153,7 +191,7 @@ interface PaymentProvider {
 }
 ```
 
-See `src/providers/walleot.ts` and `src/providers/stripe.ts` for examples. Add yours, export it from the provider map, and pass config to `installPayMCP()`.
+See `src/providers/walleot.ts` and `src/providers/stripe.ts` for examples. Add yours and either pass an **instance directly** (recommended), or export it in the provider map and pass config to `installPayMCP()`.
 
 ---
 

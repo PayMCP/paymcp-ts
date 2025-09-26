@@ -2,8 +2,11 @@ import { PayMCPOptions, PayToolConfig } from "../types/config.js";
 import { McpServerLike } from "../types/mcp.js";
 import { PaymentFlow } from "../types/payment.js";
 import { buildProviders, ProviderInstances } from "../providers/index.js";
+import type { ProviderConfig, BasePaymentProvider } from "../providers/index.js";
 import { appendPriceToDescription } from "../utils/messages.js";
 import { makeFlow } from "../flows/index.js";
+
+type ProvidersInput = ProviderConfig | BasePaymentProvider[];
 
 export class PayMCP {
     private server: McpServerLike;
@@ -15,7 +18,7 @@ export class PayMCP {
 
     constructor(server: McpServerLike, opts: PayMCPOptions) {
         this.server = server;
-        this.providers = buildProviders(opts.providers as any);//TODO
+        this.providers = buildProviders(opts.providers as ProvidersInput);
         this.flow = opts.paymentFlow ?? PaymentFlow.TWO_STEP;
         this.wrapperFactory = makeFlow(this.flow);
         this.originalRegisterTool = server.registerTool.bind(server);

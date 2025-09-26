@@ -1,6 +1,6 @@
 {
   "name": "paymcp",
-  "version": "0.0.9",
+  "version": "0.2.0",
   "description": "Provider-agnostic payment layer for MCP (Model Context Protocol) tools and agents.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -8,15 +8,21 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./providers": {
+      "types": "./dist/providers/index.d.ts",
+      "import": "./dist/providers/index.js",
+      "require": "./dist/providers/index.cjs"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --clean --sourcemap",
+    "build": "tsup src/index.ts src/providers/index.ts --format cjs,esm --dts --clean --sourcemap",
     "watch": "npm run build -- --watch",
     "test": "vitest run",
     "test:watch": "vitest",

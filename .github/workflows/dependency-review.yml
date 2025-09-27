@@ -1,0 +1,43 @@
+name: "Dependency Review"
+
+on:
+  pull_request:
+    branches: [ "main", "develop" ]
+
+# Cancel previous runs if a new one is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: "dependency-review"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    # Skip dependency review for fork PRs to avoid permission issues
+    if: github.event.pull_request.head.repo.fork == false
+    
+    # Least-privilege permissions
+    permissions:
+      # Required to read the repository contents
+      contents: read
+      # Required to write PR comments and reviews
+      pull-requests: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Dependency Review
+      uses: actions/dependency-review-action@v4
+      with:
+        # Fail the job if any vulnerable dependencies are found
+        fail-on-severity: moderate
+        # Show OpenSSF Scorecard scores for security visibility
+        show-openssf-scorecard: true
+        # Set warning threshold to 1 to avoid noise from acceptable scores like 2.8
+        # Still shows all scores, just doesn't warn on reasonable values
+        warn-on-openssf-scorecard-level: 1
+        # Comment on the PR with dependency review results
+        comment-summary-in-pr: always

@@ -111,30 +111,79 @@ jobs:
       if: github.event_name == 'pull_request'
       with:
         script: |
+          const fs = require('fs');
           const coverage = process.env.COVERAGE_PERCENTAGE;
           const threshold = process.env.COVERAGE_THRESHOLD;
           const status = process.env.COVERAGE_STATUS;
           const color = process.env.COVERAGE_COLOR;
-          
+
+          // Parse detailed coverage data
+          let detailedCoverage = '';
+          try {
+            const coverageData = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
+
+            // Extract file-level coverage (excluding 'total')
+            const files = Object.entries(coverageData)
+              .filter(([filename]) => filename !== 'total')
+              .map(([filename, data]) => ({
+                file: filename.replace(process.cwd() + '/', ''),
+                lines: data.lines.pct,
+                functions: data.functions.pct,
+                branches: data.branches.pct,
+                statements: data.statements.pct
+              }))
+              .sort((a, b) => a.lines - b.lines); // Sort by line coverage, lowest first
+
+            // Create detailed table
+            if (files.length > 0) {
+              detailedCoverage = `
+
+          <details>
+          <summary>📊 Detailed Coverage by File</summary>
+
+          | File | Lines | Functions | Branches | Statements |
+          |------|-------|-----------|----------|------------|`;
+
+              files.forEach(file => {
+                const lineIcon = file.lines === 100 ? '✅' : file.lines >= 90 ? '⚠️' : '❌';
+                const funcIcon = file.functions === 100 ? '✅' : file.functions >= 90 ? '⚠️' : '❌';
+                const branchIcon = file.branches === 100 ? '✅' : file.branches >= 90 ? '⚠️' : '❌';
+                const stmtIcon = file.statements === 100 ? '✅' : file.statements >= 90 ? '⚠️' : '❌';
+
+                detailedCoverage += `
+          | \`${file.file}\` | ${lineIcon} ${file.lines}% | ${funcIcon} ${file.functions}% | ${branchIcon} ${file.branches}% | ${stmtIcon} ${file.statements}% |`;
+              });
+
+              detailedCoverage += `
+
+          **Legend:** ✅ = 100% | ⚠️ = 90-99% | ❌ = <90%
+
+          </details>`;
+            }
+          } catch (error) {
+            console.log('Could not parse detailed coverage:', error.message);
+            detailedCoverage = `
+
+          <details>
+          <summary>📊 View detailed coverage report</summary>
+
+          Coverage artifacts are available for download above.
+
+          </details>`;
+          }
+
           const body = `## 🧪 Test Coverage Report
-          
+
           | Metric | Value | Status |
           |--------|-------|--------|
           | **Coverage** | \`${coverage}%\` | ${status} |
           | **Threshold** | \`${threshold}%\` | |
-          
+
           ![Coverage Badge](https://img.shields.io/badge/Coverage-${coverage}%25-${color})
-          
+
           ${Number(coverage) >= Number(threshold)
             ? '✅ **Quality Gate Passed!** Coverage meets the required threshold.'
-            : '❌ **Quality Gate Failed!** Coverage is below the required threshold.'}
-          
-          <details>
-          <summary>📊 View detailed coverage report</summary>
-          
-          Download the coverage artifacts from this workflow run to view the detailed HTML coverage report.
-          
-          </details>
+            : '❌ **Quality Gate Failed!** Coverage is below the required threshold.'}${detailedCoverage}
           `;
           
           // Find existing coverage comment to update it instead of creating new ones

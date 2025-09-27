@@ -34,10 +34,10 @@ jobs:
       with:
         # Fail the job if any vulnerable dependencies are found
         fail-on-severity: moderate
-        # Allow packages with OpenSSF Scorecard score >= 2.5 (was 3.0)
-        # @ampproject/remapping has score 2.8, needed for Vitest coverage
-        warn-only: false
-        config-file: ./.github/dependency-review-config.yml
+        # Allow specific packages with known acceptable security scores
+        # @ampproject/remapping: score 2.8, maintained by Google AMP team, used for test coverage only
+        allow-vulnerabilities: |
+          @ampproject/remapping
         # Comment on the PR with dependency review results
         comment-summary-in-pr: always
         # Show vulnerabilities in the summary

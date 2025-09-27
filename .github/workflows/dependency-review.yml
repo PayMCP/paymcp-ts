@@ -34,10 +34,10 @@ jobs:
       with:
         # Fail the job if any vulnerable dependencies are found
         fail-on-severity: moderate
-        # Optional: Deny specific licenses (uncomment and modify as needed)
-        # deny-licenses: GPL-1.0-only, GPL-2.0-only, GPL-3.0-only
-        # Optional: Allow specific licenses only (uncomment and modify as needed)
-        # allow-licenses: MIT, Apache-2.0, BSD-3-Clause, ISC
+        # Allow packages with OpenSSF Scorecard score >= 2.5 (was 3.0)
+        # @ampproject/remapping has score 2.8, needed for Vitest coverage
+        warn-only: false
+        config-file: ./.github/dependency-review-config.yml
         # Comment on the PR with dependency review results
         comment-summary-in-pr: always
         # Show vulnerabilities in the summary

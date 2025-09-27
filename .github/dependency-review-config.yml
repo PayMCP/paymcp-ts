@@ -1,0 +1,30 @@
+# Dependency Review Configuration
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+# OpenSSF Scorecard configuration
+scorecard:
+  # Allow packages with OpenSSF Scorecard score >= 2.5 (default is 3.0)
+  # This allows @ampproject/remapping (score 2.8) which is needed for Vitest coverage
+  minimum-score: 2.5
+
+# Vulnerability severity levels that will fail the check
+fail-on-severity: moderate
+
+# License configuration (optional - currently allowing all)
+# Uncomment and modify as needed for your organization's license policy
+# allowed-licenses:
+#   - MIT
+#   - Apache-2.0
+#   - BSD-3-Clause
+#   - ISC
+#   - BSD-2-Clause
+
+# denied-licenses:
+#   - GPL-1.0-only
+#   - GPL-2.0-only
+#   - GPL-3.0-only
+#   - AGPL-3.0-only
+
+# Additional security configurations
+vulnerability-check: true
+license-check: true

@@ -34,8 +34,10 @@ jobs:
       with:
         # Fail the job if any vulnerable dependencies are found
         fail-on-severity: moderate
-        # Disable OpenSSF Scorecard warnings to avoid noise from transitive dependencies
-        # Focus on actual vulnerabilities instead of process metrics
-        show-openssf-scorecard: false
+        # Show OpenSSF Scorecard scores for security visibility
+        show-openssf-scorecard: true
+        # Set warning threshold to 1 to avoid noise from acceptable scores like 2.8
+        # Still shows all scores, just doesn't warn on reasonable values
+        warn-on-openssf-scorecard-level: 1
         # Comment on the PR with dependency review results
         comment-summary-in-pr: always

@@ -34,11 +34,8 @@ jobs:
       with:
         # Fail the job if any vulnerable dependencies are found
         fail-on-severity: moderate
-        # Allow specific packages with known acceptable security scores
-        # @ampproject/remapping: score 2.8, maintained by Google AMP team, used for test coverage only
-        allow-vulnerabilities: |
-          @ampproject/remapping
+        # Disable OpenSSF Scorecard warnings to avoid noise from transitive dependencies
+        # Focus on actual vulnerabilities instead of process metrics
+        show-openssf-scorecard: false
         # Comment on the PR with dependency review results
         comment-summary-in-pr: always
-        # Show vulnerabilities in the summary
-        show-openssf-scorecard: true

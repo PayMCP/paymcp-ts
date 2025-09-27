@@ -28,10 +28,10 @@ jobs:
       
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version: '18'
 
@@ -106,7 +106,7 @@ jobs:
         if-no-files-found: error
 
     - name: Comment PR with coverage results
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       # Only comment on PRs, not pushes
       if: github.event_name == 'pull_request'
       with:

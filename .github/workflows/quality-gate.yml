@@ -125,8 +125,8 @@ jobs:
           
           ![Coverage Badge](https://img.shields.io/badge/Coverage-${coverage}%25-${color})
           
-          ${coverage >= threshold 
-            ? '✅ **Quality Gate Passed!** Coverage meets the required threshold.' 
+          ${Number(coverage) >= Number(threshold)
+            ? '✅ **Quality Gate Passed!** Coverage meets the required threshold.'
             : '❌ **Quality Gate Failed!** Coverage is below the required threshold.'}
           
           <details>

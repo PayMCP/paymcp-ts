@@ -5,6 +5,8 @@ import { buildProviders, ProviderInstances } from "../providers/index.js";
 import type { ProviderConfig, BasePaymentProvider } from "../providers/index.js";
 import { appendPriceToDescription } from "../utils/messages.js";
 import { makeFlow } from "../flows/index.js";
+import { StateStore } from "../types/state.js";
+import { InMemoryStateStore } from "../state/inMemory.js";
 
 type ProvidersInput = ProviderConfig | BasePaymentProvider[];
 
@@ -12,6 +14,7 @@ export class PayMCP {
     private server: McpServerLike;
     private providers: ProviderInstances;
     private flow: PaymentFlow;
+    private stateStore: StateStore;
     private wrapperFactory: ReturnType<typeof makeFlow>;
     private originalRegisterTool: McpServerLike["registerTool"];
     private installed = false;
@@ -20,6 +23,7 @@ export class PayMCP {
         this.server = server;
         this.providers = buildProviders(opts.providers as ProvidersInput);
         this.flow = opts.paymentFlow ?? PaymentFlow.TWO_STEP;
+        this.stateStore = opts.stateStore ?? new InMemoryStateStore();
         this.wrapperFactory = makeFlow(this.flow);
         this.originalRegisterTool = server.registerTool.bind(server);
         this.patch();
@@ -68,7 +72,7 @@ export class PayMCP {
                 };
 
                 // wrap the handler in a payment flow
-                wrapped = self.wrapperFactory(handler, self.server, provider, price, name);
+                wrapped = self.wrapperFactory(handler, self.server, provider, price, name, self.stateStore);
             }
 
             return self.originalRegisterTool(name, config, wrapped);

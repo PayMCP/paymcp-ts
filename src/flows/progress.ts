@@ -69,7 +69,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
     provider,
     priceInfo,
     toolName,
-    logger
+    _stateStore,
+    logger,
 ) => {
     const log: Logger = logger ?? (provider as any).logger ?? console;
 

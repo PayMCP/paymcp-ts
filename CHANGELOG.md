@@ -1,5 +1,12 @@
 # Changelog
 
+
+## 0.2.1
+### Added
+- Support for pluggable state storage in TWO_STEP flow.
+  - Default is in-memory.
+  - New `RedisStateStore` implementation allows persisting state in Redis.
+
 ## 0.2.0
 ### Added
 - Extensible provider system. Providers can now be supplied in multiple ways:

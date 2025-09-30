@@ -195,10 +195,34 @@ See `src/providers/walleot.ts` and `src/providers/stripe.ts` for examples. Add y
 
 ---
 
+
 ## ⚠️ Notes & Caveats
 
-- **In‑memory state**: Two‑Step flow stores pending args in a process‑local Map. Use Redis (or similar) in production if you need durability or horizontal scaling.
 - **Always include `content` in tool results** to satisfy strict MCP clients (Pydantic validation).
+
+### 🔒 State Storage (Two-Step)
+
+By default, when using the `TWO_STEP` payment flow, PayMCP stores pending tool arguments (for confirming payment) **in memory** using a process-local `Map`. This is **not durable** and will not work across server restarts or multiple server instances (no horizontal scaling).
+
+To enable durable and scalable state storage, you can provide a custom `StateStore` implementation. PayMCP includes a built-in `RedisStateStore`, which works with any Redis-compatible client.
+
+#### Example: Using Redis for State Storage
+
+```ts
+import { createClient } from "redis";
+import { installPayMCP, RedisStateStore } from "paymcp";
+
+const redisClient = createClient({ url: "redis://localhost:6379" });
+await redisClient.connect();
+
+installPayMCP(server, {
+  providers: { /* ... */ },
+  paymentFlow: PaymentFlow.TWO_STEP,
+  stateStore: new RedisStateStore(redisClient),
+});
+```
+
+> Any client that implements `set`, `get`, and `del` (such as [`node-redis`](https://github.com/redis/node-redis), [`ioredis`](https://github.com/luin/ioredis), or a mock) can be used with `RedisStateStore`.
 
 ---
 

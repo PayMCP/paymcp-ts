@@ -30,21 +30,14 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v5
-      with:
-        node-version: '18'
-
     - name: Setup pnpm
       run: npm install -g pnpm@10.12.4
 
-    - name: Cache pnpm dependencies
-      uses: actions/cache@v4
+    - name: Setup Node.js with automatic package manager caching
+      uses: actions/setup-node@v5
       with:
-        path: ~/.pnpm-store
-        key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-        restore-keys: |
-          ${{ runner.os }}-pnpm-
+        node-version: '18'
+        cache: 'pnpm'
 
     - name: Install dependencies
       run: pnpm install --frozen-lockfile

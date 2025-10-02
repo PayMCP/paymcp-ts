@@ -7,6 +7,7 @@ import { Logger } from "../types/logger.js";
 import { normalizeStatus } from "../utils/payment.js";
 import { paymentPromptMessage } from "../utils/messages.js";
 import { z } from "zod";
+import { StateStore } from "../types/state.js";
 
 // Used for extra.sendRequest() result validation; accept any response shape.
 const Z_ANY = z.any();
@@ -37,6 +38,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   provider: BasePaymentProvider,
   priceInfo: PriceConfig,
   toolName: string,
+  _stateStore: StateStore,
   logger?: Logger
 ) => {
   const log: Logger = logger ?? (provider as any).logger ?? console;
@@ -105,7 +107,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
       }
     }
 
-    if (paymentStatus === "unsupported" /* или loopResult.status === "unsupported" */) {
+    if (paymentStatus === "unsupported" /* or loopResult.status === "unsupported" */) {
       return {
         content: [{ type: "text", text: "Client does not support the selected payment flow." }],
         annotations: { payment: { status: "error", reason: "elicitation_not_supported" } },

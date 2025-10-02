@@ -56,7 +56,7 @@ function ensureConfirmTool(
   provider: BasePaymentProvider,
   toolName: string,
   originalHandler: ToolHandler,
-  stateStore?: StateStore,
+  stateStore: StateStore,
   log?: Logger
 ): string {
   const confirmToolName = `confirm_${toolName}_payment`;
@@ -105,7 +105,7 @@ function ensureConfirmTool(
       };
     }
 
-    const stored = await stateStore?.get(String(paymentId));
+    const stored = await stateStore.get(String(paymentId));
 
     log?.debug?.(`[PayMCP:TwoStep] restoring args=${JSON.stringify(stored?.args)}`);
 
@@ -153,7 +153,7 @@ function ensureConfirmTool(
     }
 
     // We're good—consume stored args and call original.
-    await stateStore?.delete(String(paymentId));
+    await stateStore.delete(String(paymentId));
     log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
     const toolResult = await callOriginal(
       originalHandler,

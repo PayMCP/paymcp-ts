@@ -403,6 +403,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -431,6 +432,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -456,6 +458,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 

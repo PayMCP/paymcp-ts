@@ -497,7 +497,7 @@ describe('Two-Step Flow', () => {
       );
 
       expect(mockLogger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('PENDING_ARGS keys=payment_123')
+        expect.stringContaining('restoring args=')
       );
     });
   });

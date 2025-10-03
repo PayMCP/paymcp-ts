@@ -8,6 +8,7 @@ describe('Progress Flow', () => {
   let mockProvider: BasePaymentProvider;
   let mockServer: McpServerLike;
   let mockLogger: any;
+  let mockStateStore: any;
   let priceInfo: PriceConfig;
   let mockExtra: ToolExtraLike;
 
@@ -30,6 +31,13 @@ describe('Progress Flow', () => {
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn()
+    };
+
+    // Mock state store (progress flow doesn't use it, but it's required in signature)
+    mockStateStore = {
+      set: vi.fn(),
+      get: vi.fn(),
+      delete: vi.fn()
     };
 
     priceInfo = {
@@ -59,6 +67,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -76,6 +85,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -115,6 +125,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -137,6 +148,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -166,6 +178,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -192,6 +205,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -221,6 +235,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -253,6 +268,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -281,6 +297,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -386,6 +403,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -414,6 +432,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -439,6 +458,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -498,6 +518,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -537,6 +558,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -562,6 +584,7 @@ describe('Progress Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 

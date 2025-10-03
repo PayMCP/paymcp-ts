@@ -9,3 +9,7 @@ export { PENDING_ARGS, HIDDEN_TOOLS, SESSION_PAYMENTS } from "./flows/list_chang
 
 // Export version tracking
 export { getVersionInfo, BUILD_HASH, VERSION } from './version.js';
+
+// Export state storage
+export { RedisStateStore } from "./state/redis.js";
+export type { StateStore } from "./types/state.js";

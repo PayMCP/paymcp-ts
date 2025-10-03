@@ -8,6 +8,7 @@ describe('Elicitation Flow', () => {
   let mockProvider: BasePaymentProvider;
   let mockServer: McpServerLike;
   let mockLogger: any;
+  let mockStateStore: any;
   let priceInfo: PriceConfig;
   let mockExtra: ToolExtraLike;
 
@@ -28,6 +29,13 @@ describe('Elicitation Flow', () => {
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn()
+    };
+
+    // Mock state store (elicitation flow doesn't use it, but it's required in signature)
+    mockStateStore = {
+      set: vi.fn(),
+      get: vi.fn(),
+      delete: vi.fn()
     };
 
     priceInfo = {
@@ -52,6 +60,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -69,6 +78,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -100,6 +110,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -119,6 +130,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -140,6 +152,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -162,6 +175,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -183,6 +197,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -206,6 +221,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -228,6 +244,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -249,6 +266,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -267,6 +285,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -294,6 +313,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -328,6 +348,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -354,6 +375,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -401,6 +423,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -424,6 +447,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -449,6 +473,7 @@ describe('Elicitation Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 

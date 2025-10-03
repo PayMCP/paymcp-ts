@@ -16,6 +16,11 @@
   - Prevents `Cannot read properties of null (reading '_def')` error
   - Confirmation tool naming uses FULL payment ID: `confirm_{toolname}_{payment_id}`
 
+### Added
+- Support for pluggable state storage in TWO_STEP flow
+  - Default is in-memory
+  - New `RedisStateStore` implementation allows persisting state in Redis
+
 ### Changed
 - Improved session ID fallback mechanism for better multi-user isolation when server doesn't support session tracking
 - Updated demo servers to follow MCP SDK pattern for per-session server instances

@@ -29,17 +29,7 @@ import { paymentPromptMessage } from "../utils/messages.js";
 import { Logger } from "../types/logger.js";
 
 import { z } from "zod";
-
-// Simple in‑memory arg storage. Keyed by paymentId string.
-const PENDING_ARGS = new Map<
-  string,
-  {
-    // args passed to the original tool (normalized params object or undefined)
-    args: any;
-    // unix ms timestamp when the initiate step ran
-    ts: number;
-  }
->();
+import { StateStore } from "../types/state.js";
 
 /**
  * Safely invoke the original tool handler preserving the (args, extra) vs (extra)
@@ -66,6 +56,7 @@ function ensureConfirmTool(
   provider: BasePaymentProvider,
   toolName: string,
   originalHandler: ToolHandler,
+  stateStore: StateStore,
   log?: Logger
 ): string {
   const confirmToolName = `confirm_${toolName}_payment`;
@@ -114,9 +105,9 @@ function ensureConfirmTool(
       };
     }
 
-    const stored = PENDING_ARGS.get(String(paymentId));
+    const stored = await stateStore.get(String(paymentId));
 
-    log?.debug?.(`[PayMCP:TwoStep] PENDING_ARGS keys=${Array.from(PENDING_ARGS.keys()).join(",")}`);
+    log?.debug?.(`[PayMCP:TwoStep] restoring args=${JSON.stringify(stored?.args)}`);
 
     if (!stored) {
       return {
@@ -162,7 +153,7 @@ function ensureConfirmTool(
     }
 
     // We're good—consume stored args and call original.
-    PENDING_ARGS.delete(String(paymentId));
+    await stateStore.delete(String(paymentId));
     log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
     const toolResult = await callOriginal(
       originalHandler,
@@ -201,6 +192,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   provider: BasePaymentProvider,
   priceInfo: PriceConfig,
   toolName: string,
+  stateStore: StateStore,
   logger?: Logger
 ) => {
   const log: Logger = logger ?? (provider as any).logger ?? console;
@@ -212,6 +204,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     provider,
     toolName,
     func,
+    stateStore,
     log
   );
 
@@ -232,7 +225,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     const pidStr = String(paymentId);
 
     // Stash original args. (We do not store `extra`; new extra will come on confirm.)
-    PENDING_ARGS.set(pidStr, { args: toolArgs, ts: Date.now() });
+    await stateStore.set(pidStr, toolArgs);
 
     // Build message shown to user / LLM.
     const _message = paymentPromptMessage(

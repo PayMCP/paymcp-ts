@@ -331,4 +331,123 @@ describe('MockPaymentProvider', () => {
       expect(status).toBe('expired');
     });
   });
+
+  describe('Payment ID Delay Simulation', () => {
+    let provider: MockPaymentProvider;
+
+    beforeEach(() => {
+      provider = new MockPaymentProvider();
+    });
+
+    it('should return pending for payment with delay not elapsed', async () => {
+      // Payment ID with 10000ms delay (long enough to ensure pending)
+      const paymentId = 'mock_paid_abc123def456_10000';
+
+      const status = await provider.getPaymentStatus(paymentId);
+      expect(status).toBe('pending');
+
+      // Verify payment was created with metadata
+      const details = provider.getPaymentDetails(paymentId);
+      expect(details?.status).toBe('pending');
+      expect(details?.metadata).toEqual({ targetStatus: 'paid', delay: 10.0 });
+    });
+
+    it('should create payment entry with delay metadata', async () => {
+      const paymentId = 'mock_paid_abc123def456_5000';
+
+      // First call creates the entry
+      await provider.getPaymentStatus(paymentId);
+
+      // Verify payment entry was created with correct metadata
+      const details = provider.getPaymentDetails(paymentId);
+      expect(details).toBeDefined();
+      expect(details?.status).toBe('pending');
+      expect(details?.metadata?.targetStatus).toBe('paid');
+      expect(details?.metadata?.delay).toBe(5.0);
+      expect(details?.createdAt).toBeDefined();
+    });
+
+    it('should parse delay from payment ID correctly', async () => {
+      // Test different delay values
+      const testCases = [
+        { paymentId: 'mock_paid_abc_1000', expectedDelay: 1.0 },
+        { paymentId: 'mock_failed_xyz_2500', expectedDelay: 2.5 },
+        { paymentId: 'mock_cancelled_aaa_500', expectedDelay: 0.5 },
+        { paymentId: 'mock_paid_test_0', expectedDelay: 0.0 }
+      ];
+
+      for (const { paymentId, expectedDelay } of testCases) {
+        await provider.getPaymentStatus(paymentId);
+        const details = provider.getPaymentDetails(paymentId);
+        expect(details?.metadata?.delay).toBe(expectedDelay);
+      }
+    });
+
+    it('should handle zero delay (immediate transition)', async () => {
+      const paymentId = 'mock_paid_abc123def456_0';
+
+      // With 0ms delay, elapsed time is immediately >= 0, so it transitions
+      const status = await provider.getPaymentStatus(paymentId);
+      expect(status).toBe('paid');
+
+      // Verify payment status was updated
+      const details = provider.getPaymentDetails(paymentId);
+      expect(details?.status).toBe('paid');
+    });
+
+    it('should create payment entry only once for delay simulation', async () => {
+      const paymentId = 'mock_paid_abc123def456_10000';
+
+      // First call creates payment
+      await provider.getPaymentStatus(paymentId);
+      const details1 = provider.getPaymentDetails(paymentId);
+      const createdAt1 = details1?.createdAt;
+
+      // Second call should use same payment entry
+      await provider.getPaymentStatus(paymentId);
+      const details2 = provider.getPaymentDetails(paymentId);
+      const createdAt2 = details2?.createdAt;
+
+      expect(createdAt1).toBe(createdAt2);
+    });
+
+    it('should handle different target statuses with zero delay', async () => {
+      // With 0ms delay, payments transition immediately
+      const testCases = [
+        { paymentId: 'mock_paid_aaa_0', expectedStatus: 'paid' },
+        { paymentId: 'mock_failed_bbb_0', expectedStatus: 'failed' },
+        { paymentId: 'mock_cancelled_ccc_0', expectedStatus: 'cancelled' },
+        { paymentId: 'mock_expired_ddd_0', expectedStatus: 'expired' }
+      ];
+
+      for (const { paymentId, expectedStatus } of testCases) {
+        const status = await provider.getPaymentStatus(paymentId);
+        expect(status).toBe(expectedStatus);
+      }
+    });
+
+    it('should create independent payment entries for different IDs', async () => {
+      const payment1 = 'mock_paid_aaa_10000';
+      const payment2 = 'mock_failed_bbb_10000';
+
+      // Create both payments
+      await provider.getPaymentStatus(payment1);
+      await provider.getPaymentStatus(payment2);
+
+      // Verify both are pending
+      expect(provider.getPaymentDetails(payment1)?.status).toBe('pending');
+      expect(provider.getPaymentDetails(payment2)?.status).toBe('pending');
+
+      // Verify they have different target statuses
+      expect(provider.getPaymentDetails(payment1)?.metadata?.targetStatus).toBe('paid');
+      expect(provider.getPaymentDetails(payment2)?.metadata?.targetStatus).toBe('failed');
+    });
+
+    it('should not apply delay simulation to invalid status hints', async () => {
+      // Invalid status 'unknown' with delay - should return expired (not pending)
+      const paymentId = 'mock_unknown_abc123_1000';
+      const status = await provider.getPaymentStatus(paymentId);
+      expect(status).toBe('expired');
+    });
+  });
 });

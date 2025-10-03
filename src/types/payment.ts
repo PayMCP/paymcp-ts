@@ -3,7 +3,8 @@ export enum PaymentFlow {
     ELICITATION = "ELICITATION",
     TWO_STEP = "TWO_STEP",
     PROGRESS = "PROGRESS",
-    OOB = "OOB"
+    OOB = "OOB",
+    LIST_CHANGE = "LIST_CHANGE"
     // TODO: OOB
 }
 

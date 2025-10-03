@@ -36,7 +36,7 @@ jobs:
     - name: Setup Node.js with automatic package manager caching
       uses: actions/setup-node@v5
       with:
-        node-version: '18'
+        node-version: '24'
         cache: 'pnpm'
 
     - name: Install dependencies

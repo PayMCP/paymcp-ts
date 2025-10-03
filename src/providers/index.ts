@@ -6,8 +6,9 @@ import type { BasePaymentProvider } from "./base.js";
 import { type Logger } from "../types/logger.js";
 import { AdyenProvider } from "./adyen.js";
 import { CoinbaseProvider } from "./coinbase.js";
+import { MockPaymentProvider } from "./mock.js";
 
-export { WalleotProvider, StripeProvider, PayPalProvider, SquareProvider, AdyenProvider, CoinbaseProvider };
+export { WalleotProvider, StripeProvider, PayPalProvider, SquareProvider, AdyenProvider, CoinbaseProvider, MockPaymentProvider };
 export type { BasePaymentProvider };
 
 type ProviderCtor = new (opts: any) => BasePaymentProvider;
@@ -18,7 +19,8 @@ const PROVIDER_MAP: Record<string, ProviderCtor> = {
   paypal: PayPalProvider,
   square: SquareProvider,
   adyen: AdyenProvider,
-  coinbase: CoinbaseProvider
+  coinbase: CoinbaseProvider,
+  mock: MockPaymentProvider
 };
 
 function isProvider(x: unknown): x is BasePaymentProvider {

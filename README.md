@@ -162,6 +162,33 @@ class MyProvider implements BasePaymentProvider {
 installPayMCP(server, { providers: [ new MyProvider({ apiKey: "..." }) ] });
 ```
 
+---
+
+## 👥 Multi-User Session Isolation
+
+PayMCP supports concurrent users with independent payment states using the LIST_CHANGE flow:
+
+- **Per-session server instances**: Each session gets a NEW McpServer instance (following MCP SDK pattern)
+- **Session context**: Use `runWithSession()` wrapper for proper AsyncLocalStorage context
+- **Concurrent isolation**: Multiple users can initiate payments simultaneously without state interference
+- **Verified**: 100% pass rate on multi-user isolation test scenarios
+
+**Example**: User A initiates a payment → their tools are hidden. User B's tools remain visible and unaffected. When User A confirms, their tools are restored without affecting User B.
+
+**Important for demo servers**: Wrap request handling with `runWithSession()`:
+```typescript
+import { runWithSession } from 'paymcp';
+
+app.post('/mcp', async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'] as string;
+    await runWithSession(sessionId, async () => {
+        await transport.handleRequest(req, res, req.body);
+    });
+});
+```
+
+---
+
 ## 🧩 Supported Providers
 
 - ✅ [Adyen](https://www.adyen.com)

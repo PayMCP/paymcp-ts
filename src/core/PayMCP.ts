@@ -15,7 +15,7 @@ export class PayMCP {
     private providers: ProviderInstances;
     private flow: PaymentFlow;
     private stateStore: StateStore;
-    private flowModule: ReturnType<typeof makeFlow>;
+    private wrapperFactory: ReturnType<typeof makeFlow>;
     private originalRegisterTool: McpServerLike["registerTool"];
     private installed = false;
 
@@ -24,22 +24,14 @@ export class PayMCP {
         this.providers = buildProviders(opts.providers as ProvidersInput);
         this.flow = opts.paymentFlow ?? PaymentFlow.TWO_STEP;
         this.stateStore = opts.stateStore ?? new InMemoryStateStore();
-        this.flowModule = makeFlow(this.flow);
+        this.wrapperFactory = makeFlow(this.flow);
         this.originalRegisterTool = server.registerTool.bind(server);
-
         this.patch();
 
-        /**
-         * Delegate flow-specific initialization to the flow module.
-         *
-         * Each payment flow may have unique setup requirements:
-         * - LIST_CHANGE: Patches server.connect() and tools/list handler for per-session filtering
-         * - TWO_STEP, ELICITATION, PROGRESS: No special setup needed (setup is optional)
-         *
-         * This delegation pattern keeps PayMCP core simple and flow-agnostic.
-         * Flow modules handle their own complexity via the optional setup(server) method.
-         */
-        this.flowModule.setup?.(server);
+        // LIST_CHANGE flow requires patching server.connect() and tools/list handler
+        if (this.flow === PaymentFlow.LIST_CHANGE) {
+            import("../flows/list_change.js").then(m => m.setup?.(server));
+        }
 
         if (opts.retrofitExisting) {
             this.retrofitExistingTools();
@@ -58,7 +50,7 @@ export class PayMCP {
         this.installed = false;
     }
 
-    /** Patch registerTool to wrap paid tools */
+    /** Main monkey-patch */
     private patch() {
         if (this.installed) return;
         const self = this;
@@ -82,31 +74,7 @@ export class PayMCP {
                     description: appendPriceToDescription(config.description, price),
                 };
 
-                /**
-                 * ARCHITECTURAL NOTE: Why flowModule.makePaidWrapper instead of direct wrapperFactory?
-                 *
-                 * Previously (before refactoring):
-                 * - We stored: `wrapperFactory: PaidWrapperFactory`
-                 * - Flow-specific logic was embedded in PayMCP (e.g., patchServerConnect, patchToolListing)
-                 * - Result: ~240 lines, violation of Single Responsibility Principle
-                 *
-                 * Now (after refactoring):
-                 * - We store: `flowModule: FlowModule` (which contains { makePaidWrapper, setup? })
-                 * - Each flow module handles its own initialization via optional setup(server) method
-                 * - PayMCP core delegates: `flowModule.setup?.(server)` in constructor
-                 * - Result: ~107 lines, clear separation of concerns
-                 *
-                 * Benefits:
-                 * 1. DRY: Flow-specific logic lives with the flow, not in core
-                 * 2. Extensibility: New flows add their logic in their own module
-                 * 3. Maintainability: Changes to flow behavior don't touch core
-                 * 4. Testability: Flow setup can be tested independently
-                 *
-                 * Example: LIST_CHANGE flow needs to patch tools/list handler for per-session
-                 * filtering. This logic now lives in list_change.ts::setup() instead of
-                 * cluttering PayMCP with conditional flow-specific code.
-                 */
-                const paymentWrapper = self.flowModule.makePaidWrapper(
+                const paymentWrapper = self.wrapperFactory(
                     handler, self.server, provider, price, name, self.stateStore
                 );
 

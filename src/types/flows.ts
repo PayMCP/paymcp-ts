@@ -22,5 +22,4 @@ export type PaidWrapperFactory = (
 
 export type FlowModule = {
   makePaidWrapper: PaidWrapperFactory;
-  setup?: (server: McpServerLike) => void;
 };

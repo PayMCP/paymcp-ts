@@ -8,6 +8,7 @@ describe('LIST_CHANGE Flow', () => {
   let mockProvider: BasePaymentProvider;
   let mockServer: McpServerLike;
   let mockLogger: any;
+  let mockStateStore: any;
   let priceInfo: PriceConfig;
   let registeredTools: Map<string, any>;
 
@@ -40,6 +41,20 @@ describe('LIST_CHANGE Flow', () => {
       error: vi.fn()
     };
 
+    // Mock state store with actual storage
+    const storage = new Map();
+    mockStateStore = {
+      set: vi.fn().mockImplementation(async (key: string, args: any) => {
+        storage.set(key, { args, ts: Date.now() });
+      }),
+      get: vi.fn().mockImplementation(async (key: string) => {
+        return storage.get(key);
+      }),
+      delete: vi.fn().mockImplementation(async (key: string) => {
+        storage.delete(key);
+      })
+    };
+
     // Setup price info
     priceInfo = {
       amount: 25.00,
@@ -66,6 +81,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -85,6 +101,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -124,6 +141,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -162,6 +180,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -208,6 +227,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -237,6 +257,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -267,6 +288,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -295,6 +317,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -321,6 +344,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -347,6 +371,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -372,6 +397,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -396,6 +422,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -417,6 +444,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -446,6 +474,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -463,6 +492,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -491,6 +521,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 
@@ -521,6 +552,7 @@ describe('LIST_CHANGE Flow', () => {
         mockProvider,
         priceInfo,
         'testTool',
+        mockStateStore,
         mockLogger
       );
 

@@ -29,6 +29,7 @@ import type {
 import type { BasePaymentProvider } from '../providers/base.js';
 import type { Logger } from '../types/logger.js';
 import { getCurrentSession } from '../core/sessionContext.js';
+import { randomUUID } from 'crypto';
 
 // Storage for pending arguments and hidden tools
 // Per-session storage using AsyncLocalStorage for multi-user support
@@ -80,7 +81,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
       // Get current session ID from AsyncLocalStorage
       // Fallback to random UUID for unsupported servers (multi-user isolation)
-      const sessionId = getCurrentSession() || crypto.randomUUID();
+      const sessionId = getCurrentSession() || randomUUID();
 
       log?.info?.(`[list_change] Session ${sessionId}: Hiding tool: ${toolName}`);
       log?.info?.(`[list_change] Session ${sessionId}: Registering confirmation tool: ${confirmName}`);

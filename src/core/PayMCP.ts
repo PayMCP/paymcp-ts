@@ -110,7 +110,26 @@ export class PayMCP {
         }
     }
 
-    // Hook into server.connect() to patch tools/list handler after requestHandlers is created
+    /**
+     * Hook into server.connect() to patch tools/list handler after requestHandlers is created.
+     *
+     * **WHY THIS PATCHING EXISTS**:
+     * The MCP SDK creates the tools/list request handler AFTER connect() is called.
+     * We need to intercept this handler to implement per-session tool filtering for LIST_CHANGE flow.
+     *
+     * **RISKS AND LIMITATIONS**:
+     * - INVASIVE: Modifies server.connect() method
+     * - RE-INITIALIZATION: If developers manually call connect() again, conflicts may occur
+     * - SDK UPDATES: Future SDK versions might change internal behavior
+     *
+     * **ALTERNATIVES CONSIDERED**:
+     * 1. Proxy on server._registeredTools - Rejected: Doesn't intercept tools/list handler
+     * 2. Patch before connect() - Rejected: Handler doesn't exist yet
+     * 3. Current approach - Chosen: Works with SDK architecture
+     *
+     * **FUTURE IMPROVEMENT**:
+     * TODO: Explore if SDK can provide lifecycle hooks for handler registration
+     */
     private patchServerConnect() {
         const serverAny = this.server as any;
         const originalConnect = serverAny.connect?.bind(serverAny);
@@ -120,12 +139,24 @@ export class PayMCP {
             return;
         }
 
+        // Guard against double-patching
+        if ((serverAny.connect as any)._paymcp_patched) {
+            console.debug('[PayMCP] server.connect() already patched, skipping');
+            return;
+        }
+
         const self = this;
-        serverAny.connect = async function(...args: any[]) {
+        const patchedConnect = async function(...args: any[]) {
             const result = await originalConnect(...args);
             self.patchToolListing();  // Patch after SDK creates requestHandlers
             return result;
         };
+
+        // Mark as patched to prevent double-patching
+        (patchedConnect as any)._paymcp_patched = true;
+        serverAny.connect = patchedConnect;
+
+        console.debug('[PayMCP] ⚠️  Patched server.connect() - avoid manual re-connection');
     }
 
     /**

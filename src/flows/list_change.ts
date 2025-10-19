@@ -290,5 +290,57 @@ setInterval(() => {
   }
 }, CLEANUP_INTERVAL);
 
-// Export for testing and list filtering in PayMCP
+/**
+ * Setup function for LIST_CHANGE flow - patches server for per-session tool filtering.
+ * Called by PayMCP during initialization.
+ */
+export function setup(server: any): void {
+  const originalConnect = server.connect?.bind(server);
+  if (!originalConnect) return;
+
+  // Guard against double-patching
+  if ((server.connect as any)._paymcp_list_change_patched) return;
+
+  server.connect = async function(...args: any[]) {
+    const result = await originalConnect(...args);
+    patchToolListing(server);
+    return result;
+  };
+  (server.connect as any)._paymcp_list_change_patched = true;
+}
+
+/**
+ * Patches tools/list handler to filter hidden tools per session.
+ */
+function patchToolListing(server: any): void {
+  const protocolServer = server.server ?? server;
+  const handlers: Map<string, any> | undefined = protocolServer._requestHandlers;
+
+  if (!handlers?.has('tools/list')) return;
+
+  const originalListHandler = handlers.get('tools/list');
+
+  handlers.set('tools/list', async (request: any, extra: any) => {
+    const result = await originalListHandler(request, extra);
+    const sessionId = getCurrentSession();
+
+    if (!sessionId) return result;
+
+    const sessionHidden = HIDDEN_TOOLS.get(sessionId);
+    if (!sessionHidden && !CONFIRMATION_TOOLS.size) return result;
+
+    const filteredTools = result.tools.filter((tool: any) => {
+      const toolName = tool.name;
+      if (sessionHidden?.has(toolName)) return false;
+      if (CONFIRMATION_TOOLS.has(toolName) && CONFIRMATION_TOOLS.get(toolName) !== sessionId) {
+        return false;
+      }
+      return true;
+    });
+
+    return { ...result, tools: filteredTools };
+  });
+}
+
+// Export for testing and list filtering
 export { PENDING_ARGS, HIDDEN_TOOLS, SESSION_PAYMENTS, CONFIRMATION_TOOLS };

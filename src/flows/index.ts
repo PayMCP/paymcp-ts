@@ -14,12 +14,12 @@ const FLOW_MAP: Record<string, FlowModule> = {
   list_change: listChangeMod,
 };
 
-/** Select a flow by name (case-insensitive) or throw an error. */
-export function makeFlow(name: string ): PaidWrapperFactory {
+/** Select a flow module by name (case-insensitive) or throw an error. */
+export function makeFlow(name: string): FlowModule {
   const key = name.toLowerCase();
   const mod = FLOW_MAP[key];
   if (!mod) {
     throw new Error(`[PayMCP] Unknown payment flow: ${name}`);
   }
-  return mod.makePaidWrapper;
+  return mod;
 }

@@ -36,6 +36,7 @@ export class PayMCP {
         }
 
         if (opts.retrofitExisting) {
+            // Try to re-register existing tools (if SDK allows)
             this.retrofitExistingTools();
         }
     }
@@ -66,16 +67,19 @@ export class PayMCP {
             let wrapped = handler;
 
             if (price) {
+                // pick the first provider (or a specific one by name? TBD)
                 const provider = Object.values(self.providers)[0];
                 if (!provider) {
                     throw new Error(`[PayMCP] No payment provider configured (tool: ${name}).`);
                 }
 
+                // append price to the description
                 config = {
                     ...config,
                     description: appendPriceToDescription(config.description, price),
                 };
 
+                // wrap the handler in a payment flow
                 const paymentWrapper = self.wrapperFactory(
                     handler, self.server, provider, price, name, self.stateStore
                 );
@@ -88,11 +92,15 @@ export class PayMCP {
             return self.originalRegisterTool(name, config, wrapped);
         }
 
+        // Monkey-patch
         (this.server as any).registerTool = patchedRegisterTool;
         this.installed = true;
     }
 
-    /** Retrofit existing tools with payment wrapping */
+    /**
+     * Best-effort: go through already registered tools and re-wrap.
+     * SDK may not have a public API; cautiously checking private fields.
+     */
     private retrofitExistingTools() {
         const toolMap: Map<string, any> | undefined = (this.server as any)?.tools;
         if (!toolMap) return;
@@ -101,6 +109,8 @@ export class PayMCP {
             const cfg: PayToolConfig = entry.config;
             const h = entry.handler;
             if (!cfg?.price) continue;
+
+            // re-register using the patch (it will wrap automatically)
             (this.server as any).registerTool(name, cfg, h);
         }
     }

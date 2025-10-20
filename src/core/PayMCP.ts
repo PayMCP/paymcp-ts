@@ -7,6 +7,7 @@ import { appendPriceToDescription } from "../utils/messages.js";
 import { makeFlow } from "../flows/index.js";
 import { StateStore } from "../types/state.js";
 import { InMemoryStateStore } from "../state/inMemory.js";
+import { setup as setupListChange } from "../flows/list_change.js";
 
 type ProvidersInput = ProviderConfig | BasePaymentProvider[];
 
@@ -29,8 +30,9 @@ export class PayMCP {
         this.patch();
 
         // LIST_CHANGE flow requires patching server.connect() and tools/list handler
+        // CRITICAL: Must be synchronous to patch server.connect() BEFORE it's called
         if (this.flow === PaymentFlow.LIST_CHANGE) {
-            import("../flows/list_change.js").then(m => m.setup?.(server));
+            setupListChange(server);
         }
 
         if (opts.retrofitExisting) {

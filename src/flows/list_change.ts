@@ -64,7 +64,17 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
       const pidStr = String(paymentId);
       const confirmName = `confirm_${toolName}_${pidStr}`;
-      const sessionId = getCurrentSession() || randomUUID();
+      const sessionId = getCurrentSession();
+
+      // LIST_CHANGE requires session context for per-user tool filtering
+      if (!sessionId) {
+        return {
+          content: [{
+            type: "text",
+            text: `LIST_CHANGE flow requires session context. Server must wrap requests with runWithSession().`
+          }]
+        };
+      }
 
       // Store state: payment session, hide tool, track confirm tool
       PAYMENTS.set(pidStr, {
@@ -98,7 +108,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
               content: [{
                 type: "text",
                 text: `Unknown or expired payment ID: ${pidStr}`
-              }]
+              }],
+              status: "error",
+              message: "Unknown or expired payment ID",
+              payment_id: pidStr
             };
           }
 
@@ -109,7 +122,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
                 content: [{
                   type: "text",
                   text: `Payment not completed. Status: ${status}\nPayment URL: ${paymentUrl}`
-                }]
+                }],
+                status: "error",
+                message: `Payment status is ${status}, expected 'paid'`,
+                payment_id: pidStr
               };
             }
 
@@ -142,7 +158,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
               content: [{
                 type: "text",
                 text: `Error confirming payment: ${error instanceof Error ? error.message : String(error)}`
-              }]
+              }],
+              status: "error",
+              message: "Failed to confirm payment",
+              payment_id: pidStr
             };
           }
         }
@@ -168,7 +187,9 @@ export const makePaidWrapper: PaidWrapperFactory = (
         content: [{
           type: "text",
           text: `Failed to initiate payment: ${error instanceof Error ? error.message : String(error)}`
-        }]
+        }],
+        status: "error",
+        message: "Failed to initiate payment"
       };
     }
   }
@@ -220,7 +241,14 @@ function patchToolListing(server: any): void {
   handlers.set('tools/list', async (request: any, extra: any) => {
     const result = await original(request, extra);
     const sessionId = getCurrentSession();
-    if (!sessionId) return result;
+
+    // If no session context, check if there are any hidden tools at all
+    if (!sessionId) {
+      // If there are no hidden tools or confirmation tools, return as-is
+      if (HIDDEN_TOOLS.size === 0 && CONFIRMATION_TOOLS.size === 0) return result;
+      // If there ARE hidden tools but no session, don't hide anything (safer)
+      return result;
+    }
 
     const sessionHidden = HIDDEN_TOOLS.get(sessionId);
     if (!sessionHidden && !CONFIRMATION_TOOLS.size) return result;

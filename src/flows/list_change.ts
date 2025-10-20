@@ -1,68 +1,55 @@
 /**
- * LIST_CHANGE payment flow implementation.
+ * LIST_CHANGE flow: dynamically hide/show tools per-session during payment.
  *
- * FLOW OVERVIEW:
- * Dynamically changes the exposed MCP toolset by hiding/showing tools:
- * 1. Initial: Only original tool visible (e.g., "generate_mock")
- * 2. Payment initiated: Hide original, show confirm tool, emit list_changed notification
- * 3. Payment completed: Remove confirm, restore original, emit list_changed notification
+ * MCP SDK Compatibility: Patches MCP SDK internals because:
+ * 1. SDK has no post-init capability registration API (v1.x)
+ * 2. SDK has no dynamic per-session tool filtering hooks (v1.x)
  *
- * MULTI-USER ISOLATION:
- * Uses per-session HIDDEN_TOOLS Map to maintain independent tool visibility for concurrent users.
- * Session ID from AsyncLocalStorage (via getCurrentSession()) ensures each user sees only their
- * own hidden/visible tools. Without this, User A's payment would hide tools for User B.
- *
- * CONFIRMATION TOOL NAMING:
- * Uses FULL payment ID in tool name: `confirm_{toolName}_{paymentId}`
- * Example: "confirm_generate_mock_mock_paid_abc12345"
- * This differs from TWO_STEP flow which uses generic `confirm_{toolName}_payment`
- *
- * SESSION ID FALLBACK:
- * Falls back to random UUID when getCurrentSession() returns undefined (server doesn't support
- * session tracking). This still provides multi-user isolation by giving each request a unique ID.
+ * Monitor: https://github.com/modelcontextprotocol/typescript-sdk for future APIs.
+ * If SDK adds hooks/filters, we can remove patches and use official APIs.
  */
-import type {
-  PaidWrapperFactory,
-  ToolResponse,
-  PendingArgument
-} from '../types/flows.js';
+import type { PaidWrapperFactory, ToolHandler } from '../types/flows.js';
+import type { McpServerLike } from '../types/mcp.js';
 import type { BasePaymentProvider } from '../providers/base.js';
+import type { PriceConfig } from '../types/config.js';
 import type { Logger } from '../types/logger.js';
+import type { StateStore } from '../types/state.js';
 import { getCurrentSession } from '../core/sessionContext.js';
 import { randomUUID } from 'crypto';
 
-// Storage for pending arguments and hidden tools
-// Per-session storage using AsyncLocalStorage for multi-user support
-const PENDING_ARGS = new Map<string, PendingArgument>();
-const HIDDEN_TOOLS = new Map<string, Map<string, any>>();  // sessionId -> Map<toolName, toolState>
-const SESSION_PAYMENTS = new Map<string, string>();  // paymentId -> sessionId
+// State: payment_id -> (session_id, args, timestamp)
+interface PaymentSession {
+  sessionId: string;
+  args: any;
+  ts: number;
+}
+
+const PAYMENTS = new Map<string, PaymentSession>();  // paymentId -> PaymentSession
+const HIDDEN_TOOLS = new Map<string, Map<string, any>>();  // sessionId -> {toolName -> state}
 const CONFIRMATION_TOOLS = new Map<string, string>();  // confirmToolName -> sessionId
 
 // Cleanup old pending args after 10 minutes
 const CLEANUP_INTERVAL = 10 * 60 * 1000;
 
-export const makePaidWrapper: PaidWrapperFactory = (
-  func,
-  server,
-  provider,
-  priceInfo,
-  toolName,
-  stateStore,
-  logger
-) => {
-  const getLogger = (): Logger | undefined => {
-    return logger || (provider as any)?.logger;
-  };
+// Helper: cleanup session's hidden tools
+function cleanupSessionTool(sessionId: string, toolName: string) {
+  const sessionHidden = HIDDEN_TOOLS.get(sessionId);
+  if (sessionHidden) {
+    sessionHidden.delete(toolName);
+    if (sessionHidden.size === 0) HIDDEN_TOOLS.delete(sessionId);
+  }
+}
 
-  /**
-   * Wrapper function that implements LIST_CHANGE flow.
-   * Hides original tool, shows confirmation tool, then restores state.
-   */
-  return async function listChangeWrapper(
-    paramsOrExtra?: any,
-    maybeExtra?: any
-  ): Promise<ToolResponse> {
-    const log = getLogger();
+export const makePaidWrapper: PaidWrapperFactory = (
+  func: ToolHandler,
+  server: McpServerLike,
+  provider: BasePaymentProvider,
+  priceInfo: PriceConfig,
+  toolName: string,
+  stateStore: StateStore,
+  logger?: Logger
+) => {
+  async function listChangeWrapper(paramsOrExtra?: any, maybeExtra?: any) {
     const hasArgs = arguments.length === 2;
     const toolArgs = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : paramsOrExtra;
@@ -76,61 +63,37 @@ export const makePaidWrapper: PaidWrapperFactory = (
       );
 
       const pidStr = String(paymentId);
-      // Use FULL payment ID for confirmation tool name
       const confirmName = `confirm_${toolName}_${pidStr}`;
-
-      // Get current session ID from AsyncLocalStorage
-      // Fallback to random UUID for unsupported servers (multi-user isolation)
       const sessionId = getCurrentSession() || randomUUID();
 
-      log?.info?.(`[list_change] Session ${sessionId}: Hiding tool: ${toolName}`);
-      log?.info?.(`[list_change] Session ${sessionId}: Registering confirmation tool: ${confirmName}`);
-
-      // Store arguments for later execution
-      PENDING_ARGS.set(pidStr, {
+      // Store state: payment session, hide tool, track confirm tool
+      PAYMENTS.set(pidStr, {
+        sessionId,
         args: toolArgs,
         ts: Date.now()
       });
-
-      // Store payment -> session mapping
-      SESSION_PAYMENTS.set(pidStr, sessionId);
-
-      // Store confirmation tool -> session mapping
       CONFIRMATION_TOOLS.set(confirmName, sessionId);
 
-      // STEP 1: Hide the original tool for this session
-      // Initialize session's hidden tools map if needed
-      if (!HIDDEN_TOOLS.has(sessionId)) {
-        HIDDEN_TOOLS.set(sessionId, new Map());
-      }
-      const sessionHiddenTools = HIDDEN_TOOLS.get(sessionId)!;
+      // Hide tool for this session
+      if (!HIDDEN_TOOLS.has(sessionId)) HIDDEN_TOOLS.set(sessionId, new Map());
+      const sessionHidden = HIDDEN_TOOLS.get(sessionId)!;
 
-      // Store tool state for this session
-      if ((server as any)._registeredTools && (server as any)._registeredTools[toolName]) {
-        const registeredTool = (server as any)._registeredTools[toolName];
-        sessionHiddenTools.set(toolName, { enabled: registeredTool.enabled });
-        log?.debug?.(`[list_change] Session ${sessionId}: Stored tool state for ${toolName}`);
-      } else if ((server as any).tools && (server as any).tools.has(toolName)) {
-        // Fallback for older SDK versions
-        const originalTool = (server as any).tools.get(toolName);
-        sessionHiddenTools.set(toolName, originalTool);
-        log?.debug?.(`[list_change] Session ${sessionId}: Stored tool state for ${toolName} (legacy)`);
+      if ((server as any)._registeredTools?.[toolName]) {
+        sessionHidden.set(toolName, { enabled: (server as any)._registeredTools[toolName].enabled });
+      } else if ((server as any).tools?.has(toolName)) {
+        sessionHidden.set(toolName, (server as any).tools.get(toolName));
       }
 
-      // STEP 2: Register confirmation tool (parameterless, omit inputSchema)
+      // Register confirmation tool (parameterless, omit inputSchema)
       (server as any).registerTool(
         confirmName,
         {
           title: `Confirm payment for ${toolName}`,
           description: `Confirm payment ${pidStr} and execute ${toolName}()`
         },
-        async (_params: any, confirmExtra?: any): Promise<ToolResponse> => {
-          log?.info?.(`[list_change_confirm] Confirming payment_id=${pidStr}`);
-
-          // Retrieve stored arguments
-          const pendingData = PENDING_ARGS.get(pidStr);
-          if (!pendingData) {
-            log?.error?.(`[list_change_confirm] No pending args for payment_id=${pidStr}`);
+        async (_params: any, confirmExtra?: any) => {
+          const payment = PAYMENTS.get(pidStr);
+          if (!payment) {
             return {
               content: [{
                 type: "text",
@@ -140,10 +103,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
           }
 
           try {
-            // Check payment status with provider
             const status = await provider.getPaymentStatus(paymentId);
-            log?.debug?.(`[list_change_confirm] Payment status: ${status}`);
-
             if (status !== "paid") {
               return {
                 content: [{
@@ -153,87 +113,31 @@ export const makePaidWrapper: PaidWrapperFactory = (
               };
             }
 
-            // Payment successful - execute original function
-            log?.info?.(`[list_change_confirm] Payment confirmed, executing ${toolName}`);
+            // Execute original, cleanup state
+            PAYMENTS.delete(pidStr);
+            const result = hasArgs
+              ? await func(payment.args, confirmExtra || extra)
+              : await func(confirmExtra || extra);
 
-            // Clean up stored arguments
-            PENDING_ARGS.delete(pidStr);
+            cleanupSessionTool(payment.sessionId, toolName);
 
-            // Execute original tool with stored arguments
-            let result: ToolResponse;
-            if (hasArgs) {
-              result = await func(pendingData.args, confirmExtra || extra);
-            } else {
-              result = await func(confirmExtra || extra);
+            // Remove confirmation tool
+            if ((server as any)._registeredTools?.[confirmName]) {
+              delete (server as any)._registeredTools[confirmName];
+            } else if ((server as any).tools?.has(confirmName)) {
+              (server as any).tools.delete(confirmName);
             }
-
-            // STEP 3: Restore original tool and remove confirmation tool
-            // Get session ID from payment mapping
-            const confirmSessionId = SESSION_PAYMENTS.get(pidStr) || 'global';
-            log?.info?.(`[list_change] Session ${confirmSessionId}: Restoring tool: ${toolName}`);
-            log?.info?.(`[list_change] Session ${confirmSessionId}: Removing confirmation tool: ${confirmName}`);
-
-            // Restore original tool for this session
-            const sessionHiddenTools = HIDDEN_TOOLS.get(confirmSessionId);
-            if (sessionHiddenTools && sessionHiddenTools.has(toolName)) {
-              // Remove from session's hidden tools
-              sessionHiddenTools.delete(toolName);
-              log?.debug?.(`[list_change] Session ${confirmSessionId}: Restored tool ${toolName}`);
-
-              // Clean up empty session map
-              if (sessionHiddenTools.size === 0) {
-                HIDDEN_TOOLS.delete(confirmSessionId);
-              }
-            }
-
-            // Clean up payment -> session mapping
-            SESSION_PAYMENTS.delete(pidStr);
-
-            // Clean up confirmation tool -> session mapping
             CONFIRMATION_TOOLS.delete(confirmName);
 
-            // Remove confirmation tool by disabling it
-            if ((server as any)._registeredTools && (server as any)._registeredTools[confirmName]) {
-              (server as any)._registeredTools[confirmName].enabled = false;
-              log?.debug?.(`[list_change] Confirmation tool ${confirmName} disabled`);
-              // Also delete it entirely since it's temporary
-              delete (server as any)._registeredTools[confirmName];
-              log?.debug?.(`[list_change] Confirmation tool ${confirmName} deleted`);
-            } else if ((server as any).tools && (server as any).tools.has(confirmName)) {
-              // Fallback for older SDK versions
-              (server as any).tools.delete(confirmName);
-              log?.debug?.(`[list_change] Confirmation tool ${confirmName} removed (legacy)`);
-            }
-
-            // STEP 4: Emit tools/list_changed notification
-            // Fire-and-forget pattern to avoid blocking the confirmation response
-            if ((server as any).sendNotification) {
-              (server as any).sendNotification({
-                method: "notifications/tools/list_changed"
-              }).then(() => {
-                log?.debug?.(`[list_change] Emitted tools/list_changed notification`);
-              }).catch((err: any) => {
-                log?.warn?.(`[list_change] Failed to emit notification: ${err}`);
-              });
-            }
+            // Emit tools/list_changed notification (fire-and-forget)
+            (server as any).sendNotification?.({
+              method: "notifications/tools/list_changed"
+            }).catch(() => {});
 
             return result;
 
           } catch (error) {
-            log?.error?.(`[list_change_confirm] Error checking payment: ${error}`);
-
-            // On error, restore state for this session
-            const errorSessionId = SESSION_PAYMENTS.get(pidStr) || 'global';
-            const sessionHiddenTools = HIDDEN_TOOLS.get(errorSessionId);
-            if (sessionHiddenTools?.has(toolName)) {
-              sessionHiddenTools.delete(toolName);
-              if (sessionHiddenTools.size === 0) {
-                HIDDEN_TOOLS.delete(errorSessionId);
-              }
-            }
-            SESSION_PAYMENTS.delete(pidStr);
-            CONFIRMATION_TOOLS.delete(confirmName);
-
+            cleanupSessionTool(payment.sessionId, toolName);
             return {
               content: [{
                 type: "text",
@@ -244,24 +148,15 @@ export const makePaidWrapper: PaidWrapperFactory = (
         }
       );
 
-      // STEP 5: Emit tools/list_changed notification (fire-and-forget)
-      if ((server as any).sendNotification) {
-        (server as any).sendNotification({
-          method: "notifications/tools/list_changed"
-        }).then(() => {
-          log?.debug?.(`[list_change] Emitted tools/list_changed notification`);
-        }).catch((err: any) => {
-          log?.warn?.(`[list_change] Failed to emit notification: ${err}`);
-        });
-      }
-
-      // Prepare response message
-      const message = `Please complete payment of ${priceInfo.amount} ${priceInfo.currency} at:\n${paymentUrl}`;
+      // Emit tools/list_changed notification (fire-and-forget)
+      (server as any).sendNotification?.({
+        method: "notifications/tools/list_changed"
+      }).catch(() => {});
 
       return {
         content: [{
           type: "text",
-          text: `${message}\n\nAfter completing payment, call tool: ${confirmName}`
+          text: `Please complete payment of ${priceInfo.amount} ${priceInfo.currency} at:\n${paymentUrl}\n\nAfter completing payment, call tool: ${confirmName}`
         }],
         payment_url: paymentUrl,
         payment_id: pidStr,
@@ -269,7 +164,6 @@ export const makePaidWrapper: PaidWrapperFactory = (
       };
 
     } catch (error) {
-      log?.error?.(`[list_change] Error in payment flow: ${error}`);
       return {
         content: [{
           type: "text",
@@ -277,29 +171,28 @@ export const makePaidWrapper: PaidWrapperFactory = (
         }]
       };
     }
-  };
+  }
+
+  return listChangeWrapper as unknown as ToolHandler;
 };
 
-// Cleanup old pending arguments periodically
+// Cleanup old payments periodically
 setInterval(() => {
   const now = Date.now();
-  for (const [key, data] of PENDING_ARGS.entries()) {
-    if (now - data.ts > CLEANUP_INTERVAL) {
-      PENDING_ARGS.delete(key);
-    }
+  for (const [key, data] of PAYMENTS.entries()) {
+    if (now - data.ts > CLEANUP_INTERVAL) PAYMENTS.delete(key);
   }
 }, CLEANUP_INTERVAL);
 
 /**
- * Setup function for LIST_CHANGE flow - patches server for per-session tool filtering.
- * Called by PayMCP during initialization.
+ * Setup: patches server for per-session tool filtering.
+ *
+ * WHY: MCP SDK has no post-init capability registration API (v1.x).
+ * We must patch server.connect to register tools/list handler after connection.
  */
 export function setup(server: any): void {
   const originalConnect = server.connect?.bind(server);
-  if (!originalConnect) return;
-
-  // Guard against double-patching
-  if ((server.connect as any)._paymcp_list_change_patched) return;
+  if (!originalConnect || (server.connect as any)._paymcp_list_change_patched) return;
 
   server.connect = async function(...args: any[]) {
     const result = await originalConnect(...args);
@@ -310,37 +203,37 @@ export function setup(server: any): void {
 }
 
 /**
- * Patches tools/list handler to filter hidden tools per session.
+ * Patches tools/list handler to filter per-session hidden tools.
+ *
+ * WHY: MCP SDK has no API for dynamic per-session tool visibility.
+ * We must patch tools/list handler to filter based on session state.
+ *
+ * SDK PR: COULD submit feature request for list_tools(context) hook/filter.
+ * However, this is payment-specific logic. SDK should stay generic.
+ * Current approach: well-isolated, documented, testable monkey-patch.
  */
 function patchToolListing(server: any): void {
-  const protocolServer = server.server ?? server;
-  const handlers: Map<string, any> | undefined = protocolServer._requestHandlers;
-
+  const handlers = (server.server ?? server)._requestHandlers;
   if (!handlers?.has('tools/list')) return;
 
-  const originalListHandler = handlers.get('tools/list');
-
+  const original = handlers.get('tools/list');
   handlers.set('tools/list', async (request: any, extra: any) => {
-    const result = await originalListHandler(request, extra);
+    const result = await original(request, extra);
     const sessionId = getCurrentSession();
-
     if (!sessionId) return result;
 
     const sessionHidden = HIDDEN_TOOLS.get(sessionId);
     if (!sessionHidden && !CONFIRMATION_TOOLS.size) return result;
 
-    const filteredTools = result.tools.filter((tool: any) => {
-      const toolName = tool.name;
-      if (sessionHidden?.has(toolName)) return false;
-      if (CONFIRMATION_TOOLS.has(toolName) && CONFIRMATION_TOOLS.get(toolName) !== sessionId) {
-        return false;
-      }
-      return true;
-    });
-
-    return { ...result, tools: filteredTools };
+    return {
+      ...result,
+      tools: result.tools.filter((t: any) =>
+        !sessionHidden?.has(t.name) &&
+        (!CONFIRMATION_TOOLS.has(t.name) || CONFIRMATION_TOOLS.get(t.name) === sessionId)
+      )
+    };
   });
 }
 
 // Export for testing and list filtering
-export { PENDING_ARGS, HIDDEN_TOOLS, SESSION_PAYMENTS, CONFIRMATION_TOOLS };
+export { PAYMENTS, HIDDEN_TOOLS, CONFIRMATION_TOOLS };

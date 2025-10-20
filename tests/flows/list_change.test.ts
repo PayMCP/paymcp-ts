@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { makePaidWrapper, PENDING_ARGS, HIDDEN_TOOLS } from '../../src/flows/list_change.js';
+import { makePaidWrapper, PAYMENTS, HIDDEN_TOOLS } from '../../src/flows/list_change.js';
 import type { BasePaymentProvider } from '../../src/providers/base.js';
 import type { PriceConfig } from '../../src/types/config.js';
 import type { McpServerLike } from '../../src/types/mcp.js';
@@ -63,8 +63,8 @@ describe('LIST_CHANGE Flow', () => {
   });
 
   afterEach(() => {
-    // Clear pending args between tests
-    PENDING_ARGS.clear();
+    // Clear state between tests
+    PAYMENTS.clear();
     registeredTools.clear();
   });
 
@@ -158,9 +158,9 @@ describe('LIST_CHANGE Flow', () => {
       expect(registeredTools.has('confirm_testTool_payment_1abc1def')).toBe(true);
       expect(registeredTools.has('confirm_testTool_payment_2abc2def')).toBe(true);
 
-      // Both sets of args should be stored
-      expect(PENDING_ARGS.has('payment_1abc1def')).toBe(true);
-      expect(PENDING_ARGS.has('payment_2abc2def')).toBe(true);
+      // Both payments should be stored
+      expect(PAYMENTS.has('payment_1abc1def')).toBe(true);
+      expect(PAYMENTS.has('payment_2abc2def')).toBe(true);
     });
   });
 
@@ -210,8 +210,8 @@ describe('LIST_CHANGE Flow', () => {
         content: [{ type: 'text', text: 'Executed successfully' }]
       });
 
-      // Args should be cleaned up
-      expect(PENDING_ARGS.has('test_payment_id_123456')).toBe(false);
+      // Payment should be cleaned up
+      expect(PAYMENTS.has('test_payment_id_123456')).toBe(false);
 
       // Tool should be restored
       expect(mockServer.tools.has('testTool')).toBe(true);
@@ -245,8 +245,8 @@ describe('LIST_CHANGE Flow', () => {
       // Original tool should NOT be called
       expect(mockTool).not.toHaveBeenCalled();
 
-      // Args should NOT be cleaned up yet
-      expect(PENDING_ARGS.has('test_payment_id_123456')).toBe(true);
+      // Payment should NOT be cleaned up yet
+      expect(PAYMENTS.has('test_payment_id_123456')).toBe(true);
     });
 
     it('should handle missing payment ID gracefully', async () => {
@@ -264,8 +264,8 @@ describe('LIST_CHANGE Flow', () => {
       // Initiate payment
       const initResult = await wrapper({ data: 'test' });
 
-      // Clear stored args to simulate expired/missing payment
-      PENDING_ARGS.clear();
+      // Clear stored payments to simulate expired/missing payment
+      PAYMENTS.clear();
 
       // Execute confirmation tool
       const confirmTool = registeredTools.get(initResult.next_tool);
@@ -570,37 +570,133 @@ describe('LIST_CHANGE Flow', () => {
   });
 
   describe('Cleanup Interval', () => {
-    it('should cleanup old pending arguments after timeout', () => {
+    it('should cleanup old payments after timeout', () => {
       // Manually test the cleanup logic without relying on setInterval timing
       const CLEANUP_INTERVAL = 10 * 60 * 1000; // 10 minutes
 
-      // Add an old pending arg (11 minutes old)
+      // Add an old payment (11 minutes old)
       const now = Date.now();
       const oldTimestamp = now - (11 * 60 * 1000);
-      PENDING_ARGS.set('old_payment_id', { args: { data: 'old' }, ts: oldTimestamp });
+      PAYMENTS.set('old_payment_id', { sessionId: 'session1', args: { data: 'old' }, ts: oldTimestamp });
 
-      // Add a recent pending arg (1 minute old)
+      // Add a recent payment (1 minute old)
       const recentTimestamp = now - (1 * 60 * 1000);
-      PENDING_ARGS.set('recent_payment_id', { args: { data: 'recent' }, ts: recentTimestamp });
+      PAYMENTS.set('recent_payment_id', { sessionId: 'session2', args: { data: 'recent' }, ts: recentTimestamp });
 
-      expect(PENDING_ARGS.has('old_payment_id')).toBe(true);
-      expect(PENDING_ARGS.has('recent_payment_id')).toBe(true);
+      expect(PAYMENTS.has('old_payment_id')).toBe(true);
+      expect(PAYMENTS.has('recent_payment_id')).toBe(true);
 
       // Manually run the cleanup logic (simulating what setInterval does)
-      for (const [key, data] of PENDING_ARGS.entries()) {
+      for (const [key, data] of PAYMENTS.entries()) {
         if (now - data.ts > CLEANUP_INTERVAL) {
-          PENDING_ARGS.delete(key);
+          PAYMENTS.delete(key);
         }
       }
 
-      // Old arg should be cleaned up
-      expect(PENDING_ARGS.has('old_payment_id')).toBe(false);
+      // Old payment should be cleaned up
+      expect(PAYMENTS.has('old_payment_id')).toBe(false);
 
-      // Recent arg should still exist
-      expect(PENDING_ARGS.has('recent_payment_id')).toBe(true);
+      // Recent payment should still exist
+      expect(PAYMENTS.has('recent_payment_id')).toBe(true);
 
       // Clean up
-      PENDING_ARGS.clear();
+      PAYMENTS.clear();
+    });
+  });
+
+  describe('Setup and Patching', () => {
+    it('should patch server.connect when setup is called', async () => {
+      const { setup } = await import('../../src/flows/list_change.js');
+
+      const mockServer = {
+        connect: vi.fn().mockResolvedValue(undefined),
+        server: {
+          _requestHandlers: new Map([
+            ['tools/list', vi.fn().mockResolvedValue({ tools: [] })]
+          ])
+        }
+      };
+
+      const originalConnect = mockServer.connect;
+      setup(mockServer);
+
+      // Verify connect was wrapped
+      expect(mockServer.connect).not.toBe(originalConnect);
+      expect((mockServer.connect as any)._paymcp_list_change_patched).toBe(true);
+
+      // Verify calling connect invokes original
+      await mockServer.connect();
+      expect(originalConnect).toHaveBeenCalled();
+    });
+
+    it('should not patch server.connect if already patched', async () => {
+      const { setup } = await import('../../src/flows/list_change.js');
+
+      const mockConnect = vi.fn().mockResolvedValue(undefined);
+      (mockConnect as any)._paymcp_list_change_patched = true;
+
+      const mockServer = {
+        connect: mockConnect,
+        server: {
+          _requestHandlers: new Map([
+            ['tools/list', vi.fn().mockResolvedValue({ tools: [] })]
+          ])
+        }
+      };
+
+      setup(mockServer);
+
+      // Should not re-wrap
+      expect(mockServer.connect).toBe(mockConnect);
+    });
+
+    it('should not patch if server has no connect method', async () => {
+      const { setup } = await import('../../src/flows/list_change.js');
+
+      const mockServer = { server: {} };
+
+      // Should not throw
+      expect(() => setup(mockServer)).not.toThrow();
+    });
+
+    it('should filter tools per session when patched', async () => {
+      const { setup, HIDDEN_TOOLS: hiddenTools, CONFIRMATION_TOOLS: confirmTools } = await import('../../src/flows/list_change.js');
+
+      const mockTool1 = { name: 'tool1' };
+      const mockTool2 = { name: 'tool2' };
+      const mockConfirmTool = { name: 'confirm_tool1_payment123' };
+
+      const originalHandler = vi.fn().mockResolvedValue({
+        tools: [mockTool1, mockTool2, mockConfirmTool]
+      });
+
+      const handlersMap = new Map([['tools/list', originalHandler]]);
+
+      const mockServer = {
+        connect: vi.fn(async () => {
+          // Simulate connection completing
+        }),
+        server: {
+          _requestHandlers: handlersMap
+        }
+      };
+
+      setup(mockServer);
+
+      // Call the wrapped connect to trigger patching
+      await mockServer.connect();
+
+      // Get the patched handler
+      const patchedHandler = handlersMap.get('tools/list');
+      expect(patchedHandler).not.toBe(originalHandler);
+
+      // Test filtering with no session (should return all tools)
+      const resultNoSession = await patchedHandler({}, {});
+      expect(resultNoSession.tools.length).toBe(3);
+
+      // Clean up
+      hiddenTools.clear();
+      confirmTools.clear();
     });
   });
 });

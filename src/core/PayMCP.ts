@@ -7,6 +7,7 @@ import { appendPriceToDescription } from "../utils/messages.js";
 import { makeFlow } from "../flows/index.js";
 import { StateStore } from "../types/state.js";
 import { InMemoryStateStore } from "../state/inMemory.js";
+import { setup as setupDynamicTools } from "../flows/dynamic_tools.js";
 
 type ProvidersInput = ProviderConfig | BasePaymentProvider[];
 
@@ -27,6 +28,13 @@ export class PayMCP {
         this.wrapperFactory = makeFlow(this.flow);
         this.originalRegisterTool = server.registerTool.bind(server);
         this.patch();
+
+        // DYNAMIC_TOOLS flow requires patching server.connect() and tools/list handler
+        // CRITICAL: Must be synchronous to patch server.connect() BEFORE it's called
+        if (this.flow === PaymentFlow.DYNAMIC_TOOLS) {
+            setupDynamicTools(server);
+        }
+
         if (opts.retrofitExisting) {
             // Try to re-register existing tools (if SDK allows)
             this.retrofitExistingTools();
@@ -72,7 +80,13 @@ export class PayMCP {
                 };
 
                 // wrap the handler in a payment flow
-                wrapped = self.wrapperFactory(handler, self.server, provider, price, name, self.stateStore);
+                const paymentWrapper = self.wrapperFactory(
+                    handler, self.server, provider, price, name, self.stateStore
+                );
+
+                wrapped = async function(...args: any[]): Promise<any> {
+                    return await paymentWrapper(...args);
+                };
             }
 
             return self.originalRegisterTool(name, config, wrapped);

@@ -32,6 +32,8 @@ jobs:
     - name: Dependency Review
       uses: actions/dependency-review-action@v4
       with:
+        # Use custom configuration file for dependency review rules
+        config-file: './.github/dependency-review-config.yml'
         # Fail the job if any vulnerable dependencies are found
         fail-on-severity: moderate
         # Show OpenSSF Scorecard scores for security visibility

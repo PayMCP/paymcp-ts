@@ -239,8 +239,8 @@ describe('LIST_CHANGE Flow', () => {
       const confirmResult = await confirmTool.handler({});
 
       // Should return payment pending message
-      expect(confirmResult.content[0].text).toContain('Payment not completed');
-      expect(confirmResult.content[0].text).toContain('Status: pending');
+      expect(confirmResult.content[0].text).toContain('not yet completed');
+      expect(confirmResult.content[0].text).toContain('status: pending');
 
       // Original tool should NOT be called
       expect(mockTool).not.toHaveBeenCalled();
@@ -272,7 +272,7 @@ describe('LIST_CHANGE Flow', () => {
       const confirmResult = await confirmTool.handler({});
 
       // Should return error message
-      expect(confirmResult.content[0].text).toContain('Unknown or expired payment ID');
+      expect(confirmResult.content[0].text).toContain('unknown or has expired');
 
       // Original tool should NOT be called
       expect(mockTool).not.toHaveBeenCalled();
@@ -300,7 +300,7 @@ describe('LIST_CHANGE Flow', () => {
       const confirmResult = await confirmTool.handler({});
 
       // Should return error message
-      expect(confirmResult.content[0].text).toContain('Error confirming payment');
+      expect(confirmResult.content[0].text).toContain('Unable to confirm payment');
       expect(confirmResult.content[0].text).toContain('Provider API error');
 
       // Original tool should NOT be called
@@ -351,7 +351,7 @@ describe('LIST_CHANGE Flow', () => {
       const result = await wrapper({ data: 'test' });
 
       // Should return error message
-      expect(result.content[0].text).toContain('Failed to initiate payment');
+      expect(result.content[0].text).toContain('Unable to initiate payment');
       expect(result.content[0].text).toContain('Payment creation failed');
 
       // No confirmation tool should be registered

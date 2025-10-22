@@ -14,7 +14,6 @@ import type { BasePaymentProvider } from '../providers/base.js';
 import type { PriceConfig } from '../types/config.js';
 import type { Logger } from '../types/logger.js';
 import type { StateStore } from '../types/state.js';
-import { getCurrentSession } from '../core/sessionContext.js';
 import { randomUUID } from 'crypto';
 
 // State: payment_id -> (session_id, args, timestamp)
@@ -64,8 +63,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
       const pidStr = String(paymentId);
       const confirmName = `confirm_${toolName}_${pidStr}`;
-      // Get session ID from context, fallback to random UUID for test/isolated environments
-      const sessionId = getCurrentSession() || randomUUID();
+      // Get session ID from extra parameter (blustAI suggestion), fallback to random UUID
+      const sessionId = extra?.sessionId || randomUUID();
 
       // Store state: payment session, hide tool, track confirm tool
       PAYMENTS.set(pidStr, {
@@ -98,10 +97,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
             return {
               content: [{
                 type: "text",
-                text: `Unknown or expired payment ID: ${pidStr}`
+                text: `Inform user: Payment session ${pidStr} is unknown or has expired. They may need to initiate a new payment.`
               }],
               status: "error",
-              message: "Unknown or expired payment ID",
+              message: "Payment session unknown or expired - inform user to start new payment",
               payment_id: pidStr
             };
           }
@@ -112,10 +111,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
               return {
                 content: [{
                   type: "text",
-                  text: `Payment not completed. Status: ${status}\nPayment URL: ${paymentUrl}`
+                  text: `Inform user: Payment not yet completed. Current status: ${status}. Ask them to complete payment at: ${paymentUrl}`
                 }],
                 status: "error",
-                message: `Payment status is ${status}, expected 'paid'`,
+                message: `Payment status '${status}' - ask user to complete payment`,
                 payment_id: pidStr
               };
             }
@@ -148,10 +147,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
             return {
               content: [{
                 type: "text",
-                text: `Error confirming payment: ${error instanceof Error ? error.message : String(error)}`
+                text: `Inform user: Unable to confirm payment due to technical error: ${error instanceof Error ? error.message : String(error)}. Ask them to retry or contact support.`
               }],
               status: "error",
-              message: "Failed to confirm payment",
+              message: "Technical error confirming payment - inform user to retry",
               payment_id: pidStr
             };
           }
@@ -166,7 +165,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
       return {
         content: [{
           type: "text",
-          text: `Please complete payment of ${priceInfo.amount} ${priceInfo.currency} at:\n${paymentUrl}\n\nAfter completing payment, call tool: ${confirmName}`
+          text: `Ask user to complete payment of ${priceInfo.amount} ${priceInfo.currency} at: ${paymentUrl}\n\nAfter completing payment, call tool: ${confirmName}`
         }],
         payment_url: paymentUrl,
         payment_id: pidStr,
@@ -177,10 +176,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
       return {
         content: [{
           type: "text",
-          text: `Failed to initiate payment: ${error instanceof Error ? error.message : String(error)}`
+          text: `Inform user: Unable to initiate payment due to technical error: ${error instanceof Error ? error.message : String(error)}. Ask them to retry or contact support.`
         }],
         status: "error",
-        message: "Failed to initiate payment"
+        message: "Technical error initiating payment - inform user to retry"
       };
     }
   }
@@ -231,7 +230,7 @@ function patchToolListing(server: any): void {
   const original = handlers.get('tools/list');
   handlers.set('tools/list', async (request: any, extra: any) => {
     const result = await original(request, extra);
-    const sessionId = getCurrentSession();
+    const sessionId = extra?.sessionId;
 
     // If no session context, check if there are any hidden tools at all
     if (!sessionId) {

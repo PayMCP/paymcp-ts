@@ -2,8 +2,7 @@
  * PayMCP version information
  */
 
-// Version from package.json
-export const VERSION = "0.2.2";
+// Import version from package.json dynamically
+import pkg from '../package.json' with { type: 'json' };
 
-// Build hash - in production this could be replaced with git commit hash
-export const BUILD_HASH = "dev";
+export const VERSION = pkg.version;

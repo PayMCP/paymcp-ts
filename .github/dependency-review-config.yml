@@ -28,3 +28,9 @@ fail-on-severity: moderate
 # Additional security configurations
 vulnerability-check: true
 license-check: true
+
+# Deny specific package versions to prevent breaking upgrades
+# Format: PURL (Package URL) - pkg:npm/package-name@version-range
+deny-packages:
+  # Zod 4.x contains breaking changes - project must stay on zod 3.x
+  - pkg:npm/zod@>=4.0.0

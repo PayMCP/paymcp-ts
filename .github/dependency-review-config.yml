@@ -30,8 +30,7 @@ vulnerability-check: true
 license-check: true
 
 # Deny specific package versions to prevent breaking upgrades
+# Format: PURL (Package URL) - pkg:npm/package-name@version-range
 deny-packages:
   # Zod 4.x contains breaking changes - project must stay on zod 3.x
-  - name: zod
-    version: '>=4.0.0'
-    reason: "Breaking changes in zod 4.x. Must remain on zod 3.x for compatibility."
+  - pkg:npm/zod@>=4.0.0

@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.3.1 
+### Added
+- Experimental payment flow `DYNAMIC_TOOLS`.
+
 ## 0.2.1
 ### Added
 - Support for pluggable state storage in TWO_STEP flow.

@@ -7,7 +7,7 @@ import { appendPriceToDescription } from "../utils/messages.js";
 import { makeFlow } from "../flows/index.js";
 import { StateStore } from "../types/state.js";
 import { InMemoryStateStore } from "../state/inMemory.js";
-import { setup as setupListChange } from "../flows/list_change.js";
+import { setup as setupDynamicTools } from "../flows/dynamic_tools.js";
 
 type ProvidersInput = ProviderConfig | BasePaymentProvider[];
 
@@ -29,10 +29,10 @@ export class PayMCP {
         this.originalRegisterTool = server.registerTool.bind(server);
         this.patch();
 
-        // LIST_CHANGE flow requires patching server.connect() and tools/list handler
+        // DYNAMIC_TOOLS flow requires patching server.connect() and tools/list handler
         // CRITICAL: Must be synchronous to patch server.connect() BEFORE it's called
-        if (this.flow === PaymentFlow.LIST_CHANGE) {
-            setupListChange(server);
+        if (this.flow === PaymentFlow.DYNAMIC_TOOLS) {
+            setupDynamicTools(server);
         }
 
         if (opts.retrofitExisting) {

@@ -1,5 +1,5 @@
 /**
- * LIST_CHANGE flow: dynamically hide/show tools per-session during payment.
+ * DYNAMIC_TOOLS flow: dynamically hide/show tools per-session during payment.
  *
  * MCP SDK Compatibility: Patches MCP SDK internals because:
  * 1. SDK has no post-init capability registration API (v1.x)
@@ -48,7 +48,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   stateStore: StateStore,
   logger?: Logger
 ) => {
-  async function listChangeWrapper(paramsOrExtra?: any, maybeExtra?: any) {
+  async function dynamicToolsWrapper(paramsOrExtra?: any, maybeExtra?: any) {
     const hasArgs = arguments.length === 2;
     const toolArgs = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : paramsOrExtra;
@@ -184,7 +184,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     }
   }
 
-  return listChangeWrapper as unknown as ToolHandler;
+  return dynamicToolsWrapper as unknown as ToolHandler;
 };
 
 // Cleanup old payments periodically
@@ -203,14 +203,14 @@ setInterval(() => {
  */
 export function setup(server: any): void {
   const originalConnect = server.connect?.bind(server);
-  if (!originalConnect || (server.connect as any)._paymcp_list_change_patched) return;
+  if (!originalConnect || (server.connect as any)._paymcp_dynamic_tools_patched) return;
 
   server.connect = async function(...args: any[]) {
     const result = await originalConnect(...args);
     patchToolListing(server);
     return result;
   };
-  (server.connect as any)._paymcp_list_change_patched = true;
+  (server.connect as any)._paymcp_dynamic_tools_patched = true;
 }
 
 /**

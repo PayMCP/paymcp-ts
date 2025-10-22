@@ -46,6 +46,11 @@ Keeps the tool call open, shows a payment link, and streams **progress updates**
 
 ---
 
+### `PaymentFlow.DYNAMIC_TOOLS`
+Temporarily hides the original tool for the active session after initiating payment and registers a confirmation helper. Once the user completes payment, the confirmation tool verifies status, restores the original tool, and forwards the call. Ideal when you need per-session tool visibility control without exposing unpaid actions.
+
+---
+
 ### `PaymentFlow.OOB` *(Out‑of‑Band)*
 Reserved for asynchronous / deferred flows. Not yet implemented.
 

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { makePaidWrapper, PAYMENTS, HIDDEN_TOOLS } from '../../src/flows/list_change.js';
+import { makePaidWrapper, PAYMENTS, HIDDEN_TOOLS } from '../../src/flows/dynamic_tools.js';
 import type { BasePaymentProvider } from '../../src/providers/base.js';
 import type { PriceConfig } from '../../src/types/config.js';
 import type { McpServerLike } from '../../src/types/mcp.js';
 
-describe('LIST_CHANGE Flow', () => {
+describe('DYNAMIC_TOOLS Flow', () => {
   let mockProvider: BasePaymentProvider;
   let mockServer: McpServerLike;
   let mockLogger: any;
@@ -606,7 +606,7 @@ describe('LIST_CHANGE Flow', () => {
 
   describe('Setup and Patching', () => {
     it('should patch server.connect when setup is called', async () => {
-      const { setup } = await import('../../src/flows/list_change.js');
+      const { setup } = await import('../../src/flows/dynamic_tools.js');
 
       const mockServer = {
         connect: vi.fn().mockResolvedValue(undefined),
@@ -622,7 +622,7 @@ describe('LIST_CHANGE Flow', () => {
 
       // Verify connect was wrapped
       expect(mockServer.connect).not.toBe(originalConnect);
-      expect((mockServer.connect as any)._paymcp_list_change_patched).toBe(true);
+      expect((mockServer.connect as any)._paymcp_dynamic_tools_patched).toBe(true);
 
       // Verify calling connect invokes original
       await mockServer.connect();
@@ -630,10 +630,10 @@ describe('LIST_CHANGE Flow', () => {
     });
 
     it('should not patch server.connect if already patched', async () => {
-      const { setup } = await import('../../src/flows/list_change.js');
+      const { setup } = await import('../../src/flows/dynamic_tools.js');
 
       const mockConnect = vi.fn().mockResolvedValue(undefined);
-      (mockConnect as any)._paymcp_list_change_patched = true;
+      (mockConnect as any)._paymcp_dynamic_tools_patched = true;
 
       const mockServer = {
         connect: mockConnect,
@@ -651,7 +651,7 @@ describe('LIST_CHANGE Flow', () => {
     });
 
     it('should not patch if server has no connect method', async () => {
-      const { setup } = await import('../../src/flows/list_change.js');
+      const { setup } = await import('../../src/flows/dynamic_tools.js');
 
       const mockServer = { server: {} };
 
@@ -660,7 +660,7 @@ describe('LIST_CHANGE Flow', () => {
     });
 
     it('should filter tools per session when patched', async () => {
-      const { setup, HIDDEN_TOOLS: hiddenTools, CONFIRMATION_TOOLS: confirmTools } = await import('../../src/flows/list_change.js');
+      const { setup, HIDDEN_TOOLS: hiddenTools, CONFIRMATION_TOOLS: confirmTools } = await import('../../src/flows/dynamic_tools.js');
 
       const mockTool1 = { name: 'tool1' };
       const mockTool2 = { name: 'tool2' };

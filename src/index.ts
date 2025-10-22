@@ -4,5 +4,4 @@ export { PaymentFlow } from './types/payment.js'
 export type { PriceConfig } from "./types/config.js";
 export { RedisStateStore } from "./state/redis.js";
 export type {StateStore} from "./types/state.js"
-export { runWithSession, getCurrentSession } from "./core/sessionContext.js";
 export { VERSION } from "./version.js";

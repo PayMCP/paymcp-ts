@@ -463,7 +463,7 @@ describe('PayMCP', () => {
     });
   });
 
-  describe('patchServerConnect (LIST_CHANGE flow)', () => {
+  describe('patchServerConnect (DYNAMIC_TOOLS flow)', () => {
     it('should call patchToolListing() after connect() completes', async () => {
       const connectSpy = vi.fn().mockResolvedValue(undefined);
       const serverWithConnect: any = {
@@ -476,7 +476,7 @@ describe('PayMCP', () => {
 
       const config: PayMCPOptions = {
         ...basicConfig,
-        paymentFlow: PaymentFlow.LIST_CHANGE
+        paymentFlow: PaymentFlow.DYNAMIC_TOOLS
       };
 
       createPayMCP(serverWithConnect, config);
@@ -484,13 +484,13 @@ describe('PayMCP', () => {
       // Call the patched connect() method (now replaced by PayMCP)
       await serverWithConnect.connect();
 
-      // patchToolListing() should have been called (which tries to import list_change.js)
+      // patchToolListing() should have been called (which tries to import dynamic_tools.js)
       // We can verify connect completed successfully (it's now the patched version)
       expect(serverWithConnect.connect).toBeDefined();
       expect(typeof serverWithConnect.connect).toBe('function');
     });
 
-    it('should not patch server.connect() for non-LIST_CHANGE flows', () => {
+    it('should not patch server.connect() for non-DYNAMIC_TOOLS flows', () => {
       const serverWithConnect: any = {
         ...mockServer,
         connect: vi.fn().mockResolvedValue(undefined)
@@ -508,7 +508,7 @@ describe('PayMCP', () => {
     });
   });
 
-  describe('patchToolListing (LIST_CHANGE flow)', () => {
+  describe('patchToolListing (DYNAMIC_TOOLS flow)', () => {
     it('should patch tools/list handler for session-based filtering', async () => {
       const originalListHandler = vi.fn().mockResolvedValue({
         tools: [
@@ -531,7 +531,7 @@ describe('PayMCP', () => {
 
       const config: PayMCPOptions = {
         ...basicConfig,
-        paymentFlow: PaymentFlow.LIST_CHANGE
+        paymentFlow: PaymentFlow.DYNAMIC_TOOLS
       };
 
       createPayMCP(serverWithListHandler, config);
@@ -571,7 +571,7 @@ describe('PayMCP', () => {
 
       const config: PayMCPOptions = {
         ...basicConfig,
-        paymentFlow: PaymentFlow.LIST_CHANGE
+        paymentFlow: PaymentFlow.DYNAMIC_TOOLS
       };
 
       createPayMCP(serverWithBrokenImport, config);

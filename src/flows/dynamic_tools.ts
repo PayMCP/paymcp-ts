@@ -204,15 +204,19 @@ setInterval(() => {
  * We must patch server.connect to register tools/list handler after connection.
  */
 export function setup(server: any): void {
-  const originalConnect = server.connect?.bind(server);
-  if (!originalConnect || (server.connect as any)._paymcp_dynamic_tools_patched) return;
+  // Install tool filtering immediately (for HTTP transport that doesn't call connect())
+  patchToolListing(server);
 
-  server.connect = async function(...args: any[]) {
-    const result = await originalConnect(...args);
-    patchToolListing(server);
-    return result;
-  };
-  (server.connect as any)._paymcp_dynamic_tools_patched = true;
+  // Also patch connect() for SSE/other transports that do call connect()
+  const originalConnect = server.connect?.bind(server);
+  if (originalConnect && !(server.connect as any)._paymcp_dynamic_tools_patched) {
+    server.connect = async function(...args: any[]) {
+      const result = await originalConnect(...args);
+      patchToolListing(server); // Re-patch after connection (idempotent)
+      return result;
+    };
+    (server.connect as any)._paymcp_dynamic_tools_patched = true;
+  }
 }
 
 /**
@@ -230,19 +234,16 @@ function patchToolListing(server: any): void {
   if (!handlers?.has('tools/list')) return;
 
   const original = handlers.get('tools/list');
-  handlers.set('tools/list', async (request: any, extra: any) => {
+  // Skip if already patched (idempotent)
+  if ((original as any)._paymcp_dynamic_tools_patched) return;
+
+  const patchedHandler = async (request: any, extra: any) => {
     const result = await original(request, extra);
     // Get session ID from AsyncLocalStorage context (set by runWithSession wrapper)
     const sessionId = getCurrentSession();
 
-    console.log(`[DYNAMIC_TOOLS] tools/list - sessionId: ${sessionId}, HIDDEN_TOOLS.size: ${HIDDEN_TOOLS.size}, CONFIRMATION_TOOLS.size: ${CONFIRMATION_TOOLS.size}`);
-    if (sessionId && HIDDEN_TOOLS.get(sessionId)) {
-      console.log(`[DYNAMIC_TOOLS] Session ${sessionId} has hidden tools:`, Array.from(HIDDEN_TOOLS.get(sessionId)!.keys()));
-    }
-
     // If no session context, check if there are any hidden tools at all
     if (!sessionId) {
-      console.log(`[DYNAMIC_TOOLS] No sessionId found via getCurrentSession(), returning all tools`);
       // If there are no hidden tools or confirmation tools, return as-is
       if (HIDDEN_TOOLS.size === 0 && CONFIRMATION_TOOLS.size === 0) return result;
       // If there ARE hidden tools but no session, don't hide anything (safer)
@@ -251,7 +252,6 @@ function patchToolListing(server: any): void {
 
     const sessionHidden = HIDDEN_TOOLS.get(sessionId);
     if (!sessionHidden && !CONFIRMATION_TOOLS.size) {
-      console.log(`[DYNAMIC_TOOLS] No hidden tools for session ${sessionId}, returning all tools`);
       return result;
     }
 
@@ -259,13 +259,16 @@ function patchToolListing(server: any): void {
       !sessionHidden?.has(t.name) &&
       (!CONFIRMATION_TOOLS.has(t.name) || CONFIRMATION_TOOLS.get(t.name) === sessionId)
     );
-    console.log(`[DYNAMIC_TOOLS] Filtered ${result.tools.length} -> ${filtered.length} tools for session ${sessionId}`);
 
     return {
       ...result,
       tools: filtered
     };
-  });
+  };
+
+  // Mark as patched and install
+  (patchedHandler as any)._paymcp_dynamic_tools_patched = true;
+  handlers.set('tools/list', patchedHandler);
 }
 
 // Export for testing and list filtering

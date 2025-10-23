@@ -15,6 +15,7 @@ import type { PriceConfig } from '../types/config.js';
 import type { Logger } from '../types/logger.js';
 import type { StateStore } from '../types/state.js';
 import { randomUUID } from 'crypto';
+import { getCurrentSession } from '../core/sessionContext.js';
 
 // State: payment_id -> (session_id, args, timestamp)
 interface PaymentSession {
@@ -63,8 +64,9 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
       const pidStr = String(paymentId);
       const confirmName = `confirm_${toolName}_${pidStr}`;
-      // Get session ID from extra parameter (blustAI suggestion), fallback to random UUID
-      const sessionId = extra?.sessionId || randomUUID();
+      // Get session ID from AsyncLocalStorage context, fallback to random UUID
+      // Session context is set by runWithSession() wrapper in HTTP transport handler
+      const sessionId = getCurrentSession() || randomUUID();
 
       // Store state: payment session, hide tool, track confirm tool
       PAYMENTS.set(pidStr, {
@@ -230,10 +232,17 @@ function patchToolListing(server: any): void {
   const original = handlers.get('tools/list');
   handlers.set('tools/list', async (request: any, extra: any) => {
     const result = await original(request, extra);
-    const sessionId = extra?.sessionId;
+    // Get session ID from AsyncLocalStorage context (set by runWithSession wrapper)
+    const sessionId = getCurrentSession();
+
+    console.log(`[DYNAMIC_TOOLS] tools/list - sessionId: ${sessionId}, HIDDEN_TOOLS.size: ${HIDDEN_TOOLS.size}, CONFIRMATION_TOOLS.size: ${CONFIRMATION_TOOLS.size}`);
+    if (sessionId && HIDDEN_TOOLS.get(sessionId)) {
+      console.log(`[DYNAMIC_TOOLS] Session ${sessionId} has hidden tools:`, Array.from(HIDDEN_TOOLS.get(sessionId)!.keys()));
+    }
 
     // If no session context, check if there are any hidden tools at all
     if (!sessionId) {
+      console.log(`[DYNAMIC_TOOLS] No sessionId found via getCurrentSession(), returning all tools`);
       // If there are no hidden tools or confirmation tools, return as-is
       if (HIDDEN_TOOLS.size === 0 && CONFIRMATION_TOOLS.size === 0) return result;
       // If there ARE hidden tools but no session, don't hide anything (safer)
@@ -241,14 +250,20 @@ function patchToolListing(server: any): void {
     }
 
     const sessionHidden = HIDDEN_TOOLS.get(sessionId);
-    if (!sessionHidden && !CONFIRMATION_TOOLS.size) return result;
+    if (!sessionHidden && !CONFIRMATION_TOOLS.size) {
+      console.log(`[DYNAMIC_TOOLS] No hidden tools for session ${sessionId}, returning all tools`);
+      return result;
+    }
+
+    const filtered = result.tools.filter((t: any) =>
+      !sessionHidden?.has(t.name) &&
+      (!CONFIRMATION_TOOLS.has(t.name) || CONFIRMATION_TOOLS.get(t.name) === sessionId)
+    );
+    console.log(`[DYNAMIC_TOOLS] Filtered ${result.tools.length} -> ${filtered.length} tools for session ${sessionId}`);
 
     return {
       ...result,
-      tools: result.tools.filter((t: any) =>
-        !sessionHidden?.has(t.name) &&
-        (!CONFIRMATION_TOOLS.has(t.name) || CONFIRMATION_TOOLS.get(t.name) === sessionId)
-      )
+      tools: filtered
     };
   });
 }

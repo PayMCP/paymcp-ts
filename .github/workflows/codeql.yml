@@ -43,14 +43,14 @@ jobs:
       run: npm install -g pnpm@10.12.4
 
     - name: Setup Node.js with automatic package manager caching
-      uses: actions/setup-node@v5
+      uses: actions/setup-node@v6
       with:
         node-version: '18'
         cache: 'pnpm'
 
     # Initialize CodeQL tools for scanning
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
+      uses: github/codeql-action/init@v4
       with:
         languages: ${{ matrix.language }}
         # Optional: Use custom CodeQL config to exclude files
@@ -66,6 +66,6 @@ jobs:
 
     # Perform CodeQL Analysis
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      uses: github/codeql-action/analyze@v4
       with:
         category: "/language:${{matrix.language}}"

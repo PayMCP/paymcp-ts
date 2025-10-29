@@ -81,8 +81,12 @@ export class PayMCP {
 
                 // wrap the handler in a payment flow
                 const paymentWrapper = self.wrapperFactory(
-                    handler, self.server, provider, price, name, self.stateStore
+                    handler, self.server, provider, price, name, self.stateStore, config
                 );
+
+                if (config._meta && [PaymentFlow.TWO_STEP, PaymentFlow.DYNAMIC_TOOLS].includes(self.flow)) { //removing _meta from original tool - it's added to confirm tool
+                    delete config._meta
+                }
 
                 wrapped = async function(...args: any[]): Promise<any> {
                     return await paymentWrapper(...args);

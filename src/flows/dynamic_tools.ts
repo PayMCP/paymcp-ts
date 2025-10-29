@@ -47,6 +47,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   priceInfo: PriceConfig,
   toolName: string,
   stateStore: StateStore,
+  config: any,
   logger?: Logger
 ) => {
   async function dynamicToolsWrapper(paramsOrExtra?: any, maybeExtra?: any) {
@@ -91,7 +92,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
         confirmName,
         {
           title: `Confirm payment for ${toolName}`,
-          description: `Confirm payment ${pidStr} and execute ${toolName}()`
+          description: `Confirm payment ${pidStr} and execute ${toolName}()`,
+          ...config?._meta ? {_meta:config._meta}: {}
         },
         async (_params: any, confirmExtra?: any) => {
           const payment = PAYMENTS.get(pidStr);

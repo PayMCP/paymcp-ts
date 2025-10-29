@@ -180,7 +180,7 @@ function ensureConfirmTool(
       title: `Confirm payment for ${toolName}`,
       description: `Confirm payment and execute ${toolName}()`,
       inputSchema,
-      ...config._meta ? {_meta:config._meta}: {}
+      ...config?._meta ? {_meta:config._meta}: {}
     },
     confirmHandler
   );

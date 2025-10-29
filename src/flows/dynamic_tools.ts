@@ -93,7 +93,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
         {
           title: `Confirm payment for ${toolName}`,
           description: `Confirm payment ${pidStr} and execute ${toolName}()`,
-          ...config._meta ? {_meta:config._meta}: {}
+          ...config?._meta ? {_meta:config._meta}: {}
         },
         async (_params: any, confirmExtra?: any) => {
           const payment = PAYMENTS.get(pidStr);

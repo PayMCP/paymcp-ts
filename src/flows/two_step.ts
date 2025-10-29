@@ -57,6 +57,7 @@ function ensureConfirmTool(
   toolName: string,
   originalHandler: ToolHandler,
   stateStore: StateStore,
+  config: any,
   log?: Logger
 ): string {
   const confirmToolName = `confirm_${toolName}_payment`;
@@ -178,7 +179,8 @@ function ensureConfirmTool(
     {
       title: `Confirm payment for ${toolName}`,
       description: `Confirm payment and execute ${toolName}()`,
-      inputSchema
+      inputSchema,
+      ...config._meta ? {_meta:config._meta}: {}
     },
     confirmHandler
   );
@@ -193,6 +195,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   priceInfo: PriceConfig,
   toolName: string,
   stateStore: StateStore,
+  config: any,
   logger?: Logger
 ) => {
   const log: Logger = logger ?? (provider as any).logger ?? console;
@@ -205,6 +208,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     toolName,
     func,
     stateStore,
+    config,
     log
   );
 

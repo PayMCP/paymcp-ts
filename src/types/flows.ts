@@ -16,6 +16,7 @@ export type PaidWrapperFactory = (
   priceInfo: PriceConfig,
   toolName: string,
   stateStore: StateStore,
+  config: any,
   logger?: Logger
 ) => ToolHandler;
 

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.3
+### Changed
+- Kept original tool UI in ChatGPT Apps by removing `_meta` from the initial tool and applying it only to confirmation tools in TWO_STEP payment flow. 
 
 ## 0.3.1 
 ### Added

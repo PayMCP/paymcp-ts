@@ -93,9 +93,10 @@ export class PayMCP {
                     delete config._meta
                 }
 
-                if (config.inputSchema && self.flow === PaymentFlow.RESUBMIT) {
+                if (config.inputSchema && self.flow === PaymentFlow.RESUBMIT && typeof config.inputSchema === 'object') {
+                    const schema = config.inputSchema as Record<string, any>;
                     // Add optional payment_id field with description
-                    (config.inputSchema as any).payment_id = z.string().optional().describe(
+                    schema.payment_id = z.string().optional().describe(
                         "Optional payment identifier returned by a previous call when payment is required"
                     );
                 }

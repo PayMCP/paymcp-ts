@@ -1,6 +1,5 @@
 // RESUBMIT flow: first call creates payment and returns payment_url + payment_id; second call (with payment_id) executes the tool once payment is confirmed.
 
-import { paymentPromptMessage } from "../utils/messages.js";
 import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
 import { Logger } from "../types/logger.js";
 import { ToolExtraLike } from "../types/config.js";
@@ -18,6 +17,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
 ) => {
     const log: Logger = logger ?? (provider as any).logger ?? console;
 
+    if (!priceInfo?.amount || !priceInfo?.currency) {
+        throw new Error(`Invalid price info for tool ${toolName}`);
+    }
+
     async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
         log?.debug?.(
             `[PayMCP:Resubmit] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`
@@ -30,7 +33,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
             ? (maybeExtra as ToolExtraLike)
             : (paramsOrExtra as ToolExtraLike);
 
-        const existedPaymentId = toolArgs.payment_id;
+        const existedPaymentId = toolArgs?.payment_id;
 
         if (!existedPaymentId) {
             // Create payment session
@@ -61,7 +64,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
         const status = normalizeStatus(raw);
         log?.debug?.(`[PayMCP:Resubmit] paymentId ${existedPaymentId}, poll status=${raw} -> ${status}`);
 
-        if (['canceled','failed'].includes(status)) {
+        if (['canceled', 'failed'].includes(status)) {
             const err = new Error(
                 `Payment ${status}. User must complete payment to proceed.\nPayment ID: ${existedPaymentId}`
             );

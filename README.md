@@ -1,5 +1,3 @@
-
-
 # PayMCP (Node / TypeScript)
 
 **Provider‑agnostic payment layer for MCP (Model Context Protocol) tools and agents.**
@@ -31,6 +29,17 @@ Splits original tool into two MCP methods.
 2. **Confirm**: dynamically registered tool verifies payment (server‑side) and, if paid, runs the original logic.
 
 Works in almost all clients (even very simple ones).
+
+---
+
+### `PaymentFlow.RESUBMIT`
+
+Adds an optional `payment_id` to the original tool signature.
+
+- **First call**: the tool is invoked without `payment_id` → PayMCP returns a `payment_url` + `payment_id` and instructs a retry after payment.
+- **Second call**: the same tool is invoked again with the returned `payment_id` → PayMCP verifies payment server‑side and, if paid, executes the original tool logic.
+
+Similar compatibility to TWO_STEP, but with a simpler surface
 
 ---
 

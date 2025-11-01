@@ -17,6 +17,7 @@ export interface PayToolConfig extends Record<string, any> {
 export interface PayMCPOptions {
     providers: Record<string, Record<string, any>>;
     paymentFlow?: PaymentFlow;
+    mode?: PaymentFlow,
     retrofitExisting?: boolean;
     stateStore?: StateStore
 }

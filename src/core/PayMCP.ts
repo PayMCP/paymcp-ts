@@ -8,6 +8,7 @@ import { makeFlow } from "../flows/index.js";
 import { StateStore } from "../types/state.js";
 import { InMemoryStateStore } from "../state/inMemory.js";
 import { setup as setupDynamicTools } from "../flows/dynamic_tools.js";
+import { z } from "zod";
 
 type ProvidersInput = ProviderConfig | BasePaymentProvider[];
 
@@ -23,7 +24,11 @@ export class PayMCP {
     constructor(server: McpServerLike, opts: PayMCPOptions) {
         this.server = server;
         this.providers = buildProviders(opts.providers as ProvidersInput);
-        this.flow = opts.paymentFlow ?? PaymentFlow.TWO_STEP;
+        this.flow = opts.mode ?? opts.paymentFlow ?? PaymentFlow.TWO_STEP;
+        if (opts.mode && opts.paymentFlow) {
+            console.warn("[PayMCP] Both `mode` and `paymentFlow` were provided; `mode` takes precedence. `paymentFlow` will be deprecated soon.");
+        }
+
         this.stateStore = opts.stateStore ?? new InMemoryStateStore();
         this.wrapperFactory = makeFlow(this.flow);
         this.originalRegisterTool = server.registerTool.bind(server);
@@ -88,7 +93,15 @@ export class PayMCP {
                     delete config._meta
                 }
 
-                wrapped = async function(...args: any[]): Promise<any> {
+                if (config.inputSchema && self.flow === PaymentFlow.RESUBMIT && typeof config.inputSchema === 'object') {
+                    const schema = config.inputSchema as Record<string, any>;
+                    // Add optional payment_id field with description
+                    schema.payment_id = z.string().optional().describe(
+                        "Optional payment identifier returned by a previous call when payment is required"
+                    );
+                }
+
+                wrapped = async function (...args: any[]): Promise<any> {
                     return await paymentWrapper(...args);
                 };
             }

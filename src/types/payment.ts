@@ -4,7 +4,8 @@ export enum PaymentFlow {
     TWO_STEP = "TWO_STEP",
     PROGRESS = "PROGRESS",
     OOB = "OOB",
-    DYNAMIC_TOOLS = "DYNAMIC_TOOLS"
+    DYNAMIC_TOOLS = "DYNAMIC_TOOLS",
+    RESUBMIT = "RESUBMIT"
     // TODO: OOB
 }
 

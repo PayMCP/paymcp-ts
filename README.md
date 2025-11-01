@@ -30,6 +30,8 @@ Splits original tool into two MCP methods.
 
 Works in almost all clients (even very simple ones).
 
+---
+
 ### `PaymentFlow.RESUBMIT`
 
 Adds an optional `payment_id` to the original tool signature.

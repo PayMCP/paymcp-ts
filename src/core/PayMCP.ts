@@ -25,7 +25,7 @@ export class PayMCP {
         this.server = server;
         this.providers = buildProviders(opts.providers as ProvidersInput);
         this.flow = opts.mode ?? opts.paymentFlow ?? PaymentFlow.TWO_STEP;
-        if (opts.mode && opts.paymentFlow) {
+        if (opts.mode && opts.paymentFlow && opts.mode !== opts.paymentFlow) {
             console.warn("[PayMCP] Both `mode` and `paymentFlow` were provided; `mode` takes precedence. `paymentFlow` will be deprecated soon.");
         }
 

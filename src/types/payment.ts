@@ -9,7 +9,9 @@ export enum Mode {
     // TODO: OOB
 }
 
+/** @deprecated Use Mode instead.*/
 export const PaymentFlow = Mode; // Alias for backward compatibility; PaymentFlow will be deprecated in future versions
+/** @deprecated Use Mode instead.*/
 export type PaymentFlow = Mode;
 
 export interface CreatePaymentResult {

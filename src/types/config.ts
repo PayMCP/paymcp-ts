@@ -15,6 +15,10 @@ export interface PayToolConfig extends Record<string, any> {
 
 export interface PayMCPOptions {
     providers: Record<string, Record<string, any>>;
+    /**
+        * @deprecated Use `mode` instead.
+        * @see {@link Mode}
+    */
     paymentFlow?: PaymentFlow;
     mode?: Mode,
     retrofitExisting?: boolean;

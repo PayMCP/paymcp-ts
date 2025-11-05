@@ -1,5 +1,4 @@
-import { PaymentFlow } from "./payment.js";
-import { type Logger } from "../types/logger.js";
+import { Mode, PaymentFlow } from "./payment.js";
 import { StateStore } from "./state.js";
 
 export interface PriceConfig {
@@ -16,8 +15,12 @@ export interface PayToolConfig extends Record<string, any> {
 
 export interface PayMCPOptions {
     providers: Record<string, Record<string, any>>;
+    /**
+        * @deprecated Use `mode` instead.
+        * @see {@link Mode}
+    */
     paymentFlow?: PaymentFlow;
-    mode?: PaymentFlow,
+    mode?: Mode,
     retrofitExisting?: boolean;
     stateStore?: StateStore
 }

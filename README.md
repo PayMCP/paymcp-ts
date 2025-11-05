@@ -11,18 +11,20 @@ See the [full documentation](https://paymcp.info).
 ## 🔧 Features
 
 - ✅ Add **per‑tool `price` config** when you register MCP tools to enable payments.
-- 🔁 Choose between different **payment flows**.
+- 🔁 Choose between different **modes** (TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS).
 - 🔌 Built-in support for major providers ([see list](#supported-providers)) — plus a pluggable interface to add your own.
 - ⚙️ Easy **drop‑in integration**: `installPayMCP(server, options)` — no need to rewrite tools.
 - 🛡 Server‑side verification with your payment provider runs before the tool logic.
 
 ---
 
-## 🧭 Payment Flows
+## 🧭 Modes (formerly Payment Flows)
 
-The `paymentFlow` option controls how the user is guided through payment. Choose what fits your UX and client capabilities.
+In version 0.4.2, the `paymentFlow` option was renamed to `mode`, which better reflects its purpose. The old name remains supported for backward compatibility.
 
-### `PaymentFlow.TWO_STEP` (default)
+The `mode` option controls how the user is guided through payment. Choose what fits your UX and client capabilities.
+
+### `Mode.TWO_STEP` (default)
 Splits original tool into two MCP methods.
 
 1. **Initiate**: original tool returns a `payment_url` + `payment_id` + `next_step` (e.g. `confirm_payment`).
@@ -32,7 +34,7 @@ Works in almost all clients (even very simple ones).
 
 ---
 
-### `PaymentFlow.RESUBMIT`
+### `Mode.RESUBMIT`
 
 Adds an optional `payment_id` to the original tool signature.
 
@@ -43,17 +45,17 @@ Similar compatibility to TWO_STEP, but with a simpler surface
 
 ---
 
-### `PaymentFlow.ELICITATION`
+### `Mode.ELICITATION`
 When the tool is called, PayMCP sends the user a payment link via MCP **elicitation** (if the client supports the capability). The user can Accept / Cancel inline; once paid, the original tool runs in the same call. 
 
 ---
 
-### `PaymentFlow.PROGRESS`
+### `Mode.PROGRESS`
 Keeps the tool call open, shows a payment link, and streams **progress updates** while polling the provider in the background. Automatically returns the tool result when payment clears (or error / timeout).
 
 ---
 
-### `PaymentFlow.DYNAMIC_TOOLS` 
+### `Mode.DYNAMIC_TOOLS` 
 Steer the client and the LLM by changing the visible tool set at specific points in the flow (e.g., temporarily expose `confirm_payment_*`), thereby guiding the next valid action. 
 
 ---
@@ -88,14 +90,15 @@ const server = new Server({ name: "my-ai-agent", version: "0.0.1" });
 ### 2. Install PayMCP
 
 ```ts
-import { installPayMCP, PaymentFlow } from "paymcp";
+import { installPayMCP, Mode } from "paymcp";
 import { StripeProvider } from 'paymcp/providers';
 
 installPayMCP(server, {
   providers: [new StripeProvider({ apiKey: "sk_test_..." })],
-  paymentFlow: PaymentFlow.TWO_STEP, // optional, TWO_STEP / ELICITATION / PROGRESS / DYNAMIC_TOOLS
+  mode: Mode.TWO_STEP, // optional, TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS
 });
 ```
+
 
 > The first provider listed is used by default for priced tools. Multi‑provider selection coming soon.
 
@@ -191,7 +194,7 @@ await redisClient.connect();
 
 installPayMCP(server, {
   providers: [ /* ... */ ],
-  paymentFlow: PaymentFlow.TWO_STEP,
+  mode: Mode.TWO_STEP,
   stateStore: new RedisStateStore(redisClient),
 });
 ```

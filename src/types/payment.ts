@@ -1,5 +1,5 @@
 
-export enum PaymentFlow {
+export enum Mode {
     ELICITATION = "ELICITATION",
     TWO_STEP = "TWO_STEP",
     PROGRESS = "PROGRESS",
@@ -8,6 +8,11 @@ export enum PaymentFlow {
     RESUBMIT = "RESUBMIT"
     // TODO: OOB
 }
+
+/** @deprecated Use Mode instead.*/
+export const PaymentFlow = Mode; // Alias for backward compatibility; PaymentFlow will be deprecated in future versions
+/** @deprecated Use Mode instead.*/
+export type PaymentFlow = Mode;
 
 export interface CreatePaymentResult {
   paymentId: string;

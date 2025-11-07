@@ -604,6 +604,82 @@ describe('DYNAMIC_TOOLS Flow', () => {
     });
   });
 
+  describe('SDK Version Compatibility', () => {
+    it('should hide tool using _registeredTools for newer SDK', async () => {
+      const mockTool = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'Tool result' }]
+      });
+
+      // Setup mock server with _registeredTools (newer SDK)
+      mockServer._registeredTools = {
+        testTool: {
+          enabled: true,
+          config: {},
+          handler: mockTool
+        }
+      };
+      mockServer.tools = undefined;
+
+      const wrapper = makePaidWrapper(
+        mockTool,
+        mockServer,
+        mockProvider,
+        priceInfo,
+        'testTool',
+        mockStateStore,
+        mockLogger
+      );
+
+      // Initiate payment
+      await wrapper({ data: 'test_data' });
+
+      // Tool should be in HIDDEN_TOOLS
+      expect(HIDDEN_TOOLS.size).toBeGreaterThan(0);
+    });
+
+    it('should remove confirmation tool using _registeredTools for newer SDK', async () => {
+      const mockTool = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'Success' }]
+      });
+
+      // Setup mock server with _registeredTools (newer SDK)
+      mockServer._registeredTools = {
+        testTool: {
+          enabled: true,
+          config: {},
+          handler: mockTool
+        }
+      };
+      mockServer.tools = undefined;
+
+      const wrapper = makePaidWrapper(
+        mockTool,
+        mockServer,
+        mockProvider,
+        priceInfo,
+        'testTool',
+        mockStateStore,
+        mockLogger
+      );
+
+      const initResult = await wrapper({ data: 'test' });
+      const confirmToolName = initResult.next_tool;
+
+      // Add confirmation tool to _registeredTools
+      mockServer._registeredTools[confirmToolName] = {
+        enabled: true,
+        config: {},
+        handler: () => {}
+      };
+
+      const confirmTool = registeredTools.get(confirmToolName);
+      await confirmTool.handler({});
+
+      // Confirmation tool should be removed from _registeredTools
+      expect(mockServer._registeredTools[confirmToolName]).toBeUndefined();
+    });
+  });
+
   describe('Setup and Patching', () => {
     it('should patch server.connect when setup is called', async () => {
       const { setup } = await import('../../src/flows/dynamic_tools.js');
@@ -693,6 +769,150 @@ describe('DYNAMIC_TOOLS Flow', () => {
       // Test filtering with no session (should return all tools)
       const resultNoSession = await patchedHandler({}, {});
       expect(resultNoSession.tools.length).toBe(3);
+
+      // Clean up
+      hiddenTools.clear();
+      confirmTools.clear();
+    });
+
+    it('should filter tools when session has hidden tools', async () => {
+      const { setup, HIDDEN_TOOLS: hiddenTools, CONFIRMATION_TOOLS: confirmTools } = await import('../../src/flows/dynamic_tools.js');
+      const { runWithSession } = await import('../../src/core/sessionContext.js');
+
+      const mockTool1 = { name: 'tool1' };
+      const mockTool2 = { name: 'tool2' };
+      const mockTool3 = { name: 'tool3' };
+
+      const originalHandler = vi.fn().mockResolvedValue({
+        tools: [mockTool1, mockTool2, mockTool3]
+      });
+
+      const handlersMap = new Map([['tools/list', originalHandler]]);
+
+      const mockServer = {
+        connect: vi.fn(async () => {
+          // Simulate connection completing
+        }),
+        server: {
+          _requestHandlers: handlersMap
+        }
+      };
+
+      setup(mockServer);
+
+      // Call the wrapped connect to trigger patching
+      await mockServer.connect();
+
+      // Get the patched handler
+      const patchedHandler = handlersMap.get('tools/list');
+
+      // Create session and hide tool1
+      const sessionId = 'test-session-123';
+      const sessionHiddenTools = new Map();
+      sessionHiddenTools.set('tool1', { enabled: true });
+      hiddenTools.set(sessionId, sessionHiddenTools);
+
+      // Call with session context using runWithSession
+      const result = await runWithSession(sessionId, async () => {
+        return await patchedHandler({}, {});
+      });
+
+      // tool1 should be filtered out, tool2 and tool3 should remain
+      expect(result.tools.length).toBe(2);
+      expect(result.tools.find((t: any) => t.name === 'tool1')).toBeUndefined();
+      expect(result.tools.find((t: any) => t.name === 'tool2')).toBeDefined();
+      expect(result.tools.find((t: any) => t.name === 'tool3')).toBeDefined();
+
+      // Clean up
+      hiddenTools.clear();
+      confirmTools.clear();
+    });
+
+    it('should return unfiltered results when session has no hidden tools', async () => {
+      const { setup, HIDDEN_TOOLS: hiddenTools, CONFIRMATION_TOOLS: confirmTools } = await import('../../src/flows/dynamic_tools.js');
+
+      const mockTool1 = { name: 'tool1' };
+      const mockTool2 = { name: 'tool2' };
+
+      const originalHandler = vi.fn().mockResolvedValue({
+        tools: [mockTool1, mockTool2]
+      });
+
+      const handlersMap = new Map([['tools/list', originalHandler]]);
+
+      const mockServer = {
+        connect: vi.fn(async () => {
+          // Simulate connection completing
+        }),
+        server: {
+          _requestHandlers: handlersMap
+        }
+      };
+
+      setup(mockServer);
+
+      // Call the wrapped connect to trigger patching
+      await mockServer.connect();
+
+      // Get the patched handler
+      const patchedHandler = handlersMap.get('tools/list');
+
+      // Call with session that has no hidden tools
+      const result = await patchedHandler({}, { _meta: { sessionId: 'session-with-no-hidden-tools' } });
+
+      // All tools should be returned
+      expect(result.tools.length).toBe(2);
+
+      // Clean up
+      hiddenTools.clear();
+      confirmTools.clear();
+    });
+
+    it('should filter confirmation tools from other sessions', async () => {
+      const { setup, HIDDEN_TOOLS: hiddenTools, CONFIRMATION_TOOLS: confirmTools } = await import('../../src/flows/dynamic_tools.js');
+      const { runWithSession } = await import('../../src/core/sessionContext.js');
+
+      const mockTool1 = { name: 'tool1' };
+      const mockConfirmToolSession1 = { name: 'confirm_tool1_payment123' };
+      const mockConfirmToolSession2 = { name: 'confirm_tool1_payment456' };
+
+      const originalHandler = vi.fn().mockResolvedValue({
+        tools: [mockTool1, mockConfirmToolSession1, mockConfirmToolSession2]
+      });
+
+      const handlersMap = new Map([['tools/list', originalHandler]]);
+
+      const mockServer = {
+        connect: vi.fn(async () => {
+          // Simulate connection completing
+        }),
+        server: {
+          _requestHandlers: handlersMap
+        }
+      };
+
+      setup(mockServer);
+
+      // Call the wrapped connect to trigger patching
+      await mockServer.connect();
+
+      // Get the patched handler
+      const patchedHandler = handlersMap.get('tools/list');
+
+      // Register confirmation tools for different sessions
+      confirmTools.set('confirm_tool1_payment123', 'session-1');
+      confirmTools.set('confirm_tool1_payment456', 'session-2');
+
+      // Call with session-1 context using runWithSession
+      const result = await runWithSession('session-1', async () => {
+        return await patchedHandler({}, {});
+      });
+
+      // Should only see tool1 and session-1's confirmation tool
+      expect(result.tools.length).toBe(2);
+      expect(result.tools.find((t: any) => t.name === 'tool1')).toBeDefined();
+      expect(result.tools.find((t: any) => t.name === 'confirm_tool1_payment123')).toBeDefined();
+      expect(result.tools.find((t: any) => t.name === 'confirm_tool1_payment456')).toBeUndefined();
 
       // Clean up
       hiddenTools.clear();

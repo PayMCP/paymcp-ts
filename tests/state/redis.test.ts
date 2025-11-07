@@ -9,9 +9,11 @@ describe('RedisStateStore', () => {
     mockRedis = {
       set: vi.fn().mockResolvedValue('OK'),
       get: vi.fn().mockResolvedValue(null),
-      del: vi.fn().mockResolvedValue(1)
+      del: vi.fn().mockResolvedValue(1),
+      eval: vi.fn().mockResolvedValue(1)
     };
-    store = new RedisStateStore(mockRedis);
+    // Use empty prefix for tests to match old behavior
+    store = new RedisStateStore(mockRedis, { prefix: '' });
   });
 
   describe('set', () => {
@@ -140,6 +142,175 @@ describe('RedisStateStore', () => {
       await store.delete('non-existent');
 
       expect(mockRedis.del).toHaveBeenCalledWith('non-existent');
+    });
+  });
+
+  describe('error handling', () => {
+    it('should handle JSON parse errors in get()', async () => {
+      mockRedis.get.mockResolvedValue('invalid json{{{');
+
+      const result = await store.get('corrupt-key');
+
+      expect(result).toBeUndefined();
+      expect(mockRedis.get).toHaveBeenCalledWith('corrupt-key');
+    });
+  });
+
+  describe('lock', () => {
+    it('should acquire lock, execute function, and release lock', async () => {
+      // Mock successful lock acquisition
+      mockRedis.set.mockResolvedValue('OK');
+
+      const mockFn = vi.fn().mockResolvedValue('result');
+
+      const result = await store.lock('payment_123', mockFn);
+
+      // Verify lock was acquired with correct parameters
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        'lock:payment_123',
+        expect.any(String), // lockValue is timestamp
+        { NX: true, EX: 30 } // Default lockTimeout is 30 seconds
+      );
+
+      // Verify function was executed
+      expect(mockFn).toHaveBeenCalled();
+      expect(result).toBe('result');
+
+      // Verify lock was released using Lua script
+      expect(mockRedis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('redis.call("get"'),
+        1,
+        'lock:payment_123',
+        expect.any(String) // lockValue
+      );
+    });
+
+    it('should release lock even if function throws error', async () => {
+      mockRedis.set.mockResolvedValue('OK');
+
+      const mockFn = vi.fn().mockRejectedValue(new Error('Function error'));
+
+      await expect(store.lock('payment_123', mockFn)).rejects.toThrow('Function error');
+
+      // Verify lock was released despite error
+      expect(mockRedis.eval).toHaveBeenCalled();
+    });
+
+    it('should return function result', async () => {
+      mockRedis.set.mockResolvedValue('OK');
+
+      const mockFn = vi.fn().mockResolvedValue({ data: 'test', count: 42 });
+
+      const result = await store.lock('payment_123', mockFn);
+
+      expect(result).toEqual({ data: 'test', count: 42 });
+    });
+
+    it('should retry with exponential backoff when lock is contended', async () => {
+      // First 3 attempts fail, 4th succeeds
+      mockRedis.set
+        .mockResolvedValueOnce(null) // 1st attempt fails
+        .mockResolvedValueOnce(null) // 2nd attempt fails
+        .mockResolvedValueOnce(null) // 3rd attempt fails
+        .mockResolvedValueOnce('OK'); // 4th attempt succeeds
+
+      const mockFn = vi.fn().mockResolvedValue('result');
+
+      const result = await store.lock('payment_123', mockFn);
+
+      // Verify it tried 4 times
+      expect(mockRedis.set).toHaveBeenCalledTimes(4);
+      expect(mockFn).toHaveBeenCalled();
+      expect(result).toBe('result');
+    });
+
+    it('should throw error after max attempts exceeded', async () => {
+      // All 10 attempts fail
+      mockRedis.set.mockResolvedValue(null);
+
+      const mockFn = vi.fn().mockResolvedValue('result');
+
+      await expect(store.lock('payment_123', mockFn)).rejects.toThrow(
+        'Failed to acquire lock for payment_id=payment_123 after 10 attempts'
+      );
+
+      // Verify it tried 10 times
+      expect(mockRedis.set).toHaveBeenCalledTimes(10);
+
+      // Function should NOT have been called
+      expect(mockFn).not.toHaveBeenCalled();
+
+      // Lock should NOT be released (since it was never acquired)
+      expect(mockRedis.eval).not.toHaveBeenCalled();
+    }, 15000); // 15 second timeout for exponential backoff test
+
+    it('should use Lua script for atomic lock release', async () => {
+      mockRedis.set.mockResolvedValue('OK');
+
+      const mockFn = vi.fn().mockResolvedValue('result');
+
+      await store.lock('payment_123', mockFn);
+
+      // Verify Lua script contains atomic check-and-delete
+      const evalCall = mockRedis.eval.mock.calls[0];
+      const luaScript = evalCall[0];
+
+      expect(luaScript).toContain('redis.call("get", KEYS[1])');
+      expect(luaScript).toContain('redis.call("del", KEYS[1])');
+      expect(luaScript).toContain('ARGV[1]'); // Check value matches
+    });
+
+    it('should handle lock release when not owned (Lua script returns 0)', async () => {
+      mockRedis.set.mockResolvedValue('OK');
+      mockRedis.eval.mockResolvedValue(0); // Lock wasn't owned (already expired/released)
+
+      const mockFn = vi.fn().mockResolvedValue('result');
+
+      const result = await store.lock('payment_123', mockFn);
+
+      // Should still complete successfully
+      expect(result).toBe('result');
+      expect(mockRedis.eval).toHaveBeenCalled();
+    });
+
+    it('should use custom prefix for lock keys', async () => {
+      const prefixedStore = new RedisStateStore(mockRedis, {
+        prefix: 'paymcp:',
+        lockTimeout: 30
+      });
+
+      mockRedis.set.mockResolvedValue('OK');
+
+      const mockFn = vi.fn().mockResolvedValue('result');
+
+      await prefixedStore.lock('payment_123', mockFn);
+
+      // Verify lock key uses prefix
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        'paymcp:lock:payment_123',
+        expect.any(String),
+        { NX: true, EX: 30 }
+      );
+    });
+
+    it('should use custom lockTimeout', async () => {
+      const customStore = new RedisStateStore(mockRedis, {
+        prefix: '',
+        lockTimeout: 60 // 60 seconds
+      });
+
+      mockRedis.set.mockResolvedValue('OK');
+
+      const mockFn = vi.fn().mockResolvedValue('result');
+
+      await customStore.lock('payment_123', mockFn);
+
+      // Verify lock timeout is 60 seconds
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        'lock:payment_123',
+        expect.any(String),
+        { NX: true, EX: 60 }
+      );
     });
   });
 

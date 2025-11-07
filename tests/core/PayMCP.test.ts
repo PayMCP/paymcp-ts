@@ -694,6 +694,89 @@ describe('PayMCP', () => {
         testServer.registerTool('paid_tool', toolConfig, toolHandler);
       }).not.toThrow();
     });
+
+    it('should delete _meta from config in TWO_STEP flow', () => {
+      const config: PayMCPOptions = {
+        ...basicConfig,
+        paymentFlow: PaymentFlow.TWO_STEP,
+      };
+
+      const originalRegisterTool = vi.fn();
+      const testServer: any = {
+        ...mockServer,
+        registerTool: originalRegisterTool
+      };
+
+      createPayMCP(testServer, config);
+
+      const toolHandler = vi.fn().mockResolvedValue({ result: 'success' });
+      const toolConfig: any = {
+        title: 'Test Tool',
+        description: 'A test tool',
+        price: { amount: 2.50, currency: 'USD' },
+        _meta: { someData: 'test' }  // Add _meta to trigger deletion
+      };
+
+      // Call the patched registerTool
+      testServer.registerTool('test_tool', toolConfig, toolHandler);
+
+      // Verify original registerTool was called (TWO_STEP registers both confirmation tool and original tool)
+      expect(originalRegisterTool).toHaveBeenCalledTimes(2);
+
+      // TWO_STEP flow registers 2 tools:
+      // 1st call: confirmation tool (confirm_test_tool_payment)
+      // 2nd call: original tool (test_tool) - this is what we want to check
+      const secondCall = originalRegisterTool.mock.calls[1];
+      const registeredToolName = secondCall[0];
+      const registeredConfig = secondCall[1];
+
+      // Verify we're looking at the original tool, not the confirmation tool
+      expect(registeredToolName).toBe('test_tool');
+
+      // Verify _meta was deleted from the registered config
+      expect(registeredConfig._meta).toBeUndefined();
+
+      // But original toolConfig should still have _meta (not mutated)
+      expect(toolConfig._meta).toBeDefined();
+    });
+
+    it('should delete _meta from config in DYNAMIC_TOOLS flow', () => {
+      const config: PayMCPOptions = {
+        ...basicConfig,
+        paymentFlow: PaymentFlow.DYNAMIC_TOOLS,
+      };
+
+      const originalRegisterTool = vi.fn();
+      const testServer: any = {
+        ...mockServer,
+        registerTool: originalRegisterTool
+      };
+
+      createPayMCP(testServer, config);
+
+      const toolHandler = vi.fn().mockResolvedValue({ result: 'success' });
+      const toolConfig: any = {
+        title: 'Test Tool',
+        description: 'A test tool',
+        price: { amount: 2.50, currency: 'USD' },
+        _meta: { someData: 'test' }  // Add _meta to trigger deletion
+      };
+
+      // Call the patched registerTool
+      testServer.registerTool('test_tool', toolConfig, toolHandler);
+
+      // Verify original registerTool was called
+      expect(originalRegisterTool).toHaveBeenCalled();
+
+      // Get the config that was actually registered (first call, second argument)
+      const registeredConfig = originalRegisterTool.mock.calls[0][1];
+
+      // Verify _meta was deleted from the registered config
+      expect(registeredConfig._meta).toBeUndefined();
+
+      // But original toolConfig should still have _meta (not mutated)
+      expect(toolConfig._meta).toBeDefined();
+    });
   });
 
   describe('uninstall', () => {

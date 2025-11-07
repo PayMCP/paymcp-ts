@@ -6,6 +6,78 @@ import { ToolExtraLike } from "../types/config.js";
 import { normalizeStatus } from "../utils/payment.js";
 import { StateStore } from "../types/state.js";
 
+// ---------------------------------------------------------------------------
+// Helper: Create payment error with consistent structure
+// ---------------------------------------------------------------------------
+interface PaymentErrorOptions {
+    message: string;
+    code: number;
+    error: string;
+    paymentId: string;
+    retryInstructions: string;
+    status?: string;
+    paymentUrl?: string;
+}
+
+function createPaymentError(options: PaymentErrorOptions): never {
+    const err = new Error(options.message);
+    (err as any).code = options.code;
+    (err as any).error = options.error;
+    (err as any).data = {
+        payment_id: options.paymentId,
+        retry_instructions: options.retryInstructions,
+        ...(options.paymentUrl && { payment_url: options.paymentUrl }),
+        annotations: {
+            payment: {
+                status: options.status ?? "unknown",
+                payment_id: options.paymentId,
+            },
+        },
+    };
+    throw err;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: Validate payment status and throw appropriate errors
+// ---------------------------------------------------------------------------
+function validatePaymentStatus(status: string, paymentId: string, log?: Logger): void {
+    if (["canceled", "failed"].includes(status)) {
+        log?.info?.(`[PayMCP:Resubmit] Payment ${status}, state kept for retry`);
+        createPaymentError({
+            message: `Payment ${status}. User must complete payment to proceed.\nPayment ID: ${paymentId}`,
+            code: 402,
+            error: `payment_${status}`,
+            paymentId,
+            retryInstructions: `Payment ${status}. Retry with the same payment_id after resolving the issue, or get a new link by calling this tool without payment_id.`,
+            status,
+        });
+    }
+
+    if (status === "pending") {
+        log?.info?.(`[PayMCP:Resubmit] Payment pending, state kept for retry`);
+        createPaymentError({
+            message: `Payment is not confirmed yet.\nAsk user to complete payment and retry.\nPayment ID: ${paymentId}`,
+            code: 402,
+            error: "payment_pending",
+            paymentId,
+            retryInstructions: "Wait for confirmation, then retry this tool with payment_id.",
+            status,
+        });
+    }
+
+    if (status !== "paid") {
+        log?.info?.(`[PayMCP:Resubmit] Unknown payment status: ${status}, state kept for retry`);
+        createPaymentError({
+            message: `Unrecognized payment status: ${status}.\nRetry once payment is confirmed.\nPayment ID: ${paymentId}`,
+            code: 402,
+            error: "payment_unknown",
+            paymentId,
+            retryInstructions: "Check payment status and retry once confirmed.",
+            status,
+        });
+    }
+}
+
 export const makePaidWrapper: PaidWrapperFactory = (
     func,
     _server,
@@ -55,18 +127,15 @@ export const makePaidWrapper: PaidWrapperFactory = (
                 `[PayMCP:Resubmit] created payment id=${paymentId} url=${paymentUrl}`
             );
 
-            const err = new Error(
-                `Payment required to execute this tool.\nFollow the link to complete payment and retry with payment_id.\n\nPayment link: ${paymentUrl}\nPayment ID: ${paymentId}`
-            );
-            (err as any).code = 402;
-            (err as any).error = "payment_required";
-            (err as any).data = {
-                payment_id: paymentId,
-                payment_url: paymentUrl,
-                retry_instructions: "Follow the link, complete payment, then retry with payment_id.",
-                annotations: { payment: { status: "required", payment_id: paymentId } }
-            };
-            throw err;
+            createPaymentError({
+                message: `Payment required to execute this tool.\nFollow the link to complete payment and retry with payment_id.\n\nPayment link: ${paymentUrl}\nPayment ID: ${paymentId}`,
+                code: 402,
+                error: "payment_required",
+                paymentId: String(paymentId),
+                paymentUrl,
+                retryInstructions: "Follow the link, complete payment, then retry with payment_id.",
+                status: "required",
+            });
         }
 
         // LOCK: Acquire per-payment-id lock to prevent concurrent access
@@ -80,14 +149,13 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
             if (!stored) {
                 log?.warn?.(`[PayMCP:Resubmit] No state found for payment_id=${existedPaymentId}`);
-                const err = new Error("Unknown or expired payment_id.");
-                (err as any).code = 404;
-                (err as any).error = "payment_id_not_found";
-                (err as any).data = {
-                    payment_id: existedPaymentId,
-                    retry_instructions: "Payment ID not found or already used. Get a new link by calling this tool without payment_id.",
-                };
-                throw err;
+                createPaymentError({
+                    message: "Unknown or expired payment_id.",
+                    code: 404,
+                    error: "payment_id_not_found",
+                    paymentId: existedPaymentId,
+                    retryInstructions: "Payment ID not found or already used. Get a new link by calling this tool without payment_id.",
+                });
             }
 
             // Check payment status with provider
@@ -95,56 +163,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
             const status = normalizeStatus(raw);
             log?.debug?.(`[PayMCP:Resubmit] paymentId ${existedPaymentId}, poll status=${raw} -> ${status}`);
 
-            if (['canceled', 'failed'].includes(status)) {
-                // Keep state so user can retry after resolving payment issue
-                log?.info?.(`[PayMCP:Resubmit] Payment ${status}, state kept for retry`);
-
-                const err = new Error(
-                    `Payment ${status}. User must complete payment to proceed.\nPayment ID: ${existedPaymentId}`
-                );
-                (err as any).code = 402;
-                (err as any).error = `payment_${status}`;
-                (err as any).data = {
-                    payment_id: existedPaymentId,
-                    retry_instructions: `Payment ${status}. Retry with the same payment_id after resolving the issue, or get a new link by calling this tool without payment_id.`,
-                    annotations: { payment: { status, payment_id: existedPaymentId } }
-                };
-                throw err;
-            }
-
-            if (status === "pending") {
-                // Keep state so user can retry after payment completes
-                log?.info?.(`[PayMCP:Resubmit] Payment pending, state kept for retry`);
-
-                const err = new Error(
-                    `Payment is not confirmed yet.\nAsk user to complete payment and retry.\nPayment ID: ${existedPaymentId}`
-                );
-                (err as any).code = 402;
-                (err as any).error = "payment_pending";
-                (err as any).data = {
-                    payment_id: existedPaymentId,
-                    retry_instructions: "Wait for confirmation, then retry this tool with payment_id.",
-                    annotations: { payment: { status, payment_id: existedPaymentId } }
-                };
-                throw err;
-            }
-
-            if (status !== "paid") {
-                // Keep state for unknown status
-                log?.info?.(`[PayMCP:Resubmit] Unknown payment status: ${status}, state kept for retry`);
-
-                const err = new Error(
-                    `Unrecognized payment status: ${status}.\nRetry once payment is confirmed.\nPayment ID: ${existedPaymentId}`
-                );
-                (err as any).code = 402;
-                (err as any).error = "payment_unknown";
-                (err as any).data = {
-                    payment_id: existedPaymentId,
-                    retry_instructions: "Check payment status and retry once confirmed.",
-                    annotations: { payment: { status, payment_id: existedPaymentId } }
-                };
-                throw err;
-            }
+            // Validate payment status (throws if not "paid")
+            validatePaymentStatus(status, existedPaymentId, log);
 
             // Payment confirmed - execute tool BEFORE deleting state
             log?.info?.(`[PayMCP:Resubmit] payment confirmed; invoking original tool ${toolName}`);

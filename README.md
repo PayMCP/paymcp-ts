@@ -179,7 +179,7 @@ See `src/providers/walleot.ts` and `src/providers/stripe.ts` for examples.
 
 ## 💾 State Storage 
 
-By default, when using the `TWO_STEP` payment flow, PayMCP stores pending tool arguments (for confirming payment) **in memory** using a process-local `Map`. This is **not durable** and will not work across server restarts or multiple server instances (no horizontal scaling).
+By default, when using the `TWO_STEP` or `RESUBMIT` modes, PayMCP stores pending tool arguments (for confirming payment) **in memory** using a process-local `Map`. This is **not durable** and will not work across server restarts or multiple server instances (no horizontal scaling).
 
 To enable durable and scalable state storage, you can provide a custom `StateStore` implementation. PayMCP includes a built-in `RedisStateStore`, which works with any Redis-compatible client.
 

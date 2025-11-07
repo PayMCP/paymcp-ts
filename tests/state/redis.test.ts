@@ -9,9 +9,11 @@ describe('RedisStateStore', () => {
     mockRedis = {
       set: vi.fn().mockResolvedValue('OK'),
       get: vi.fn().mockResolvedValue(null),
-      del: vi.fn().mockResolvedValue(1)
+      del: vi.fn().mockResolvedValue(1),
+      eval: vi.fn().mockResolvedValue(1)
     };
-    store = new RedisStateStore(mockRedis);
+    // Use empty prefix for tests to match old behavior
+    store = new RedisStateStore(mockRedis, { prefix: '' });
   });
 
   describe('set', () => {

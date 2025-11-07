@@ -120,8 +120,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
                 `${toolName}() execution fee`
             );
 
-            // Store state for later retrieval
-            await stateStore.set(String(paymentId), toolArgs);
+            // Store state for later retrieval (wrapped to distinguish undefined args from missing state)
+            await stateStore.set(String(paymentId), { args: toolArgs });
 
             log?.debug?.(
                 `[PayMCP:Resubmit] created payment id=${paymentId} url=${paymentUrl}`
@@ -144,10 +144,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
             log?.debug?.(`[PayMCP:Resubmit] Lock acquired for payment_id=${existedPaymentId}`);
 
             // Get state (don't delete yet)
-            const stored = await stateStore.get(existedPaymentId);
-            log?.info?.(`[PayMCP:Resubmit] State retrieved: ${stored !== undefined}`);
+            const storedData = await stateStore.get(existedPaymentId);
+            log?.info?.(`[PayMCP:Resubmit] State retrieved: ${storedData !== undefined}`);
 
-            if (!stored) {
+            if (!storedData) {
                 log?.warn?.(`[PayMCP:Resubmit] No state found for payment_id=${existedPaymentId}`);
                 createPaymentError({
                     message: "Unknown or expired payment_id.",
@@ -157,6 +157,9 @@ export const makePaidWrapper: PaidWrapperFactory = (
                     retryInstructions: "Payment ID not found or already used. Get a new link by calling this tool without payment_id.",
                 });
             }
+
+            // Unwrap the stored args
+            const stored = storedData.args;
 
             // Check payment status with provider
             const raw = await provider.getPaymentStatus(existedPaymentId);
@@ -169,28 +172,14 @@ export const makePaidWrapper: PaidWrapperFactory = (
             // Payment confirmed - execute tool BEFORE deleting state
             log?.info?.(`[PayMCP:Resubmit] payment confirmed; invoking original tool ${toolName}`);
 
-            // Execute tool (may fail - state not deleted yet)
-            const toolResult = await callOriginal(func, toolArgs, extra);
+            // Execute tool with STORED args (may fail - state not deleted yet)
+            const toolResult = await callOriginal(func, stored, extra);
 
             // Tool succeeded - now delete state to enforce single-use
             await stateStore.delete(existedPaymentId);
             log?.info?.(`[PayMCP:Resubmit] Tool executed successfully, state deleted (single-use enforced)`);
 
-            // Ensure toolResult has required MCP 'content' field; if not, synthesize text.
-            if (!toolResult || !Array.isArray((toolResult as any).content)) {
-                return {
-                    content: [{ type: "text", text: "Tool completed after payment." }],
-                    annotations: { payment: { status: "paid", payment_id: existedPaymentId } },
-                    raw: toolResult,
-                };
-            }
-            // augment annotation
-            try {
-                (toolResult as any).annotations = {
-                    ...(toolResult as any).annotations,
-                    payment: { status: "paid", payment_id: existedPaymentId },
-                };
-            } catch { /* ignore */ }
+            // Return original tool result without modification
             return toolResult;
         }); // End of lock
     }

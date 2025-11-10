@@ -199,8 +199,8 @@ describe('RESUBMIT Flow', () => {
       // Verify payment status was checked
       expect(mockProvider.getPaymentStatus).toHaveBeenCalledWith('payment_123');
 
-      // Verify original tool was called with stored args and confirmation extra
-      expect(mockTool).toHaveBeenCalledWith(toolArgs, { requestId: 'req_confirm' });
+      // Verify original tool was called with payment_id and confirmation extra
+      expect(mockTool).toHaveBeenCalledWith({ payment_id: 'payment_123' }, { requestId: 'req_confirm' });
 
       // Verify state was deleted (single-use enforcement)
       expect(mockStateStore.delete).toHaveBeenCalledWith('payment_123');
@@ -588,8 +588,8 @@ describe('RESUBMIT Flow', () => {
 
       await wrapper({ payment_id: 'payment_123' }, extra);
 
-      // Tool should be called with original args and confirmation extra
-      expect(mockTool).toHaveBeenCalledWith(toolArgs, extra);
+      // Tool should be called with payment_id and confirmation extra
+      expect(mockTool).toHaveBeenCalledWith({ payment_id: 'payment_123' }, extra);
     });
 
     it('should handle tools without arguments', async () => {
@@ -619,8 +619,8 @@ describe('RESUBMIT Flow', () => {
       const confirmExtra = { requestId: 'req_456' };
       await wrapper({ payment_id: 'payment_123' }, confirmExtra);
 
-      // Tool should be called with stored args (undefined) and confirmation extra
-      expect(mockTool).toHaveBeenCalledWith(confirmExtra);
+      // Tool should be called with payment_id and confirmation extra
+      expect(mockTool).toHaveBeenCalledWith({ payment_id: 'payment_123' }, confirmExtra);
     });
   });
 
@@ -998,8 +998,8 @@ describe('RESUBMIT Flow', () => {
       // Second call: confirm and execute
       await wrapper({ payment_id: 'payment_123' }, {});
 
-      // Verify complex args were preserved
-      expect(mockTool).toHaveBeenCalledWith(complexArgs, {});
+      // Verify tool was called with payment_id
+      expect(mockTool).toHaveBeenCalledWith({ payment_id: 'payment_123' }, {});
     });
 
     it('should handle toolArgs with null values', async () => {
@@ -1028,7 +1028,7 @@ describe('RESUBMIT Flow', () => {
 
       await wrapper({ payment_id: 'payment_123' }, {});
 
-      expect(mockTool).toHaveBeenCalledWith(argsWithNull, {});
+      expect(mockTool).toHaveBeenCalledWith({ payment_id: 'payment_123' }, {});
     });
   });
 

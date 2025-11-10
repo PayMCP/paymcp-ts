@@ -1,6 +1,6 @@
 # Changelog
 
-# 0.4.3
+# 0.4.4
 ### Changed
 - In RESUBMIT mode, the tool now uses the latest arguments rather than the initial ones.
 

@@ -172,8 +172,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
             // Payment confirmed - execute tool BEFORE deleting state
             log?.info?.(`[PayMCP:Resubmit] payment confirmed; invoking original tool ${toolName}`);
 
-            // Execute tool with STORED args (may fail - state not deleted yet)
-            const toolResult = await callOriginal(func, stored, extra);
+            // Execute tool with ORIGINAL args (may fail - state not deleted yet)
+            const toolResult = await callOriginal(func, toolArgs, extra);
 
             // Tool succeeded - now delete state to enforce single-use
             await stateStore.delete(existedPaymentId);

@@ -1,6 +1,10 @@
 # Changelog
 
 # 0.4.3
+### Changed
+- In RESUBMIT mode, the tool now uses the latest arguments rather than the initial ones.
+
+# 0.4.3
 ### Added
 - Added protection against reusing `payment_id` in RESUBMIT mode (single-use enforcement).
 

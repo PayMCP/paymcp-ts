@@ -1,9 +1,14 @@
+import { BasePaymentProvider } from "../providers/base.js";
 import { Mode, PaymentFlow } from "./payment.js";
 import { StateStore } from "./state.js";
 
 export interface PriceConfig {
     amount: number;
     currency: string; // ISO 4217 (USD, EUR, etc.)
+}
+
+export interface SubscriptionConfig {
+    plan: string | string[] | undefined;
 }
 
 export interface PayToolConfig extends Record<string, any> {
@@ -14,7 +19,7 @@ export interface PayToolConfig extends Record<string, any> {
 }
 
 export interface PayMCPOptions {
-    providers: Record<string, Record<string, any>>;
+    providers: Record<string, Record<string, any>> | BasePaymentProvider[];
     /**
         * @deprecated Use `mode` instead.
         * @see {@link Mode}
@@ -32,5 +37,9 @@ export interface ToolExtraLike {
     sessionId?: string;
     requestId?: number | string;
     signal?: AbortSignal;
+    authInfo?: {
+        userId: string,
+        email?: string
+    }
     reportProgress?: (args: { progress?: number; total?: number; message?: string; }) => Promise<void> | void;
 }

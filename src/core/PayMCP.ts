@@ -9,6 +9,7 @@ import { StateStore } from "../types/state.js";
 import { InMemoryStateStore } from "../state/inMemory.js";
 import { setup as setupDynamicTools } from "../flows/dynamic_tools.js";
 import { z } from "zod";
+import { makeSubscriptionWrapper, registerSubscriptionTools } from "../subscriptions/index.js";
 
 type ProvidersInput = ProviderConfig | BasePaymentProvider[];
 
@@ -20,6 +21,7 @@ export class PayMCP {
     private wrapperFactory: ReturnType<typeof makeFlow>;
     private originalRegisterTool: McpServerLike["registerTool"];
     private installed = false;
+    private subscriptionToolsRegistered = false;
 
     constructor(server: McpServerLike, opts: PayMCPOptions) {
         this.server = server;
@@ -68,10 +70,36 @@ export class PayMCP {
             config: PayToolConfig,
             handler: (...args: any[]) => Promise<any> | any
         ) {
-            const price = config?.price;
+            const price = config?.price || config._meta?.price;
+            const subscription = config?.subscription || config._meta?.subscription;
             let wrapped = handler;
 
-            if (price) {
+            if (subscription) {
+                const provider = Object.values(self.providers)[0];
+                if (!provider) {
+                    throw new Error(`[PayMCP] No payment provider configured (tool: ${name}).`);
+                }
+
+                if (!self.subscriptionToolsRegistered) {
+                    registerSubscriptionTools(self.server, provider);
+                    self.subscriptionToolsRegistered = true;
+                }
+
+                const subscriptionWrapper = makeSubscriptionWrapper(
+                    handler,
+                    self.server,
+                    provider,
+                    subscription,
+                    name,
+                    self.stateStore,
+                    config,
+                );
+
+                wrapped = async function (...args: any[]): Promise<any> {
+                    return await subscriptionWrapper(...args);
+                };
+
+            } else if (price) {
                 // pick the first provider (or a specific one by name? TBD)
                 const provider = Object.values(self.providers)[0];
                 if (!provider) {

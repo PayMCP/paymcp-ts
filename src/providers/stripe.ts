@@ -16,7 +16,10 @@ export interface StripeSubscriptionPlan {
   title: string;
   description?: string | null;
   currency: string;
-  unitAmount: number | null;
+  /**
+   * Price in major currency units (e.g. dollars), not Stripe cents.
+   */
+  price: number | null;
   interval?: string | null; // month, year, etc.
 }
 
@@ -25,24 +28,33 @@ export interface StripeUserSubscription {
   status: string;
   /**
    * Logical plan identifier for this subscription.
-   * For Stripe, this corresponds to the underlying product.id where possible.
+   * For Stripe, this corresponds to the underlying product.id or price.id.
    */
   planId: string;
-  title: string;
-  description?: string | null;
   currency: string;
-  unitAmount: number | null;
+  /**
+   * Price in major currency units (e.g. dollars) for the primary subscription item,
+   * if available.
+   */
+  price: number | null;
   interval?: string | null;
   /**
-   * End of the current billing period, as a Unix timestamp (seconds).
-   * In most cases this is also the "next billing date" if the subscription is set to renew.
+   * Convenience ISO date string for when the subscription was created.
    */
-  currentPeriodEnd: number | null;
+  createdAt: string | null;
   /**
-   * Convenience field with the next billing date as an ISO string
-   * (derived from currentPeriodEnd when available).
+   * True if the subscription is set to cancel at the end of the current period.
    */
-  nextBillingDate: string | null;
+  cancelAtPeriodEnd: boolean;
+  /**
+   * ISO date string for when the subscription is scheduled to be cancelled
+   * (derived from Stripe's cancel_at when available).
+   */
+  cancelAtDate: string | null;
+  /**
+   * ISO date string for when the subscription actually ended (derived from ended_at when available).
+   */
+  endedAtDate: string | null;
 }
 
 /**
@@ -150,6 +162,7 @@ export class StripeProvider extends BasePaymentProvider {
    */
   async getSubscriptions(
     userId: string,
+    email?: string
   ): Promise<{
     current_subscriptions: StripeUserSubscription[];
     available_subscriptions: StripeSubscriptionPlan[];
@@ -158,7 +171,7 @@ export class StripeProvider extends BasePaymentProvider {
 
     const [available, current] = await Promise.all([
       this.listAvailableSubscriptionPlans(),
-      this.listUserSubscriptionsByMetadata(userId),
+      this.listUserSubscriptions(userId, email),
     ]);
 
     return {
@@ -189,6 +202,43 @@ export class StripeProvider extends BasePaymentProvider {
       `[StripeProvider] startSubscription planId=${planId} userId=${userId} email=${email ?? "n/a"}`,
     );
 
+    // First, check if there is an existing subscription for this plan that is
+    // currently active/trialing but marked to cancel at the end of the period.
+    // In that case, we simply resume it instead of creating a new subscription.
+    const existing = await this.listUserSubscriptions(userId, email);
+
+    const resumable = existing.find((sub) => {
+      const status = sub.status.toLowerCase();
+      return (
+        sub.planId === planId &&
+        sub.cancelAtPeriodEnd &&
+        (status === "active" || status === "trialing")
+      );
+    });
+
+    if (resumable) {
+      this.logger.debug(
+        `[StripeProvider] Resuming existing subscription ${resumable.id} for userId=${userId} planId=${planId}`,
+      );
+
+      await this.request<any>(
+        "POST",
+        `${BASE_URL}/subscriptions/${resumable.id}`,
+        {
+          cancel_at_period_end: "false",
+        },
+      );
+
+      return {
+        message:
+          "Existing subscription was scheduled to be canceled at period end and has been reactivated. Billing will continue as normal.",
+        planId,
+        sessionId: "",
+        checkoutUrl: "",
+      };
+    }
+
+    // Otherwise, create a new Checkout Session for a fresh subscription.
     const customerId = await this.findOrCreateCustomer(userId, email);
 
     const data: Record<string, string> = {
@@ -217,7 +267,8 @@ export class StripeProvider extends BasePaymentProvider {
     return {
       message:
         "Subscription checkout session created. Please follow the link to set up your subscription, complete the payment flow, and then confirm when you are done.",
-      planId: session.planId,
+      // Echo the requested planId back to the caller; Stripe does not return planId on the session.
+      planId,
       sessionId: String(session.id),
       checkoutUrl: String(session.url),
     };
@@ -267,8 +318,8 @@ export class StripeProvider extends BasePaymentProvider {
       typeof updated.current_period_end === "number"
         ? updated.current_period_end
         : typeof sub.current_period_end === "number"
-        ? sub.current_period_end
-        : null;
+          ? sub.current_period_end
+          : null;
 
     const endDate =
       currentPeriodEnd != null
@@ -313,42 +364,53 @@ export class StripeProvider extends BasePaymentProvider {
       .map((price: any) => {
         const product = price.product ?? {};
         const planId = String(price.id);
+        const rawAmount = price.unit_amount;
+        const majorAmount =
+          typeof rawAmount === "number" ? rawAmount / 100 : null;
 
         return {
           planId,
           title: String(product.name ?? ""),
           description: product.description ?? null,
           currency: String(price.currency),
-          unitAmount: price.unit_amount ? (price.unit_amount / 100).toFixed(2) : null,
+          // Price in major currency units (e.g. dollars)
+          price: majorAmount,
           interval: price.recurring?.interval ?? null,
         } as StripeSubscriptionPlan;
       });
   }
 
   /**
-   * List subscriptions for a user by searching subscription metadata.userId.
-   * Requires Stripe subscriptions search to be enabled.
+   * List subscriptions for a user by their Stripe customer.
+   *
+   * We:
+   *  - resolve (or create) a Customer for the given userId via findOrCreateCustomer
+   *  - list subscriptions with /v1/subscriptions?customer=cus_xxx&status=all
+   *  - expand data.items.data.price to map plan details
    */
-  private async listUserSubscriptionsByMetadata(
+  private async listUserSubscriptions(
     userId: string,
+    email?: string
   ): Promise<StripeUserSubscription[]> {
     this.logger.debug(
-      `[StripeProvider] listUserSubscriptionsByMetadata userId=${userId}`,
+      `[StripeProvider] listUserSubscriptions userId=${userId} (${email})`,
     );
 
-    const query = `metadata['userId']:'${userId}'`;
+    // Resolve the Stripe customer for this userId (reusing existing if present).
+    const customerId = await this.findOrCreateCustomer(userId, email);
 
     const params = new URLSearchParams({
-      query,
+      customer: customerId,
+      status: "all",
       limit: "100",
-      // We only expand price here to avoid Stripe's property_expansion_max_depth error.
-      // Product details may not be expanded and will be handled safely in mapStripeSubscription.
+      // We only expand price here to avoid deep expansion limits; product details,
+      // if needed, are handled safely in mapStripeSubscription.
       "expand[]": "data.items.data.price",
     });
 
     const res = await this.request<any>(
       "GET",
-      `${BASE_URL}/subscriptions/search?${params.toString()}`,
+      `${BASE_URL}/subscriptions?${params.toString()}`,
     );
 
     const data = Array.isArray(res?.data) ? res.data : [];
@@ -371,34 +433,8 @@ export class StripeProvider extends BasePaymentProvider {
       `[StripeProvider] findOrCreateCustomer userId=${userId} email=${email ?? "n/a"}`,
     );
 
-    // 1) First, try to find an existing customer by our own userId in metadata
-    try {
-      const searchParams = new URLSearchParams({
-        query: `metadata['userId']:'${userId}'`,
-        limit: "1",
-      });
 
-      const searchRes = await this.request<any>(
-        "GET",
-        `${BASE_URL}/customers/search?${searchParams.toString()}`,
-      );
-
-      if (Array.isArray(searchRes?.data) && searchRes.data.length > 0) {
-        const existing = searchRes.data[0];
-        this.logger.debug(
-          `[StripeProvider] reusing existing customer via metadata.userId: ${existing.id}`,
-        );
-        return String(existing.id);
-      }
-    } catch (err) {
-      // If the search API is not available or fails, log and fall back to other strategies.
-      this.logger.warn?.(
-        "[StripeProvider] /customers/search by metadata.userId failed, falling back to email search",
-        err,
-      );
-    }
-
-    // 2) If we have an email, try to find by email via /customers?email=...
+    // 1) If we have an email, try to find by email via /customers?email=...
     if (email) {
       const params = new URLSearchParams({
         email,
@@ -418,6 +454,27 @@ export class StripeProvider extends BasePaymentProvider {
         return String(customer.id);
       }
     }
+
+    // 2) If no email or user not found, try to find an existing customer by our own userId in metadata
+    const searchParams = new URLSearchParams({
+      query: `metadata['userId']:'${userId}'`,
+      limit: "1",
+    });
+
+    const searchRes = await this.request<any>(
+      "GET",
+      `${BASE_URL}/customers/search?${searchParams.toString()}`,
+    );
+
+    if (Array.isArray(searchRes?.data) && searchRes.data.length > 0) {
+      const existing = searchRes.data[0];
+      this.logger.debug(
+        `[StripeProvider] reusing existing customer via metadata.userId: ${existing.id}`,
+      );
+      return String(existing.id);
+    }
+
+
 
     // 3) Otherwise, create a new customer and always store our userId in metadata
     const body: Record<string, string> = {
@@ -453,48 +510,63 @@ export class StripeProvider extends BasePaymentProvider {
     const items = Array.isArray(sub?.items?.data) ? sub.items.data : [];
     const first = items[0]?.price;
 
-    const price = first ?? {};
-
-    // product can be either an expanded object or just a string ID
-    const rawProduct = price.product;
-
-    let productId = "";
-    let title = "";
-    let description: string | null = null;
-
-    if (typeof rawProduct === "string") {
-      productId = rawProduct;
-    } else if (rawProduct && typeof rawProduct === "object") {
-      productId = String(rawProduct.id ?? "");
-      title = String(rawProduct.name ?? "");
-      description = rawProduct.description ?? null;
-    }
+    const priceObj = first ?? {};
 
     // Expose a single logical planId to callers.
-    // Prefer the product id if present, otherwise fall back to the Stripe price id.
-    const planId = productId || String(price.id ?? "");
+    // Use the Stripe price id here so it aligns with planId from available plans.
+    const planId = String(priceObj.id ?? "");
 
-    const currentPeriodEnd =
-      typeof sub.current_period_end === "number"
-        ? sub.current_period_end
-        : null;
+    // Price in major currency units (e.g. dollars) for the primary item.
+    const rawAmount = priceObj.unit_amount;
+    const majorAmount =
+      typeof rawAmount === "number" ? rawAmount / 100 : null;
 
-    const nextBillingDate =
-      currentPeriodEnd != null
-        ? new Date(currentPeriodEnd * 1000).toISOString()
-        : null;
+    // Creation time as a single ISO string
+    let createdAt: string | null = null;
+    if (typeof sub.created === "number") {
+      createdAt = new Date(sub.created * 1000).toISOString();
+    } else if (typeof sub.created === "string") {
+      const parsed = Number(sub.created);
+      if (Number.isFinite(parsed)) {
+        createdAt = new Date(parsed * 1000).toISOString();
+      }
+    }
+
+    // Cancellation-related fields
+    const cancelAtPeriodEnd: boolean = !!sub.cancel_at_period_end;
+
+    let cancelAt: number | null = null;
+    if (typeof sub.cancel_at === "number") {
+      cancelAt = sub.cancel_at;
+    } else if (typeof sub.cancel_at === "string") {
+      const parsed = Number(sub.cancel_at);
+      cancelAt = Number.isFinite(parsed) ? parsed : null;
+    }
+
+    let endedAt: number | null = null;
+    if (typeof sub.ended_at === "number") {
+      endedAt = sub.ended_at;
+    } else if (typeof sub.ended_at === "string") {
+      const parsed = Number(sub.ended_at);
+      endedAt = Number.isFinite(parsed) ? parsed : null;
+    }
+
+    const cancelAtDate =
+      cancelAt != null ? new Date(cancelAt * 1000).toISOString() : null;
+    const endedAtDate =
+      endedAt != null ? new Date(endedAt * 1000).toISOString() : null;
 
     return {
       id: String(sub.id),
       status: String(sub.status ?? "unknown"),
       planId,
-      title,
-      description,
-      currency: String(price.currency ?? ""),
-      unitAmount: price.unit_amount ?? null,
-      interval: price.recurring?.interval ?? null,
-      currentPeriodEnd,
-      nextBillingDate,
+      currency: String(priceObj.currency ?? ""),
+      price: majorAmount,
+      interval: priceObj.recurring?.interval ?? null,
+      createdAt,
+      cancelAtPeriodEnd,
+      cancelAtDate,
+      endedAtDate,
     };
   }
 

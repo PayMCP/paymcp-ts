@@ -7,6 +7,7 @@ async function ensureSubscriptionAllowed(
     provider: unknown,
     subscriptionInfo: SubscriptionConfig,
     userId: string,
+    email: string | undefined,
     toolName: string,
     log: Logger,
 ): Promise<void> {
@@ -129,11 +130,12 @@ export const makeSubscriptionWrapper: SubscriptionWrapperFactory = (
         );
 
         const userId = extra.authInfo?.userId;
+        const email = extra.authInfo?.email;
         if (!userId) {
             log?.error?.(`User ID is required in authInfo for subscription tools (tool: ${toolName})`);
             throw new Error(`Not authorized`);
         }
-        await ensureSubscriptionAllowed(provider, subscriptionInfo, userId, toolName, log);
+        await ensureSubscriptionAllowed(provider, subscriptionInfo, userId, email, toolName, log);
 
         const toolResult = await callOriginal(func, toolArgs, extra);
         return toolResult;
@@ -160,7 +162,7 @@ async function callOriginal(
 export function registerSubscriptionTools(
     server: unknown,
     provider: {
-        getSubscriptions: (userId: string) => Promise<any>;
+        getSubscriptions: (userId: string, email?:string) => Promise<any>;
         startSubscription: (planId: string, userId: string, email?: string) => Promise<any>;
         cancelSubscription: (subscriptionId: string, userId: string) => Promise<any>;
     },
@@ -178,6 +180,7 @@ export function registerSubscriptionTools(
         },
         async (extra: ToolExtraLike) => {
             const userId = extra.authInfo?.userId;
+            const email = extra.authInfo?.email;
             if (!userId) {
                 log?.error?.(
                     "[PayMCP:Subscriptions] User ID is required in authInfo for list_subscriptions tool",
@@ -185,7 +188,7 @@ export function registerSubscriptionTools(
                 throw new Error("Not authorized");
             }
 
-            const payload = await provider.getSubscriptions(userId);
+            const payload = await provider.getSubscriptions(userId,email);
             return {
                 content: [
                     {
@@ -202,7 +205,7 @@ export function registerSubscriptionTools(
         {
             title: "Start a subscription",
             description:
-                "Starts a subscription for the authenticated user for the given plan.",
+                "Starts a subscription for the authenticated user for the given plan. If the user already has a subscription for this plan that is active but scheduled to be canceled at the end of the current period, this call will instead resume that existing subscription.",
             inputSchema: z
                 .object({
                     planId: z

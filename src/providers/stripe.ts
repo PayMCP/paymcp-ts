@@ -77,8 +77,8 @@ export class StripeProvider extends BasePaymentProvider {
     super(opts.apiKey, opts.logger);
     this.successUrl =
       opts.successUrl ??
-      "https://yoururl.com/success?session_id={CHECKOUT_SESSION_ID}";
-    this.cancelUrl = opts.cancelUrl ?? "https://yoururl.com/cancel";
+      "https://paymcp.info/paymentsuccess/?session_id={CHECKOUT_SESSION_ID}";
+    this.cancelUrl = opts.cancelUrl ?? "https://paymcp.info/paymentcanceled/";
     this.logger.debug("[StripeProvider] ready");
   }
 

@@ -25,8 +25,8 @@ export class CoinbaseProvider extends BasePaymentProvider {
 
   constructor(opts: CoinbaseProviderOpts) {
     super(opts.apiKey, opts.logger);
-    this.successUrl = opts.successUrl ?? "https://example.com/success";
-    this.cancelUrl = opts.cancelUrl ?? "https://example.com/cancel";
+    this.successUrl = opts.successUrl ?? "https://paymcp.info/paymentsuccess/";
+    this.cancelUrl = opts.cancelUrl ?? "https://paymcp.info/paymentcanceled/";
     this.confirmOnPending = Boolean(opts.confirmOnPending);
     this.logger.debug("[CoinbaseProvider] ready");
   }

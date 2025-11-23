@@ -197,7 +197,7 @@ export class StripeProvider extends BasePaymentProvider {
     planId: string,
     userId: string,
     email?: string,
-  ): Promise<{ message: string; checkoutUrl: string; sessionId: string; planId: string }> {
+  ): Promise<{ message: string; checkoutUrl?: string; sessionId?: string; planId: string }> {
     this.logger.debug(
       `[StripeProvider] startSubscription planId=${planId} userId=${userId} email=${email ?? "n/a"}`,
     );
@@ -232,9 +232,7 @@ export class StripeProvider extends BasePaymentProvider {
       return {
         message:
           "Existing subscription was scheduled to be canceled at period end and has been reactivated. Billing will continue as normal.",
-        planId,
-        sessionId: "",
-        checkoutUrl: "",
+        planId
       };
     }
 
@@ -279,7 +277,6 @@ export class StripeProvider extends BasePaymentProvider {
    *
    * We:
    *  - fetch the subscription
-   *  - verify that subscription.metadata.userId matches the provided userId
    *  - update the subscription with cancel_at_period_end=true so that it remains
    *    active until the end of the current billing period
    *  - return information about when access will actually end
@@ -287,7 +284,8 @@ export class StripeProvider extends BasePaymentProvider {
   async cancelSubscription(
     subscriptionId: string,
     userId: string,
-  ): Promise<{ message: string; canceled: boolean; currentPeriodEnd: number | null; endDate: string | null }> {
+    email?:string
+  ): Promise<{ message: string; canceled: boolean; endDate: string | null }> {
     this.logger.debug(
       `[StripeProvider] cancelSubscription subscriptionId=${subscriptionId} userId=${userId}`,
     );
@@ -298,11 +296,16 @@ export class StripeProvider extends BasePaymentProvider {
       `${BASE_URL}/subscriptions/${subscriptionId}`,
     );
 
-    const metaUserId = sub?.metadata?.userId ?? sub?.metadata?.user_id;
-    if (metaUserId && metaUserId !== userId) {
-      throw new Error(
-        `[StripeProvider] cannot cancel subscription ${subscriptionId}: metadata.userId=${metaUserId} does not match userId=${userId}`,
+    // Ensure that the subscription belongs to the current user by comparing
+    // the subscription's customer with the resolved Stripe customer for this token.
+    // This prevents other users from cancelling a subscription that is not theirs
+    // even if they somehow guess or obtain the subscription id.
+    const customerId = await this.findOrCreateCustomer(userId, email);
+    if (String(sub?.customer ?? "") !== customerId) {
+      this.logger.debug(
+        `[StripeProvider] subscription ${subscriptionId} does not belong to customer ${customerId} (found customer=${sub?.customer ?? "n/a"})`,
       );
+      throw new Error("[StripeProvider] subscription does not belong to current user");
     }
 
     // Schedule cancellation at the end of the current period instead of immediate cancel.
@@ -314,26 +317,25 @@ export class StripeProvider extends BasePaymentProvider {
       },
     );
 
-    const currentPeriodEnd =
-      typeof updated.current_period_end === "number"
-        ? updated.current_period_end
-        : typeof sub.current_period_end === "number"
-          ? sub.current_period_end
-          : null;
-
-    const endDate =
-      currentPeriodEnd != null
-        ? new Date(currentPeriodEnd * 1000).toISOString()
-        : null;
+    // cancel_at is a Unix timestamp (seconds). Normalize it to an ISO date string.
+    let endDate: string | null = null;
+    const rawCancelAt = updated.cancel_at ?? sub.cancel_at ?? null;
+    if (typeof rawCancelAt === "number") {
+      endDate = new Date(rawCancelAt * 1000).toISOString();
+    } else if (typeof rawCancelAt === "string") {
+      const parsed = Number(rawCancelAt);
+      if (Number.isFinite(parsed)) {
+        endDate = new Date(parsed * 1000).toISOString();
+      }
+    }
 
     this.logger.debug(
-      `[StripeProvider] subscription ${subscriptionId} cancellation scheduled; currentPeriodEnd=${currentPeriodEnd}, endDate=${endDate}`,
+      `[StripeProvider] subscription ${subscriptionId} cancellation scheduled; endDate=${endDate}`,
     );
 
     return {
-      message: `subscription ${subscriptionId} cancellation scheduled; currentPeriodEnd=${currentPeriodEnd}, endDate=${endDate}`,
+      message: `subscription ${subscriptionId} cancellation scheduled; endDate=${endDate}`,
       canceled: true,
-      currentPeriodEnd,
       endDate,
     };
   }

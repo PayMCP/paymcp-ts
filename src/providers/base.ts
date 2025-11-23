@@ -80,6 +80,7 @@ export abstract class BasePaymentProvider {
    */
   async getSubscriptions(
     userId: string,
+    email?: string
   ): Promise<any> {
     this.logger?.warn?.(
       `[BasePaymentProvider] getSubscriptions called for provider that does not support subscriptions (userId=${userId})`,
@@ -101,6 +102,7 @@ export abstract class BasePaymentProvider {
   async cancelSubscription(
     subscriptionId: string,
     userId: string,
+    email?: string,
   ): Promise<any> {
     this.logger?.warn?.(
       `[BasePaymentProvider] cancelSubscription called for provider that does not support subscriptions (userId=${userId}, subscriptionId=${subscriptionId})`,

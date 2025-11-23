@@ -2,6 +2,7 @@ import { SubscriptionConfig, ToolExtraLike } from "../types/config.js";
 import { SubscriptionWrapperFactory, ToolHandler } from "../types/flows.js";
 import { Logger } from "../types/logger.js";
 import { z } from "zod";
+import { parseJwt } from "../utils/jwt.js";
 
 async function ensureSubscriptionAllowed(
     provider: unknown,
@@ -129,8 +130,9 @@ export const makeSubscriptionWrapper: SubscriptionWrapperFactory = (
             `[PayMCP:Resubmit] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`
         );
 
-        const userId = extra.authInfo?.userId;
-        const email = extra.authInfo?.email;
+        const authtokendata = extra.authInfo?.token ? parseJwt(extra.authInfo?.token) : null;
+        const userId = extra.authInfo?.userId ?? authtokendata?.sub;
+        const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
         if (!userId) {
             log?.error?.(`User ID is required in authInfo for subscription tools (tool: ${toolName})`);
             throw new Error(`Not authorized`);
@@ -162,9 +164,9 @@ async function callOriginal(
 export function registerSubscriptionTools(
     server: unknown,
     provider: {
-        getSubscriptions: (userId: string, email?:string) => Promise<any>;
+        getSubscriptions: (userId: string, email?: string) => Promise<any>;
         startSubscription: (planId: string, userId: string, email?: string) => Promise<any>;
-        cancelSubscription: (subscriptionId: string, userId: string) => Promise<any>;
+        cancelSubscription: (subscriptionId: string, userId: string, email?: string) => Promise<any>;
     },
     logger?: Logger,
 ) {
@@ -179,16 +181,17 @@ export function registerSubscriptionTools(
                 "Returns the current subscriptions for the authenticated user and the available subscription plans.",
         },
         async (extra: ToolExtraLike) => {
-            const userId = extra.authInfo?.userId;
-            const email = extra.authInfo?.email;
+            const authtokendata = extra.authInfo?.token ? parseJwt(extra.authInfo?.token) : null;
+            const userId = extra.authInfo?.userId ?? authtokendata?.sub;
+            const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
             if (!userId) {
                 log?.error?.(
-                    "[PayMCP:Subscriptions] User ID is required in authInfo for list_subscriptions tool",
+                    "[PayMCP:Subscriptions] User ID or token required in authInfo  for list_subscriptions tool",
                 );
                 throw new Error("Not authorized");
             }
 
-            const payload = await provider.getSubscriptions(userId,email);
+            const payload = await provider.getSubscriptions(userId, email);
             return {
                 content: [
                     {
@@ -218,11 +221,13 @@ export function registerSubscriptionTools(
                 ),
         },
         async (input: { planId: string }, extra: ToolExtraLike) => {
-            const userId = extra.authInfo?.userId;
+            const authtokendata = extra.authInfo?.token ? parseJwt(extra.authInfo?.token) : null;
+            const userId = extra.authInfo?.userId ?? authtokendata?.sub;
+            const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
             const planId = input.planId
             if (!userId) {
                 log?.error?.(
-                    "[PayMCP:Subscriptions] User ID is required in authInfo for start_subscription tool",
+                    "[PayMCP:Subscriptions] User ID or token is required in authInfo for start_subscription tool",
                 );
                 throw new Error("Not authorized");
             }
@@ -234,7 +239,6 @@ export function registerSubscriptionTools(
                 throw new Error("planId is required to start a subscription");
             }
 
-            const email: string | undefined = (extra.authInfo as any)?.email;
 
             const sub = await provider.startSubscription(planId, userId, email);
             return {
@@ -265,12 +269,14 @@ export function registerSubscriptionTools(
                     "Provide the subscriptionId to cancel.",
                 ),
         },
-        async (input: {subscriptionId: string}, extra: ToolExtraLike) => {
-            const userId = extra.authInfo?.userId;
+        async (input: { subscriptionId: string }, extra: ToolExtraLike) => {
+            const authtokendata = extra.authInfo?.token ? parseJwt(extra.authInfo?.token) : null;
+            const userId = extra.authInfo?.userId ?? authtokendata?.sub;
+            const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
             const subscriptionId = input.subscriptionId;
             if (!userId) {
                 log?.error?.(
-                    "[PayMCP:Subscriptions] User ID is required in authInfo for cancel_subscription tool",
+                    "[PayMCP:Subscriptions] User ID or token required in authInfo for cancel_subscription tool",
                 );
                 throw new Error("Not authorized");
             }
@@ -282,7 +288,7 @@ export function registerSubscriptionTools(
                 throw new Error("subscriptionId is required to cancel a subscription");
             }
 
-            const result = await provider.cancelSubscription(subscriptionId, userId);
+            const result = await provider.cancelSubscription(subscriptionId, userId, email);
 
             return {
                 content: [

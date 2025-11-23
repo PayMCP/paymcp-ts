@@ -38,7 +38,8 @@ export interface ToolExtraLike {
     requestId?: number | string;
     signal?: AbortSignal;
     authInfo?: {
-        userId: string,
+        token: string,
+        userId?: string,
         email?: string
     }
     reportProgress?: (args: { progress?: number; total?: number; message?: string; }) => Promise<void> | void;

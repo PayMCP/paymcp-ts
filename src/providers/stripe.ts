@@ -424,8 +424,9 @@ export class StripeProvider extends BasePaymentProvider {
    * Find or create a Stripe Customer for the given user.
    *
    * Strategy:
-   *  - if email is provided, try to find an existing customer by email
-   *  - otherwise, or if not found, create a new customer with metadata.userId
+   * 1. Try to find by metadata.userId (primary key).
+   * 2. If not found and email is provided, try to find by email, and if found, attach userId to metadata.
+   * 3. If not found, create a new customer with metadata.userId and optional email.
    */
   private async findOrCreateCustomer(
     userId: string,
@@ -435,29 +436,7 @@ export class StripeProvider extends BasePaymentProvider {
       `[StripeProvider] findOrCreateCustomer userId=${userId} email=${email ?? "n/a"}`,
     );
 
-
-    // 1) If we have an email, try to find by email via /customers?email=...
-    if (email) {
-      const params = new URLSearchParams({
-        email,
-        limit: "1",
-      });
-
-      const res = await this.request<any>(
-        "GET",
-        `${BASE_URL}/customers?${params.toString()}`,
-      );
-
-      if (Array.isArray(res?.data) && res.data.length > 0) {
-        const customer = res.data[0];
-        this.logger.debug(
-          `[StripeProvider] reusing existing customer via email: ${customer.id}`,
-        );
-        return String(customer.id);
-      }
-    }
-
-    // 2) If no email or user not found, try to find an existing customer by our own userId in metadata
+    // 1) Try to find an existing customer by our own userId in metadata (primary key).
     const searchParams = new URLSearchParams({
       query: `metadata['userId']:'${userId}'`,
       limit: "1",
@@ -476,9 +455,57 @@ export class StripeProvider extends BasePaymentProvider {
       return String(existing.id);
     }
 
+    // 2) If not found by userId and we have an email, try to find an existing customer by email.
+    if (email) {
+      const params = new URLSearchParams({
+        email,
+        limit: "1",
+      });
 
+      const res = await this.request<any>(
+        "GET",
+        `${BASE_URL}/customers?${params.toString()}`,
+      );
 
-    // 3) Otherwise, create a new customer and always store our userId in metadata
+      if (Array.isArray(res?.data) && res.data.length > 0) {
+        const customer = res.data[0];
+        const metaUserId = customer.metadata?.userId;
+
+        if (!metaUserId) {
+          // Existing customer has no userId in metadata; attach our userId without overwriting other metadata keys.
+          await this.request<any>(
+            "POST",
+            `${BASE_URL}/customers/${customer.id}`,
+            {
+              "metadata[userId]": userId,
+            },
+          );
+
+          this.logger.debug(
+            `[StripeProvider] reusing existing customer via email and attaching metadata.userId: ${customer.id}`,
+          );
+          return String(customer.id);
+        }
+
+        if (metaUserId === userId) {
+          // Existing customer is already associated with this userId; just reuse it.
+          this.logger.debug(
+            `[StripeProvider] reusing existing customer via email with matching metadata.userId: ${customer.id}`,
+          );
+          return String(customer.id);
+        }
+
+        // Existing customer is associated with a different userId; this is a potential account hijack or merge.
+        this.logger.error(
+          `[StripeProvider] found customer via email (${customer.id}) with conflicting metadata.userId=${metaUserId} for userId=${userId}`,
+        );
+        throw new Error(
+          "[StripeProvider] email is already associated with a different user account",
+        );
+      }
+    }
+
+    // 3) Nothing suitable found; create a new customer and always store our userId in metadata.
     const body: Record<string, string> = {
       "metadata[userId]": userId,
     };

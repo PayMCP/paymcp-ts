@@ -2,7 +2,7 @@ import { SubscriptionConfig, ToolExtraLike } from "../types/config.js";
 import { SubscriptionWrapperFactory, ToolHandler } from "../types/flows.js";
 import { Logger } from "../types/logger.js";
 import { z } from "zod";
-import { parseJwt } from "../utils/jwt.js";
+import { decodeJwtPayloadUnverified } from "../utils/jwt.js";
 
 async function ensureSubscriptionAllowed(
     provider: unknown,
@@ -37,7 +37,7 @@ async function ensureSubscriptionAllowed(
     let subsResult: any;
     try {
         // This may throw if the provider does not support subscriptions.
-        subsResult = await (provider as any).getSubscriptions(userId);
+        subsResult = await (provider as any).getSubscriptions(userId,email);
     } catch (err: any) {
         const msg = String(err?.message ?? err);
 
@@ -130,7 +130,7 @@ export const makeSubscriptionWrapper: SubscriptionWrapperFactory = (
             `[PayMCP:Resubmit] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`
         );
 
-        const authtokendata = extra.authInfo?.token ? parseJwt(extra.authInfo?.token) : null;
+        const authtokendata = extra.authInfo?.token ? decodeJwtPayloadUnverified(extra.authInfo?.token, log) : null;
         const userId = extra.authInfo?.userId ?? authtokendata?.sub;
         const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
         if (!userId) {
@@ -181,7 +181,7 @@ export function registerSubscriptionTools(
                 "Returns the current subscriptions for the authenticated user and the available subscription plans.",
         },
         async (extra: ToolExtraLike) => {
-            const authtokendata = extra.authInfo?.token ? parseJwt(extra.authInfo?.token) : null;
+            const authtokendata = extra.authInfo?.token ? decodeJwtPayloadUnverified(extra.authInfo?.token,log) : null;
             const userId = extra.authInfo?.userId ?? authtokendata?.sub;
             const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
             if (!userId) {
@@ -221,7 +221,7 @@ export function registerSubscriptionTools(
                 ),
         },
         async (input: { planId: string }, extra: ToolExtraLike) => {
-            const authtokendata = extra.authInfo?.token ? parseJwt(extra.authInfo?.token) : null;
+            const authtokendata = extra.authInfo?.token ? decodeJwtPayloadUnverified(extra.authInfo?.token,log) : null;
             const userId = extra.authInfo?.userId ?? authtokendata?.sub;
             const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
             const planId = input.planId
@@ -270,7 +270,7 @@ export function registerSubscriptionTools(
                 ),
         },
         async (input: { subscriptionId: string }, extra: ToolExtraLike) => {
-            const authtokendata = extra.authInfo?.token ? parseJwt(extra.authInfo?.token) : null;
+            const authtokendata = extra.authInfo?.token ? decodeJwtPayloadUnverified(extra.authInfo?.token,log) : null;
             const userId = extra.authInfo?.userId ?? authtokendata?.sub;
             const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
             const subscriptionId = input.subscriptionId;

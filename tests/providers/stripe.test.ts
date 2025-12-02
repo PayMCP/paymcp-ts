@@ -468,4 +468,715 @@ describe('StripeProvider', () => {
       );
     });
   });
+
+  describe('getSubscriptions', () => {
+    it('should return current and available subscriptions', async () => {
+      // Order: prices (listAvailableSubscriptionPlans) -> customer search -> subscriptions
+      (global.fetch as any)
+        // Mock for prices list (called first by listAvailableSubscriptionPlans)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            data: [
+              {
+                id: 'price_123',
+                active: true,
+                currency: 'usd',
+                unit_amount: 1999,
+                recurring: { interval: 'month' },
+                product: { id: 'prod_123', name: 'Pro Plan', description: 'Pro features', active: true }
+              }
+            ]
+          })
+        })
+        // Mock for customer search
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] })
+        })
+        // Mock for subscriptions list
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            data: [
+              {
+                id: 'sub_123',
+                status: 'active',
+                created: 1700000000,
+                cancel_at_period_end: false,
+                items: {
+                  data: [
+                    {
+                      price: {
+                        id: 'price_123',
+                        currency: 'usd',
+                        unit_amount: 1999,
+                        recurring: { interval: 'month' }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          })
+        });
+
+      const result = await provider.getSubscriptions('user123', 'test@example.com');
+
+      expect(result.current_subscriptions).toHaveLength(1);
+      expect(result.current_subscriptions[0]).toMatchObject({
+        id: 'sub_123',
+        status: 'active',
+        planId: 'price_123'
+      });
+      expect(result.available_subscriptions).toHaveLength(1);
+      expect(result.available_subscriptions[0]).toMatchObject({
+        planId: 'price_123',
+        title: 'Pro Plan',
+        price: 19.99
+      });
+    });
+
+    it('should filter out one-time prices from available subscriptions', async () => {
+      (global.fetch as any)
+        // prices first
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            data: [
+              {
+                id: 'price_onetime',
+                active: true,
+                currency: 'usd',
+                unit_amount: 999,
+                // No recurring field = one-time price
+                product: { id: 'prod_123', name: 'One-time', active: true }
+              },
+              {
+                id: 'price_recurring',
+                active: true,
+                currency: 'usd',
+                unit_amount: 1999,
+                recurring: { interval: 'month' },
+                product: { id: 'prod_456', name: 'Monthly', active: true }
+              }
+            ]
+          })
+        })
+        // customer search
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] })
+        })
+        // subscriptions
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        });
+
+      const result = await provider.getSubscriptions('user123');
+
+      expect(result.available_subscriptions).toHaveLength(1);
+      expect(result.available_subscriptions[0].planId).toBe('price_recurring');
+    });
+
+    it('should filter out inactive products', async () => {
+      (global.fetch as any)
+        // prices first
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            data: [
+              {
+                id: 'price_inactive',
+                active: true,
+                currency: 'usd',
+                unit_amount: 999,
+                recurring: { interval: 'month' },
+                product: { id: 'prod_inactive', name: 'Inactive', active: false }
+              }
+            ]
+          })
+        })
+        // customer search
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] })
+        })
+        // subscriptions
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        });
+
+      const result = await provider.getSubscriptions('user123');
+
+      expect(result.available_subscriptions).toHaveLength(0);
+    });
+  });
+
+  describe('startSubscription', () => {
+    it('should create a checkout session for new subscription', async () => {
+      // Flow: listUserSubscriptions (findOrCreateCustomer + list subs) -> findOrCreateCustomer again -> checkout
+      (global.fetch as any)
+        // 1. Customer search by userId (from listUserSubscriptions -> findOrCreateCustomer)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        // 2. Customer search by email (from findOrCreateCustomer)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        // 3. Create customer (from findOrCreateCustomer)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: 'cus_new123' })
+        })
+        // 4. List subscriptions (from listUserSubscriptions)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        // 5. Customer search by userId again (from second findOrCreateCustomer call)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_new123' }] })
+        })
+        // 6. Create checkout session
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: 'cs_sub_123',
+            url: 'https://checkout.stripe.com/c/pay/cs_sub_123'
+          })
+        });
+
+      const result = await provider.startSubscription('price_123', 'user123', 'test@example.com');
+
+      expect(result.checkoutUrl).toBe('https://checkout.stripe.com/c/pay/cs_sub_123');
+      expect(result.sessionId).toBe('cs_sub_123');
+      expect(result.planId).toBe('price_123');
+    });
+
+    it('should resume existing subscription if cancel_at_period_end', async () => {
+      (global.fetch as any)
+        // Customer search by userId
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_existing' }] })
+        })
+        // List user subscriptions
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            data: [
+              {
+                id: 'sub_existing',
+                status: 'active',
+                cancel_at_period_end: true,
+                items: {
+                  data: [{ price: { id: 'price_123' } }]
+                }
+              }
+            ]
+          })
+        })
+        // Update subscription to resume
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: 'sub_existing' })
+        });
+
+      const result = await provider.startSubscription('price_123', 'user123');
+
+      expect(result.message).toContain('reactivated');
+      expect(result.checkoutUrl).toBeUndefined();
+    });
+
+    it('should throw error when checkout session creation fails', async () => {
+      // Flow: listUserSubscriptions (findOrCreateCustomer + list subs) -> findOrCreateCustomer again -> checkout
+      (global.fetch as any)
+        // 1. Customer search by userId (from listUserSubscriptions -> findOrCreateCustomer)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] })
+        })
+        // 2. List subscriptions (from listUserSubscriptions) - no resumable
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        // 3. Customer search by userId again (from second findOrCreateCustomer call)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] })
+        })
+        // 4. Checkout session creation fails
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ object: 'checkout.session' }) // missing id/url
+        });
+
+      await expect(
+        provider.startSubscription('price_123', 'user123')
+      ).rejects.toThrow('Invalid response from /checkout/sessions');
+    });
+  });
+
+  describe('cancelSubscription', () => {
+    it('should schedule subscription cancellation at period end', async () => {
+      const cancelAt = Math.floor(Date.now() / 1000) + 2592000; // 30 days from now
+
+      (global.fetch as any)
+        // Get subscription
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: 'sub_123',
+            customer: 'cus_123'
+          })
+        })
+        // Customer search
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] })
+        })
+        // Update subscription
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: 'sub_123',
+            cancel_at: cancelAt,
+            cancel_at_period_end: true
+          })
+        });
+
+      const result = await provider.cancelSubscription('sub_123', 'user123');
+
+      expect(result.canceled).toBe(true);
+      expect(result.endDate).toBeTruthy();
+    });
+
+    it('should throw error when subscription does not belong to user', async () => {
+      (global.fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: 'sub_123',
+            customer: 'cus_other' // different customer
+          })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] })
+        });
+
+      await expect(
+        provider.cancelSubscription('sub_123', 'user123')
+      ).rejects.toThrow('subscription does not belong to current user');
+    });
+
+    it('should handle string cancel_at value', async () => {
+      const cancelAt = String(Math.floor(Date.now() / 1000) + 2592000);
+
+      (global.fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: 'sub_123',
+            customer: 'cus_123'
+          })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: 'sub_123',
+            cancel_at: cancelAt
+          })
+        });
+
+      const result = await provider.cancelSubscription('sub_123', 'user123');
+
+      expect(result.endDate).toBeTruthy();
+    });
+  });
+
+  describe('findOrCreateCustomer (private method via startSubscription)', () => {
+    it('should reuse existing customer found by metadata.userId', async () => {
+      // startSubscription flow: listUserSubscriptions (findOrCreate + list) -> findOrCreate again -> checkout
+      (global.fetch as any)
+        // 1. Customer search by userId (from listUserSubscriptions -> findOrCreateCustomer)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_existing' }] })
+        })
+        // 2. List subscriptions (from listUserSubscriptions)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        // 3. Customer search by userId again (from second findOrCreateCustomer)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_existing' }] })
+        })
+        // 4. Create checkout session
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: 'cs_123', url: 'https://checkout.stripe.com/test' })
+        });
+
+      await provider.startSubscription('price_123', 'user123');
+
+      // Should only have been called for customer search, not customer create
+      const createCustomerCalls = (global.fetch as any).mock.calls.filter(
+        (call: any[]) => call[0] === 'https://api.stripe.com/v1/customers' && call[1]?.method === 'POST'
+      );
+      expect(createCustomerCalls).toHaveLength(0);
+    });
+
+    it('should find customer by email and attach userId to metadata', async () => {
+      (global.fetch as any)
+        // 1. Search by userId - not found (from listUserSubscriptions -> findOrCreateCustomer)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        // 2. Search by email - found without userId
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_email', metadata: {} }] })
+        })
+        // 3. Update customer metadata
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: 'cus_email' })
+        })
+        // 4. List subscriptions (from listUserSubscriptions)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        // 5. Search by userId again (from second findOrCreateCustomer) - now has userId
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_email' }] })
+        })
+        // 6. Create checkout session
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: 'cs_123', url: 'https://checkout.stripe.com/test' })
+        });
+
+      await provider.startSubscription('price_123', 'user123', 'test@example.com');
+
+      // Should have updated customer with userId
+      const updateCall = (global.fetch as any).mock.calls.find(
+        (call: any[]) => call[0].includes('/customers/cus_email') && call[1]?.method === 'POST'
+      );
+      expect(updateCall).toBeTruthy();
+    });
+
+    it('should throw error when email is associated with different user', async () => {
+      (global.fetch as any)
+        // Search by userId - not found
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        // Search by email - found with different userId
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            data: [{ id: 'cus_other', metadata: { userId: 'different_user' } }]
+          })
+        });
+
+      await expect(
+        provider.startSubscription('price_123', 'user123', 'test@example.com')
+      ).rejects.toThrow('email is already associated with a different user account');
+    });
+
+    it('should create new customer when none found', async () => {
+      (global.fetch as any)
+        // 1. Search by userId - not found (from listUserSubscriptions -> findOrCreateCustomer)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        // 2. Search by email - not found
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        // 3. Create customer
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: 'cus_new' })
+        })
+        // 4. List subscriptions (from listUserSubscriptions)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        // 5. Search by userId again (from second findOrCreateCustomer) - now found
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_new' }] })
+        })
+        // 6. Create checkout session
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: 'cs_123', url: 'https://checkout.stripe.com/test' })
+        });
+
+      await provider.startSubscription('price_123', 'user123', 'new@example.com');
+
+      // Verify customer was created
+      const createCall = (global.fetch as any).mock.calls.find(
+        (call: any[]) => call[0] === 'https://api.stripe.com/v1/customers' && call[1]?.method === 'POST'
+      );
+      expect(createCall).toBeTruthy();
+    });
+
+    it('should throw error when customer creation fails', async () => {
+      (global.fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({}) // missing id
+        });
+
+      await expect(
+        provider.startSubscription('price_123', 'user123', 'test@example.com')
+      ).rejects.toThrow('failed to create customer');
+    });
+  });
+
+  describe('mapStripeSubscription (via getSubscriptions)', () => {
+    it('should handle subscription with created timestamp', async () => {
+      const created = 1700000000;
+
+      // Order: prices (from listAvailableSubscriptionPlans) -> customer search -> subscriptions
+      (global.fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }) // prices list (empty)
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] }) // customer search
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            data: [{
+              id: 'sub_123',
+              status: 'active',
+              created,
+              cancel_at_period_end: false,
+              items: { data: [{ price: { id: 'price_123', currency: 'usd', unit_amount: 999 } }] }
+            }]
+          })
+        });
+
+      const result = await provider.getSubscriptions('user123');
+
+      expect(result.current_subscriptions[0].createdAt).toBe(new Date(created * 1000).toISOString());
+    });
+
+    it('should handle subscription with ended_at timestamp', async () => {
+      const endedAt = 1700000000;
+
+      (global.fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }) // prices
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] }) // customer search
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            data: [{
+              id: 'sub_123',
+              status: 'canceled',
+              ended_at: endedAt,
+              items: { data: [{ price: { id: 'price_123' } }] }
+            }]
+          })
+        });
+
+      const result = await provider.getSubscriptions('user123');
+
+      expect(result.current_subscriptions[0].endedAtDate).toBe(new Date(endedAt * 1000).toISOString());
+    });
+
+    it('should handle string timestamps', async () => {
+      const created = '1700000000';
+
+      (global.fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }) // prices
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] }) // customer search
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            data: [{
+              id: 'sub_123',
+              status: 'active',
+              created,
+              cancel_at: '1705000000',
+              ended_at: '1710000000',
+              items: { data: [{ price: { id: 'price_123' } }] }
+            }]
+          })
+        });
+
+      const result = await provider.getSubscriptions('user123');
+
+      expect(result.current_subscriptions[0].createdAt).toBeTruthy();
+      expect(result.current_subscriptions[0].cancelAtDate).toBeTruthy();
+      expect(result.current_subscriptions[0].endedAtDate).toBeTruthy();
+    });
+
+    it('should handle subscription with no items', async () => {
+      (global.fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }) // prices
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] }) // customer search
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            data: [{
+              id: 'sub_123',
+              status: 'active',
+              items: { data: [] }
+            }]
+          })
+        });
+
+      const result = await provider.getSubscriptions('user123');
+
+      expect(result.current_subscriptions[0].planId).toBe('');
+      expect(result.current_subscriptions[0].price).toBeNull();
+    });
+
+    it('should handle null unit_amount', async () => {
+      (global.fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }) // prices
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [{ id: 'cus_123' }] }) // customer search
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            data: [{
+              id: 'sub_123',
+              status: 'active',
+              items: { data: [{ price: { id: 'price_123', unit_amount: null } }] }
+            }]
+          })
+        });
+
+      const result = await provider.getSubscriptions('user123');
+
+      expect(result.current_subscriptions[0].price).toBeNull();
+    });
+  });
 });

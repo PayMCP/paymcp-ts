@@ -23,7 +23,7 @@ export class AdyenProvider extends BasePaymentProvider {
   constructor(opts: AdyenProviderOpts) {
     super(opts.apiKey, opts.logger);
     this.merchantAccount = opts.merchantAccount as string;
-    this.returnUrl = opts.successUrl ?? "https://example.com/return";
+    this.returnUrl = opts.successUrl ?? "https://paymcp.info/paymentinfo/";
     this.baseUrl = opts.sandbox ? ADYEN_API_TEST_URL : ADYEN_API_LIVE_URL;
     this.logger?.debug("Adyen ready");
   }

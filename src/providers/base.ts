@@ -73,6 +73,43 @@ export abstract class BasePaymentProvider {
     return json;
   }
 
+  /**
+   * Subscription-related helpers. By default, providers do not support subscriptions.
+   * Concrete providers (e.g., Stripe) can override these methods to implement
+   * subscription logic.
+   */
+  async getSubscriptions(
+    userId: string,
+    email?: string
+  ): Promise<any> {
+    this.logger?.warn?.(
+      `[BasePaymentProvider] getSubscriptions called for provider that does not support subscriptions (userId=${userId})`,
+    );
+    throw new Error("Subscriptions are not supported for this payment provider");
+  }
+
+  async startSubscription(
+    planId: string,
+    userId: string,
+    email?: string,
+  ): Promise<any> {
+    this.logger?.warn?.(
+      `[BasePaymentProvider] startSubscription called for provider that does not support subscriptions (userId=${userId}, planId=${planId})`,
+    );
+    throw new Error("Subscriptions are not supported for this payment provider");
+  }
+
+  async cancelSubscription(
+    subscriptionId: string,
+    userId: string,
+    email?: string,
+  ): Promise<any> {
+    this.logger?.warn?.(
+      `[BasePaymentProvider] cancelSubscription called for provider that does not support subscriptions (userId=${userId}, subscriptionId=${subscriptionId})`,
+    );
+    throw new Error("Subscriptions are not supported for this payment provider");
+  }
+
   /** Create payment. Return (id, url). */
   abstract createPayment(
     amount: number,

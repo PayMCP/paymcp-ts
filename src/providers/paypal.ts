@@ -79,8 +79,8 @@ export class PayPalProvider extends BasePaymentProvider {
     this.clientId = parsedOpts.clientId;
     this.clientSecret = parsedOpts.clientSecret;
     this.baseUrl = parsedOpts.sandbox !== false ? SANDBOX_URL : PRODUCTION_URL;
-    this.successUrl = parsedOpts.successUrl ?? "https://example.com/success";
-    this.cancelUrl = parsedOpts.cancelUrl ?? "https://example.com/cancel";
+    this.successUrl = parsedOpts.successUrl ?? "https://paymcp.info/paymentsuccess/";
+    this.cancelUrl = parsedOpts.cancelUrl ?? "https://paymcp.info/paymentcanceled/";
 
     this.logger.debug("[PayPalProvider] ready");
   }

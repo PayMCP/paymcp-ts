@@ -82,7 +82,7 @@ export class SquareProvider extends BasePaymentProvider {
     this.accessToken = parsedOpts.accessToken;
     this.locationId = parsedOpts.locationId;
     this.baseUrl = parsedOpts.sandbox !== false ? SANDBOX_URL : PRODUCTION_URL;
-    this.redirectUrl = parsedOpts.redirectUrl ?? "https://example.com/success";
+    this.redirectUrl = parsedOpts.redirectUrl ?? "https://paymcp.info/paymentinfo/";
     this.apiVersion = parsedOpts.apiVersion ?? process.env.SQUARE_API_VERSION ?? "2025-03-19";
 
     this.logger.debug(`[SquareProvider] ready - locationId: ${this.locationId}, apiVersion: ${this.apiVersion}`);

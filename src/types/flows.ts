@@ -1,5 +1,5 @@
 // lib/ts/paymcp/src/flows/types.ts
-import type { PriceConfig } from "./config.js";
+import type { PriceConfig, SubscriptionConfig } from "./config.js";
 import type { BasePaymentProvider } from "../providers/base.js";
 import type { McpServerLike } from "./mcp.js";
 import { Logger } from "./logger.js";
@@ -14,6 +14,17 @@ export type PaidWrapperFactory = (
   server: McpServerLike,
   provider: BasePaymentProvider,
   priceInfo: PriceConfig,
+  toolName: string,
+  stateStore: StateStore,
+  config: any,
+  logger?: Logger
+) => ToolHandler;
+
+export type SubscriptionWrapperFactory = (
+  func: ToolHandler,
+  server: McpServerLike,
+  provider: BasePaymentProvider,
+  subscription: SubscriptionConfig,
   toolName: string,
   stateStore: StateStore,
   config: any,

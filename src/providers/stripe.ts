@@ -420,6 +420,11 @@ export class StripeProvider extends BasePaymentProvider {
     return data.map((sub: any) => this.mapStripeSubscription(sub));
   }
 
+  private isValidEmail(email: string): boolean {
+    // Basic email format validation to avoid using clearly invalid addresses
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
   /**
    * Find or create a Stripe Customer for the given user.
    *
@@ -456,7 +461,7 @@ export class StripeProvider extends BasePaymentProvider {
     }
 
     // 2) If not found by userId and we have an email, try to find an existing customer by email.
-    if (email) {
+    if (email && this.isValidEmail(email)) {
       const params = new URLSearchParams({
         email,
         limit: "1",
@@ -510,7 +515,7 @@ export class StripeProvider extends BasePaymentProvider {
       "metadata[userId]": userId,
     };
 
-    if (email) {
+    if (email && this.isValidEmail(email)) {
       body["email"] = email;
     }
 

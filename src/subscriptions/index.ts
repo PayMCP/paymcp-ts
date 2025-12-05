@@ -37,7 +37,7 @@ async function ensureSubscriptionAllowed(
     let subsResult: any;
     try {
         // This may throw if the provider does not support subscriptions.
-        subsResult = await (provider as any).getSubscriptions(userId,email);
+        subsResult = await (provider as any).getSubscriptions(userId, email);
     } catch (err: any) {
         const msg = String(err?.message ?? err);
 
@@ -108,6 +108,21 @@ async function ensureSubscriptionAllowed(
     }
 }
 
+function isValidEmail(email: string): boolean {
+    // Basic email format validation to avoid using clearly invalid addresses
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function extractUserIdAndEmail(authInfo:any,log:Logger): {userId:string,email:string | undefined} {
+    const authtokendata = authInfo?.token ? decodeJwtPayloadUnverified(authInfo?.token, log) : null;
+    const userId = authInfo?.userId ?? authtokendata?.sub;
+    let email = authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
+    return {
+        userId,
+        email: isValidEmail(email) ? email: undefined
+    }
+}
+
 export const makeSubscriptionWrapper: SubscriptionWrapperFactory = (
     func,
     server,
@@ -130,9 +145,7 @@ export const makeSubscriptionWrapper: SubscriptionWrapperFactory = (
             `[PayMCP:Resubmit] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`
         );
 
-        const authtokendata = extra.authInfo?.token ? decodeJwtPayloadUnverified(extra.authInfo?.token, log) : null;
-        const userId = extra.authInfo?.userId ?? authtokendata?.sub;
-        const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
+        const {userId, email } = extractUserIdAndEmail(extra.authInfo, log);
         if (!userId) {
             log?.error?.(`User ID is required in authInfo for subscription tools (tool: ${toolName})`);
             throw new Error(`Not authorized`);
@@ -181,9 +194,7 @@ export function registerSubscriptionTools(
                 "Returns the current subscriptions for the authenticated user and the available subscription plans.",
         },
         async (extra: ToolExtraLike) => {
-            const authtokendata = extra.authInfo?.token ? decodeJwtPayloadUnverified(extra.authInfo?.token,log) : null;
-            const userId = extra.authInfo?.userId ?? authtokendata?.sub;
-            const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
+            const {userId, email } = extractUserIdAndEmail(extra.authInfo, log);
             if (!userId) {
                 log?.error?.(
                     "[PayMCP:Subscriptions] User ID or token required in authInfo  for list_subscriptions tool",
@@ -221,9 +232,7 @@ export function registerSubscriptionTools(
                 ),
         },
         async (input: { planId: string }, extra: ToolExtraLike) => {
-            const authtokendata = extra.authInfo?.token ? decodeJwtPayloadUnverified(extra.authInfo?.token,log) : null;
-            const userId = extra.authInfo?.userId ?? authtokendata?.sub;
-            const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
+            const {userId, email } = extractUserIdAndEmail(extra.authInfo, log);
             const planId = input.planId
             if (!userId) {
                 log?.error?.(
@@ -270,9 +279,7 @@ export function registerSubscriptionTools(
                 ),
         },
         async (input: { subscriptionId: string }, extra: ToolExtraLike) => {
-            const authtokendata = extra.authInfo?.token ? decodeJwtPayloadUnverified(extra.authInfo?.token,log) : null;
-            const userId = extra.authInfo?.userId ?? authtokendata?.sub;
-            const email = extra.authInfo?.email ?? authtokendata?.email ?? authtokendata?.username;
+            const {userId, email } = extractUserIdAndEmail(extra.authInfo, log);
             const subscriptionId = input.subscriptionId;
             if (!userId) {
                 log?.error?.(

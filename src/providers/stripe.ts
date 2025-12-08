@@ -514,10 +514,18 @@ export class StripeProvider extends BasePaymentProvider {
       body["email"] = email;
     }
 
+    // Use an idempotency key so concurrent calls for the same user cannot create duplicate customers.
+    const idempotencyKey = `stripe-customer-create-${userId}`;
+
     const customer = await this.request<any>(
       "POST",
       `${BASE_URL}/customers`,
       body,
+      {
+        headers: {
+          "Idempotency-Key": idempotencyKey,
+        },
+      }
     );
 
     if (!customer?.id) {

@@ -25,9 +25,13 @@ export abstract class BasePaymentProvider {
   protected async request<T = any>(
     method: string,
     url: string,
-    data?: any
+    data?: any,
+    opts?: { headers?: Record<string, string> }
   ): Promise<T> {
-    const headers = this.buildHeaders();
+    const headers = {
+      ...this.buildHeaders(),
+      ...(opts?.headers ?? {}),
+    };
     const init: RequestInit = { method: method.toUpperCase(), headers };
 
     if (method.toUpperCase() === "GET") {

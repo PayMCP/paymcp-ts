@@ -7,6 +7,7 @@ import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
 import { Logger } from "../types/logger.js";
 import { ToolExtraLike } from "../types/config.js";
 import { normalizeStatus } from "../utils/payment.js";
+import { safeReportProgress } from "../utils/progress.js";
 
 
 export const DEFAULT_POLL_MS = 3_000; // poll provider every 3s
@@ -14,53 +15,6 @@ export const MAX_WAIT_MS = 15 * 60 * 1000; // give up after 15 minutes
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-
-async function safeReportProgress(
-    extra: ToolExtraLike,
-    log: Logger,
-    message: string,
-    progressPct: number,
-    totalPct = 100
-): Promise<void> {
-
-
-    // --- Token-based fallback -------------------------------------------------
-    // FastMCP Python (and some other clients) expose a progress token in the
-    // extra metadata but *not* a callable report_progress. In that case we must
-    // emit a protocol-compliant notification ourselves:
-    //   method: 'notifications/progress'
-    //   params: { progressToken, progress, total, message }
-    // If we instead send a made-up method (like 'progress/update') the client
-    // will raise Pydantic validation errors (you saw those).
-    const sendNote = (extra as any)?.sendNotification;
-    const token =
-        (extra as any)?._meta?.progressToken ?? (extra as any)?.progressToken;
-    if (typeof sendNote === "function" && token !== undefined) {
-        try {
-            await sendNote({
-                method: "notifications/progress",
-                params: {
-                    progressToken: token,
-                    progress: progressPct,
-                    total: totalPct,
-                    message,
-                },
-            });
-            return;
-        } catch (err) {
-            log?.warn?.(
-                `[PayMCP:Progress] progress-token notify failed: ${(err as Error).message}`
-            );
-            // fall through to simple log below
-        }
-    }
-
-    // No usable progress channel; just log so we don't spam invalid notifications.
-
-    log?.debug?.(
-        `[PayMCP:Progress] progress ${progressPct}/${totalPct}: ${message}`
-    );
-}
 
 
 export const makePaidWrapper: PaidWrapperFactory = (
@@ -70,7 +24,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
     priceInfo,
     toolName,
     _stateStore,
-    config,
+    _config,
+    _getClientInfo,
     logger,
 ) => {
     const log: Logger = logger ?? (provider as any).logger ?? console;
@@ -143,7 +98,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
             );
 
             if (status === "paid") {
-                await safeReportProgress(
+                await safeReportProgress (
                     extra,
                     log,
                     "Payment received — running tool…",

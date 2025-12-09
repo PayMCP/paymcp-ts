@@ -1,4 +1,5 @@
 import { BasePaymentProvider } from "../providers/base.js";
+import { Logger } from "./logger.js";
 import { Mode, PaymentFlow } from "./payment.js";
 import { StateStore } from "./state.js";
 
@@ -27,7 +28,8 @@ export interface PayMCPOptions {
     paymentFlow?: PaymentFlow;
     mode?: Mode,
     retrofitExisting?: boolean;
-    stateStore?: StateStore
+    stateStore?: StateStore;
+    logger?: Logger
 }
 
 export interface ToolExtraLike {

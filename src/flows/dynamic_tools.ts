@@ -46,9 +46,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
   provider: BasePaymentProvider,
   priceInfo: PriceConfig,
   toolName: string,
-  stateStore: StateStore,
+  _stateStore: StateStore,
   config: any,
-  logger?: Logger
+  _getClientInfo: ()=> {name: string,capabilities: Record<string, any>},
+  _logger?: Logger
 ) => {
   async function dynamicToolsWrapper(paramsOrExtra?: any, maybeExtra?: any) {
     const hasArgs = arguments.length === 2;

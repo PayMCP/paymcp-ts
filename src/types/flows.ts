@@ -17,6 +17,7 @@ export type PaidWrapperFactory = (
   toolName: string,
   stateStore: StateStore,
   config: any,
+  getClientInfo: ()=> {name: string,capabilities: Record<string, any>} ,
   logger?: Logger
 ) => ToolHandler;
 
@@ -28,6 +29,7 @@ export type SubscriptionWrapperFactory = (
   toolName: string,
   stateStore: StateStore,
   config: any,
+  getClientInfo: ()=> {name: string,capabilities: Record<string, any>},
   logger?: Logger
 ) => ToolHandler;
 

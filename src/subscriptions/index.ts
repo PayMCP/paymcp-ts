@@ -131,7 +131,7 @@ export const makeSubscriptionWrapper: SubscriptionWrapperFactory = (
     toolName,
     _stateStore,
     _config,
-    _capabilities,
+    _getClientInfo,
     logger,
 ) => {
     const log: Logger = logger ?? (provider as any).logger ?? console;

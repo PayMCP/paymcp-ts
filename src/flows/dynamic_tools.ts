@@ -16,6 +16,7 @@ import type { Logger } from '../types/logger.js';
 import type { StateStore } from '../types/state.js';
 import { randomUUID } from 'crypto';
 import { getCurrentSession } from '../core/sessionContext.js';
+import { AbortWatcher } from '../utils/abortWatcher.js';
 
 // State: payment_id -> (session_id, args, timestamp)
 interface PaymentSession {
@@ -49,7 +50,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   _stateStore: StateStore,
   config: any,
   _getClientInfo: ()=> {name: string,capabilities: Record<string, any>},
-  _logger?: Logger
+  logger?: Logger
 ) => {
   async function dynamicToolsWrapper(paramsOrExtra?: any, maybeExtra?: any) {
     const hasArgs = arguments.length === 2;
@@ -97,6 +98,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
           ...config?._meta ? {_meta:config._meta}: {}
         },
         async (_params: any, confirmExtra?: any) => {
+          const abortWatcher = new AbortWatcher((confirmExtra as any)?.signal, logger);
           const payment = PAYMENTS.get(pidStr);
           if (!payment) {
             return {
@@ -110,11 +112,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
             };
           }
 
-          try {
-            const status = await provider.getPaymentStatus(paymentId);
-            if (status !== "paid") {
-              return {
-                content: [{
+            try {
+              const status = await provider.getPaymentStatus(paymentId);
+              if (status !== "paid") {
+                return {
+                  content: [{
                   type: "text",
                   text: `Inform user: Payment not yet completed. Current status: ${status}. Ask them to complete payment at: ${paymentUrl}`
                 }],
@@ -124,16 +126,28 @@ export const makePaidWrapper: PaidWrapperFactory = (
               };
             }
 
-            // Execute original, cleanup state
-            PAYMENTS.delete(pidStr);
-            const result = hasArgs
-              ? await func(payment.args, confirmExtra || extra)
-              : await func(confirmExtra || extra);
+              // Execute original, cleanup state
+              PAYMENTS.delete(pidStr);
+              const result = hasArgs
+                ? await func(payment.args, confirmExtra || extra)
+                : await func(confirmExtra || extra);
 
-            cleanupSessionTool(payment.sessionId, toolName);
+              if (abortWatcher.aborted) {
+                logger?.warn?.(`[PayMCP:DynamicTools] aborted after payment confirmation but before returning tool result.`);
+                return {
+                  content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
+                  annotations: { payment: { status: "paid", payment_id: pidStr } },
+                  payment_id: pidStr,
+                  payment_url: paymentUrl,
+                  status: "pending",
+                  message: "Connection aborted. Call the tool again to retrieve the result.",
+                };
+              }
 
-            // Remove confirmation tool
-            if ((server as any)._registeredTools?.[confirmName]) {
+              cleanupSessionTool(payment.sessionId, toolName);
+
+              // Remove confirmation tool
+              if ((server as any)._registeredTools?.[confirmName]) {
               delete (server as any)._registeredTools[confirmName];
             } else if ((server as any).tools?.has(confirmName)) {
               (server as any).tools.delete(confirmName);
@@ -145,10 +159,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
               method: "notifications/tools/list_changed"
             }).catch(() => {});
 
-            return result;
+              return result;
 
-          } catch (error) {
-            cleanupSessionTool(payment.sessionId, toolName);
+            } catch (error) {
+              cleanupSessionTool(payment.sessionId, toolName);
             return {
               content: [{
                 type: "text",
@@ -158,6 +172,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
               message: "Technical error confirming payment - inform user to retry",
               payment_id: pidStr
             };
+          } finally {
+            abortWatcher.dispose();
           }
         }
       );

@@ -5,6 +5,7 @@ import { Logger } from "../types/logger.js";
 import { ToolExtraLike } from "../types/config.js";
 import { normalizeStatus } from "../utils/payment.js";
 import { StateStore } from "../types/state.js";
+import { AbortWatcher } from "../utils/abortWatcher.js";
 
 // ---------------------------------------------------------------------------
 // Helper: Create payment error with consistent structure
@@ -110,79 +111,95 @@ export const makePaidWrapper: PaidWrapperFactory = (
         const extra: ToolExtraLike = hasArgs
             ? (maybeExtra as ToolExtraLike)
             : (paramsOrExtra as ToolExtraLike);
+        const abortWatcher = new AbortWatcher((extra as any)?.signal, log);
 
-        const existedPaymentId = toolArgs?.payment_id;
+        try {
+            const existedPaymentId = toolArgs?.payment_id;
 
-        if (!existedPaymentId) {
-            // Create payment session
-            const { paymentId, paymentUrl } = await provider.createPayment(
-                priceInfo.amount,
-                priceInfo.currency,
-                `${toolName}() execution fee`
-            );
+            if (!existedPaymentId) {
+                // Create payment session
+                const { paymentId, paymentUrl } = await provider.createPayment(
+                    priceInfo.amount,
+                    priceInfo.currency,
+                    `${toolName}() execution fee`
+                );
 
-            // Store state for later retrieval (wrapped to distinguish undefined args from missing state)
-            await stateStore.set(String(paymentId), { args: toolArgs });
+                // Store state for later retrieval (wrapped to distinguish undefined args from missing state)
+                await stateStore.set(String(paymentId), { args: toolArgs });
 
-            log?.debug?.(
-                `[PayMCP:Resubmit] created payment id=${paymentId} url=${paymentUrl}`
-            );
+                log?.debug?.(
+                    `[PayMCP:Resubmit] created payment id=${paymentId} url=${paymentUrl}`
+                );
 
-            createPaymentError({
-                message: `Payment required to execute this tool.\nFollow the link to complete payment and retry with payment_id.\n\nPayment link: ${paymentUrl}\nPayment ID: ${paymentId}`,
-                code: 402,
-                error: "payment_required",
-                paymentId: String(paymentId),
-                paymentUrl,
-                retryInstructions: "Follow the link, complete payment, then retry with payment_id.",
-                status: "required",
-            });
-        }
-
-        // LOCK: Acquire per-payment-id lock to prevent concurrent access
-        // This fixes both ENG-215 (race condition) and ENG-214 (payment loss)
-        return await stateStore.lock(existedPaymentId, async () => {
-            log?.debug?.(`[PayMCP:Resubmit] Lock acquired for payment_id=${existedPaymentId}`);
-
-            // Get state (don't delete yet)
-            const storedData = await stateStore.get(existedPaymentId);
-            log?.info?.(`[PayMCP:Resubmit] State retrieved: ${storedData !== undefined}`);
-
-            if (!storedData) {
-                log?.warn?.(`[PayMCP:Resubmit] No state found for payment_id=${existedPaymentId}`);
                 createPaymentError({
-                    message: "Unknown or expired payment_id.",
-                    code: 404,
-                    error: "payment_id_not_found",
-                    paymentId: existedPaymentId,
-                    retryInstructions: "Payment ID not found or already used. Get a new link by calling this tool without payment_id.",
+                    message: `Payment required to execute this tool.\nFollow the link to complete payment and retry with payment_id.\n\nPayment link: ${paymentUrl}\nPayment ID: ${paymentId}`,
+                    code: 402,
+                    error: "payment_required",
+                    paymentId: String(paymentId),
+                    paymentUrl,
+                    retryInstructions: "Follow the link, complete payment, then retry with payment_id.",
+                    status: "required",
                 });
             }
 
-            // Unwrap the stored args
-            const stored = storedData.args;
+            // LOCK: Acquire per-payment-id lock to prevent concurrent access
+            // This fixes both ENG-215 (race condition) and ENG-214 (payment loss)
+            return await stateStore.lock(existedPaymentId, async () => {
+                log?.debug?.(`[PayMCP:Resubmit] Lock acquired for payment_id=${existedPaymentId}`);
 
-            // Check payment status with provider
-            const raw = await provider.getPaymentStatus(existedPaymentId);
-            const status = normalizeStatus(raw);
-            log?.debug?.(`[PayMCP:Resubmit] paymentId ${existedPaymentId}, poll status=${raw} -> ${status}`);
+                // Get state (don't delete yet)
+                const storedData = await stateStore.get(existedPaymentId);
+                log?.info?.(`[PayMCP:Resubmit] State retrieved: ${storedData !== undefined}`);
 
-            // Validate payment status (throws if not "paid")
-            validatePaymentStatus(status, existedPaymentId, log);
+                if (!storedData) {
+                    log?.warn?.(`[PayMCP:Resubmit] No state found for payment_id=${existedPaymentId}`);
+                    createPaymentError({
+                        message: "Unknown or expired payment_id.",
+                        code: 404,
+                        error: "payment_id_not_found",
+                        paymentId: existedPaymentId,
+                        retryInstructions: "Payment ID not found or already used. Get a new link by calling this tool without payment_id.",
+                    });
+                }
 
-            // Payment confirmed - execute tool BEFORE deleting state
-            log?.info?.(`[PayMCP:Resubmit] payment confirmed; invoking original tool ${toolName}`);
+                // Unwrap the stored args
+                const stored = storedData.args;
 
-            // Execute tool with ORIGINAL args (may fail - state not deleted yet)
-            const toolResult = await callOriginal(func, toolArgs, extra);
+                // Check payment status with provider
+                const raw = await provider.getPaymentStatus(existedPaymentId);
+                const status = normalizeStatus(raw);
+                log?.debug?.(`[PayMCP:Resubmit] paymentId ${existedPaymentId}, poll status=${raw} -> ${status}`);
 
-            // Tool succeeded - now delete state to enforce single-use
-            await stateStore.delete(existedPaymentId);
-            log?.info?.(`[PayMCP:Resubmit] Tool executed successfully, state deleted (single-use enforced)`);
+                // Validate payment status (throws if not "paid")
+                validatePaymentStatus(status, existedPaymentId, log);
 
-            // Return original tool result without modification
-            return toolResult;
-        }); // End of lock
+                // Payment confirmed - execute tool BEFORE deleting state
+                log?.info?.(`[PayMCP:Resubmit] payment confirmed; invoking original tool ${toolName}`);
+
+                // Execute tool with ORIGINAL args (may fail - state not deleted yet)
+                const toolResult = await callOriginal(func, toolArgs, extra);
+
+                if (abortWatcher.aborted) {
+                    log?.warn?.(`[PayMCP:Resubmit] aborted after payment confirmation but before returning tool result.`);
+                    return {
+                        content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
+                        annotations: { payment: { status: "paid", payment_id: existedPaymentId } },
+                        payment_id: existedPaymentId,
+                        status: "pending",
+                        message: "Connection aborted. Call the tool again to retrieve the result.",
+                    };
+                }
+
+                // Tool succeeded - now delete state to enforce single-use
+                await stateStore.delete(existedPaymentId);
+                log?.info?.(`[PayMCP:Resubmit] Tool executed successfully, state deleted (single-use enforced)`);
+
+                // Return original tool result without modification
+                return toolResult;
+            }); // End of lock
+        } finally {
+            abortWatcher.dispose();
+        }
     }
 
     return wrapper as unknown as ToolHandler;

@@ -47,11 +47,17 @@ export async function runElicitationLoop(
 
   const waitWithAbort = async <T>(p: Promise<T>): Promise<T> => {
     if (!signal) return await p;
-    if (signal.aborted) throw new Error("aborted");
+    if (signal.aborted) {
+      log.debug("[PayMCP:Elicitation] aborting", signal)
+      throw new Error(signal?.reason || "aborted");
+    }
 
     let cleanup: (() => void) | undefined;
     const abortPromise = new Promise<never>((_, reject) => {
-      const onAbort = () => reject(new Error("aborted"));
+      const onAbort = () => {
+        log.debug("[PayMCP:Elicitation] aborting", signal)
+        reject(new Error(signal?.reason || "aborted"));
+      }
       signal.addEventListener("abort", onAbort, { once: true });
       cleanup = () => signal.removeEventListener("abort", onAbort);
     });
@@ -135,15 +141,20 @@ export async function runElicitationLoop(
         : Promise.reject(new Error("No sendRequest()")));
     } catch (err: any) {
       if (err instanceof Error && err.message === "aborted") {
-        log.info?.(`[PayMCP:Elicitation] aborted by client during elicitation request.`);
-        return { action: "cancel", status: normalizeStatus("canceled") };
+        log.warn?.(`[PayMCP:Elicitation] aborted (treating as timeout/pending) during elicitation request.`);
+        return { action: "unknown", status: normalizeStatus("pending") };
       }
-      log.warn?.(`[PayMCP:Elicitation] elicitation request failed (attempt=${attempt + 1}): ${String(err)}`);
-      // fall through: we will still poll provider and possibly retry
+      if (err?.code === -32001 || /Request timed out/i.test(String(err))) {
+        log.warn?.(`[PayMCP:Elicitation] Timeout`);
+        return { action: "unknown", status: normalizeStatus("pending")};
+      }
       if (err?.code === -32601 || /Method not found/i.test(String(err))) {
         log.warn?.(`[PayMCP:Elicitation] Returning unsupported error`);
         return { action: "unknown", status: "unsupported" };
       }
+      log.warn?.(`[PayMCP:Elicitation] elicitation request failed (attempt=${attempt + 1}): ${String(err)}`);
+      // fall through: we will still poll provider and possibly retry
+
       return { action: "unknown", status: normalizeStatus("error") };
     }
 
@@ -161,8 +172,8 @@ export async function runElicitationLoop(
       status = await waitWithAbort(provider.getPaymentStatus(paymentId));
     } catch (err: any) {
       if (err instanceof Error && err.message === "aborted") {
-        log.info?.(`[PayMCP:Elicitation] aborted by client during status check.`);
-        return { action: "cancel", status: normalizeStatus("canceled") };
+        log.warn?.(`[PayMCP:Elicitation] aborted (treating as timeout/pending) during status check.`);
+        return { action: "unknown", status: normalizeStatus("pending") };
       }
       throw err;
     }

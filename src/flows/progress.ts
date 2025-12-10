@@ -214,21 +214,15 @@ export const makePaidWrapper: PaidWrapperFactory = (
                     message: "Connection aborted. Call the tool again to retrieve the result.",
                 };
             }
-            // Ensure toolResult has required MCP 'content' field; if not, synthesize text.
-            if (!toolResult) {
-                return {
-                    content: [{ type: "text", text: "Tool completed after payment." }],
-                    annotations: { payment: { status: "paid", payment_id: paymentId } },
-                    raw: toolResult,
-                };
-            }
             // augment annotation
-            try {
-                (toolResult as any).annotations = {
-                    ...(toolResult as any).annotations,
-                    payment: { status: "paid", payment_id: paymentId },
-                };
-            } catch { /* ignore */ }
+            if (toolResult && typeof toolResult === "object") {
+                try {
+                    (toolResult as any).annotations = {
+                        ...(toolResult as any).annotations,
+                        payment: { status: "paid", payment_id: paymentId },
+                    };
+                } catch { /* ignore */ }
+            }
             if (stateStore && sessionKey) await stateStore.delete(sessionKey);
             return toolResult;
         } finally {

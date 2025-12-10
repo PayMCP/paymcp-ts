@@ -11,6 +11,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
   let mockStateStore: any;
   let priceInfo: PriceConfig;
   let registeredTools: Map<string, any>;
+  const clientInfo = () => ({ name: 'test', capabilities: {} });
 
   beforeEach(() => {
     // Setup mock provider

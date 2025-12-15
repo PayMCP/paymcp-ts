@@ -125,12 +125,13 @@ function extractUserIdAndEmail(authInfo:any,log:Logger): {userId:string,email:st
 
 export const makeSubscriptionWrapper: SubscriptionWrapperFactory = (
     func,
-    server,
+    _server,
     provider,
     subscriptionInfo,
     toolName,
-    stateStore,
+    _stateStore,
     _config,
+    _getClientInfo,
     logger,
 ) => {
     const log: Logger = logger ?? (provider as any).logger ?? console;

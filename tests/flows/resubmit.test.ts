@@ -13,6 +13,7 @@ describe('RESUBMIT Flow', () => {
   let mockConfig: any;
   let priceInfo: PriceConfig;
   let storage: Map<string, any>;
+  const clientInfo = () => ({ name: 'test', capabilities: {} });
 
   beforeEach(() => {
     mockProvider = {
@@ -95,6 +96,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -135,6 +137,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -151,6 +154,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -181,6 +185,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -223,6 +228,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -258,6 +264,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -287,6 +294,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -315,6 +323,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -341,6 +350,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -367,6 +377,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -395,6 +406,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -425,6 +437,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -456,6 +469,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -485,6 +499,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -515,6 +530,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -574,6 +590,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -605,6 +622,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -640,6 +658,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -663,6 +682,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -693,6 +713,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -721,6 +742,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -749,6 +771,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -777,6 +800,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -807,6 +831,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -832,6 +857,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -861,6 +887,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -897,6 +924,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -925,6 +953,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -950,6 +979,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -985,6 +1015,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -1017,6 +1048,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -1075,6 +1107,7 @@ describe('RESUBMIT Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 

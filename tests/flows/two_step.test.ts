@@ -11,6 +11,7 @@ describe('Two-Step Flow', () => {
   let mockStateStore: any;
   let mockConfig: any;
   let priceInfo: PriceConfig;
+  const clientInfo = () => ({ name: 'test', capabilities: {} });
 
   beforeEach(() => {
     mockProvider = {
@@ -79,6 +80,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -113,6 +115,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -130,6 +133,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -168,6 +172,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -219,6 +224,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -237,6 +243,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -268,6 +275,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -320,6 +328,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
       await wrapper({ requestId: 'req_123' });
@@ -351,6 +360,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
       await wrapper({ requestId: 'req_123' });
@@ -380,6 +390,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
       await wrapper({ requestId: 'req_123' });
@@ -408,6 +419,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
       await wrapper({ requestId: 'req_123' });
@@ -440,6 +452,7 @@ describe('Two-Step Flow', () => {
         'testTool2',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -456,6 +469,7 @@ describe('Two-Step Flow', () => {
         'testTool2',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
       await wrapper({ requestId: 'req_123' });
@@ -481,6 +495,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
       await wrapper({ requestId: 'req_123' });
@@ -507,6 +522,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
       await wrapper({ requestId: 'req_123' });
@@ -537,6 +553,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -573,6 +590,7 @@ describe('Two-Step Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 

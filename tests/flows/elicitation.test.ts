@@ -12,6 +12,7 @@ describe('Elicitation Flow', () => {
   let mockConfig: any;
   let priceInfo: PriceConfig;
   let mockExtra: ToolExtraLike;
+  const clientInfo = () => ({ name: 'test', capabilities: {} });
 
   beforeEach(() => {
     mockProvider = {
@@ -66,6 +67,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -85,6 +87,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -118,6 +121,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -139,6 +143,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -162,6 +167,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -186,6 +192,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -209,6 +216,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -234,6 +242,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -258,6 +267,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -281,6 +291,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -301,6 +312,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -330,6 +342,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -366,6 +379,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -394,6 +408,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -420,7 +435,10 @@ describe('Elicitation Flow', () => {
         mockServer,
         mockProvider,
         priceInfo,
-        'testTool'
+        'testTool',
+        mockStateStore,
+        mockConfig,
+        clientInfo
       );
 
       await wrapper(mockExtra);
@@ -443,6 +461,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -468,6 +487,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -495,6 +515,7 @@ describe('Elicitation Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 

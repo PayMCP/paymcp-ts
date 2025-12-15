@@ -22,19 +22,23 @@ export class PayMCP {
     private originalRegisterTool: McpServerLike["registerTool"];
     private installed = false;
     private subscriptionToolsRegistered = false;
+    private clientInfo = {name:"Unknown client", capabilities: {}}
+    private logger;
 
     constructor(server: McpServerLike, opts: PayMCPOptions) {
+        this.logger = opts.logger ?? console;
         this.server = server;
         this.providers = buildProviders(opts.providers as ProvidersInput);
         this.flow = opts.mode ?? opts.paymentFlow ?? PaymentFlow.TWO_STEP;
         if (opts.mode && opts.paymentFlow && opts.mode !== opts.paymentFlow) {
-            console.warn("[PayMCP] Both `mode` and `paymentFlow` were provided; `mode` takes precedence. `paymentFlow` will be deprecated soon.");
+            this.logger.warn?.("[PayMCP] Both `mode` and `paymentFlow` were provided; `mode` takes precedence. `paymentFlow` will be deprecated soon.");
         }
 
         this.stateStore = opts.stateStore ?? new InMemoryStateStore();
         this.wrapperFactory = makeFlow(this.flow);
         this.originalRegisterTool = server.registerTool.bind(server);
         this.patch();
+        this.patchInitialize();
 
         // DYNAMIC_TOOLS flow requires patching server.connect() and tools/list handler
         // CRITICAL: Must be synchronous to patch server.connect() BEFORE it's called
@@ -93,6 +97,8 @@ export class PayMCP {
                     name,
                     self.stateStore,
                     config,
+                    self.getClientInfo,
+                    self.logger
                 );
 
                 wrapped = async function (...args: any[]): Promise<any> {
@@ -114,7 +120,7 @@ export class PayMCP {
 
                 // wrap the handler in a payment flow
                 const paymentWrapper = self.wrapperFactory(
-                    handler, self.server, provider, price, name, self.stateStore, config
+                    handler, self.server, provider, price, name, self.stateStore, config, self.getClientInfo, self.logger
                 );
 
                 if (config._meta && [PaymentFlow.TWO_STEP, PaymentFlow.DYNAMIC_TOOLS].includes(self.flow)) { //removing _meta from original tool - it's added to confirm tool
@@ -142,6 +148,26 @@ export class PayMCP {
         this.installed = true;
     }
 
+    /** Intercept initialize to capture client capabilities per session. */
+    private patchInitialize() {
+        const srv: any = (this.server as any).server ?? this.server;
+        const handlers = srv?._requestHandlers;
+        if (!handlers?.has?.('initialize')) return;
+
+        const original = handlers.get('initialize');
+        if ((original as any)?._paymcp_caps_patched) return;
+
+        const patched = async (request: any, extra: any) => {
+            const clientInfo = request?.params?.clientInfo ?? {"name":"Unknown client"};
+            Object.assign(this.clientInfo, { name: clientInfo.name, sessionId: extra?.sessionId, capabilities: request?.params?.capabilities ?? {} });
+            this.logger.debug(`[PayMCP] Client: ${JSON.stringify(this.clientInfo)}`);
+            return await original(request, extra);
+        };
+
+        (patched as any)._paymcp_caps_patched = true;
+        handlers.set('initialize', patched);
+    }
+
     /**
      * Best-effort: go through already registered tools and re-wrap.
      * SDK may not have a public API; cautiously checking private fields.
@@ -158,6 +184,10 @@ export class PayMCP {
             // re-register using the patch (it will wrap automatically)
             (this.server as any).registerTool(name, cfg, h);
         }
+    }
+
+    getClientInfo=()=>{
+        return this.clientInfo;
     }
 }
 

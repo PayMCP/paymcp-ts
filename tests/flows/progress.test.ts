@@ -12,6 +12,7 @@ describe('Progress Flow', () => {
   let mockConfig: any;
   let priceInfo: PriceConfig;
   let mockExtra: ToolExtraLike;
+  const clientInfo = () => ({ name: 'test', capabilities: {} });
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -73,6 +74,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -92,6 +94,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -133,6 +136,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -157,6 +161,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -188,6 +193,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -200,8 +206,8 @@ describe('Progress Flow', () => {
       await vi.advanceTimersByTimeAsync(DEFAULT_POLL_MS);
       const result = await promiseResult;
 
-      expect(result.status).toBe('canceled');
-      expect(result.message).toBe('Payment aborted by client');
+      expect(result.status).toBe('pending');
+      expect(result.message).toBe('Payment aborted. Call the tool again to continue.');
       expect(mockTool).not.toHaveBeenCalled();
     });
 
@@ -216,6 +222,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -247,6 +254,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -281,6 +289,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -290,9 +299,7 @@ describe('Progress Flow', () => {
       await vi.advanceTimersByTimeAsync(DEFAULT_POLL_MS);
       const result = await promiseResult;
 
-      expect(result.content).toEqual([{ type: 'text', text: 'Tool completed after payment.' }]);
-      expect(result.annotations?.payment?.status).toBe('paid');
-      expect(result.raw).toBe('simple string result');
+      expect(result).toBe('simple string result');
     });
 
     it('should handle annotation error gracefully', async () => {
@@ -311,6 +318,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -389,6 +397,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -420,6 +429,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -450,6 +460,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -477,6 +488,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -505,6 +517,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -540,6 +553,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -581,6 +595,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 
@@ -608,6 +623,7 @@ describe('Progress Flow', () => {
         'testTool',
         mockStateStore,
         mockConfig,
+        clientInfo,
         mockLogger
       );
 

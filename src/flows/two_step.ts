@@ -27,6 +27,7 @@ import type { BasePaymentProvider } from "../providers/base.js";
 import type { PriceConfig } from "../types/config.js";
 import { paymentPromptMessage } from "../utils/messages.js";
 import { Logger } from "../types/logger.js";
+import { AbortWatcher } from "../utils/abortWatcher.js";
 
 import { z } from "zod";
 import { StateStore } from "../types/state.js";
@@ -89,88 +90,105 @@ function ensureConfirmTool(
     const hasArgs = arguments.length === 2;
     const params = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : paramsOrExtra;
+    const abortWatcher = new AbortWatcher((extra as any)?.signal, log);
 
-    log?.info?.(`[PayMCP:TwoStep] confirm handler invoked for ${toolName}`);
-
-    const paymentId: string | undefined = hasArgs
-      ? (params as any)?.payment_id
-      : (extra as any)?.payment_id; // defensive fallback
-
-    log?.debug?.(`[PayMCP:TwoStep] confirm received payment_id=${paymentId}`);
-
-    if (!paymentId) {
-      return {
-        content: [{ type: "text", text: "Missing payment_id." }],
-        status: "error",
-        message: "Missing payment_id",
-      };
-    }
-
-    const stored = await stateStore.get(String(paymentId));
-
-    log?.debug?.(`[PayMCP:TwoStep] restoring args=${JSON.stringify(stored?.args)}`);
-
-    if (!stored) {
-      return {
-        content: [{ type: "text", text: "Unknown or expired payment_id." }],
-        status: "error",
-        message: "Unknown or expired payment_id",
-        payment_id: paymentId,
-      };
-    }
-
-    // Check provider status.
-    let status: string;
     try {
-      status = await provider.getPaymentStatus(paymentId);
-      log?.debug?.(`[PayMCP:TwoStep] provider.getPaymentStatus(${paymentId}) -> ${status}`);
-    } catch (err) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Failed to check payment status: ${(err as Error).message}`,
-          },
-        ],
-        status: "error",
-        message: "Failed to check payment status",
-        payment_id: paymentId,
-      };
-    }
+      log?.info?.(`[PayMCP:TwoStep] confirm handler invoked for ${toolName}`);
 
-    const statusLc = String(status).toLowerCase();
-    if (statusLc !== "paid") {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Payment status is ${status}, expected 'paid'.`,
-          },
-        ],
-        status: "error",
-        message: `Payment status is ${status}, expected 'paid'`,
-        payment_id: paymentId,
-      };
-    }
+      const paymentId: string | undefined = hasArgs
+        ? (params as any)?.payment_id
+        : (extra as any)?.payment_id; // defensive fallback
 
-    // We're good—consume stored args and call original.
-    await stateStore.delete(String(paymentId));
-    log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
-    const toolResult = await callOriginal(
-      originalHandler,
-      stored.args,
-      extra /* pass confirm extra */
-    );
-    // If toolResult missing content, synthesize one.
-    if (!toolResult || !Array.isArray((toolResult as any).content)) {
-      return {
-        content: [
-          { type: "text", text: "Tool completed after confirmed payment." },
-        ],
-        raw: toolResult,
-      };
+      log?.debug?.(`[PayMCP:TwoStep] confirm received payment_id=${paymentId}`);
+
+      if (!paymentId) {
+        return {
+          content: [{ type: "text", text: "Missing payment_id." }],
+          status: "error",
+          message: "Missing payment_id",
+        };
+      }
+
+      const stored = await stateStore.get(String(paymentId));
+
+      log?.debug?.(`[PayMCP:TwoStep] restoring args=${JSON.stringify(stored?.args)}`);
+
+      if (!stored) {
+        return {
+          content: [{ type: "text", text: "Unknown or expired payment_id." }],
+          status: "error",
+          message: "Unknown or expired payment_id",
+          payment_id: paymentId,
+        };
+      }
+
+      // Check provider status.
+      let status: string;
+      try {
+        status = await provider.getPaymentStatus(paymentId);
+        log?.debug?.(`[PayMCP:TwoStep] provider.getPaymentStatus(${paymentId}) -> ${status}`);
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to check payment status: ${(err as Error).message}`,
+            },
+          ],
+          status: "error",
+          message: "Failed to check payment status",
+          payment_id: paymentId,
+        };
+      }
+
+      const statusLc = String(status).toLowerCase();
+      if (statusLc !== "paid") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Payment status is ${status}, expected 'paid'.`,
+            },
+          ],
+          status: "error",
+          message: `Payment status is ${status}, expected 'paid'`,
+          payment_id: paymentId,
+        };
+      }
+
+      // We're good—consume stored args and call original.
+      await stateStore.delete(String(paymentId));
+      log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
+      const toolResult = await callOriginal(
+        originalHandler,
+        stored.args,
+        extra /* pass confirm extra */
+      );
+
+      if (abortWatcher.aborted) {
+        log?.warn?.(`[PayMCP:TwoStep] aborted after payment confirmation but before returning tool result.`);
+        return {
+          content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
+          annotations: { payment: { status: "paid", payment_id: paymentId } },
+          payment_id: paymentId,
+          status: "pending",
+          message: "Connection aborted. Call the tool again to retrieve the result.",
+        };
+      }
+
+      // If toolResult missing content, synthesize one.
+      if (!toolResult || !Array.isArray((toolResult as any).content)) {
+        return {
+          content: [
+            { type: "text", text: "Tool completed after confirmed payment." },
+          ],
+          raw: toolResult,
+        };
+      }
+      return toolResult;
+    } finally {
+      abortWatcher.dispose();
     }
-    return toolResult;
   };
 
   // Register the confirm tool (no price, so PayMCP will not wrap it again).
@@ -196,6 +214,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   toolName: string,
   stateStore: StateStore,
   config: any,
+  _getClientInfo: Record<string, any>,
   logger?: Logger
 ) => {
   const log: Logger = logger ?? (provider as any).logger ?? console;

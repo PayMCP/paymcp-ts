@@ -22,7 +22,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/providers/index.ts --format cjs,esm --dts --clean --sourcemap",
+    "build": "tsup src/index.ts src/providers/index.ts --format cjs,esm --dts --clean --sourcemap --external zod",
     "watch": "npm run build -- --watch",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -34,9 +34,13 @@
     "@types/node": "^24.9.1",
     "@vitest/coverage-v8": "^3.2.4",
     "@vitest/utils": "^3.2.4",
+    "zod": "^3.23.4 || ^4.1.13",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
+  },
+  "peerDependencies": {
+    "zod": ">=3.23.4 <5"
   },
   "sideEffects": false,
   "keywords": [
@@ -54,8 +58,5 @@
     "type": "git",
     "url": "git+https://github.com/PayMCP/paymcp-ts"
   },
-  "packageManager": "pnpm@10.12.4+sha512.5ea8b0deed94ed68691c9bad4c955492705c5eeb8a87ef86bc62c74a26b037b08ff9570f108b2e4dbd1dd1a9186fea925e527f141c648e85af45631074680184",
-  "dependencies": {
-    "zod": "3.23.4"
-  }
+  "packageManager": "pnpm@10.12.4+sha512.5ea8b0deed94ed68691c9bad4c955492705c5eeb8a87ef86bc62c74a26b037b08ff9570f108b2e4dbd1dd1a9186fea925e527f141c648e85af45631074680184"
 }

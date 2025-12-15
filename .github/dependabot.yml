@@ -40,11 +40,6 @@ updates:
     labels:
       - "dependencies"
       - "automated"
-    # Ignore specific dependency updates
-    ignore:
-      # Zod 4.x contains breaking changes - stay on 3.x
-      - dependency-name: "zod"
-        update-types: ["version-update:semver-major"]
 
   # Monitor GitHub Actions updates
   - package-ecosystem: "github-actions"

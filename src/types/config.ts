@@ -1,4 +1,5 @@
-import { BasePaymentProvider } from "../providers/base.js";
+import { BasePaymentProvider} from "../providers/base.js";
+import type { ProviderConfig } from "../providers/index.js";
 import { Logger } from "./logger.js";
 import { Mode, PaymentFlow } from "./payment.js";
 import { StateStore } from "./state.js";
@@ -20,7 +21,8 @@ export interface PayToolConfig extends Record<string, any> {
 }
 
 export interface PayMCPOptions {
-    providers: Record<string, Record<string, any>> | BasePaymentProvider[];
+    // Accept either a map of provider configs/instances or an array of provider instances.
+    providers: ProviderConfig | BasePaymentProvider[];
     /**
         * @deprecated Use `mode` instead.
         * @see {@link Mode}

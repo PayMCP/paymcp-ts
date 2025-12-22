@@ -1,5 +1,6 @@
 
 export enum Mode {
+    AUTO = "AUTO",
     ELICITATION = "ELICITATION",
     TWO_STEP = "TWO_STEP",
     PROGRESS = "PROGRESS",

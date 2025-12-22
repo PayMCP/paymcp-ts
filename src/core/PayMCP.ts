@@ -1,6 +1,6 @@
 import { PayMCPOptions, PayToolConfig } from "../types/config.js";
 import { McpServerLike } from "../types/mcp.js";
-import { PaymentFlow } from "../types/payment.js";
+import { Mode } from "../types/payment.js";
 import { buildProviders, ProviderInstances } from "../providers/index.js";
 import type { ProviderConfig, BasePaymentProvider } from "../providers/index.js";
 import { appendPriceToDescription } from "../utils/messages.js";
@@ -16,7 +16,7 @@ type ProvidersInput = ProviderConfig | BasePaymentProvider[];
 export class PayMCP {
     private server: McpServerLike;
     private providers: ProviderInstances;
-    private flow: PaymentFlow;
+    private flow: Mode;
     private stateStore: StateStore;
     private wrapperFactory: ReturnType<typeof makeFlow>;
     private originalRegisterTool: McpServerLike["registerTool"];
@@ -29,7 +29,7 @@ export class PayMCP {
         this.logger = opts.logger ?? console;
         this.server = server;
         this.providers = buildProviders(opts.providers as ProvidersInput);
-        this.flow = opts.mode ?? opts.paymentFlow ?? PaymentFlow.TWO_STEP;
+        this.flow = opts.mode ?? opts.paymentFlow ?? Mode.AUTO;
         if (opts.mode && opts.paymentFlow && opts.mode !== opts.paymentFlow) {
             this.logger.warn?.("[PayMCP] Both `mode` and `paymentFlow` were provided; `mode` takes precedence. `paymentFlow` will be deprecated soon.");
         }
@@ -42,7 +42,7 @@ export class PayMCP {
 
         // DYNAMIC_TOOLS flow requires patching server.connect() and tools/list handler
         // CRITICAL: Must be synchronous to patch server.connect() BEFORE it's called
-        if (this.flow === PaymentFlow.DYNAMIC_TOOLS) {
+        if (this.flow === Mode.DYNAMIC_TOOLS) {
             setupDynamicTools(server);
         }
 
@@ -123,11 +123,15 @@ export class PayMCP {
                     handler, self.server, provider, price, name, self.stateStore, config, self.getClientInfo, self.logger
                 );
 
-                if (config._meta && [PaymentFlow.TWO_STEP, PaymentFlow.DYNAMIC_TOOLS].includes(self.flow)) { //removing _meta from original tool - it's added to confirm tool
+                if (config._meta && [Mode.TWO_STEP, Mode.DYNAMIC_TOOLS].includes(self.flow)) { //removing _meta from original tool - it's added to confirm tool
                     delete config._meta
                 }
 
-                if (config.inputSchema && self.flow === PaymentFlow.RESUBMIT && typeof config.inputSchema === 'object') {
+                if (
+                    config.inputSchema &&
+                    [Mode.RESUBMIT, Mode.AUTO].includes(self.flow) &&
+                    typeof config.inputSchema === 'object'
+                ) {
                     const schema = config.inputSchema as Record<string, any>;
                     // Add optional payment_id field with description
                     schema.payment_id = z.string().optional().describe(

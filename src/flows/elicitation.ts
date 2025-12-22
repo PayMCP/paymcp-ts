@@ -1,7 +1,6 @@
 // lib/ts/paymcp/src/flows/elicitation.ts
 import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
 import type { McpServerLike } from "../types/mcp.js";
-import type { BasePaymentProvider } from "../providers/base.js";
 import type { PriceConfig, ToolExtraLike } from "../types/config.js";
 import { Logger } from "../types/logger.js";
 import { normalizeStatus } from "../utils/payment.js";
@@ -22,7 +21,7 @@ import { AbortWatcher } from "../utils/abortWatcher.js";
 export const makePaidWrapper: PaidWrapperFactory = (
   func,
   _server: McpServerLike,
-  provider: BasePaymentProvider,
+  providers,
   priceInfo: PriceConfig,
   toolName: string,
   stateStore: StateStore,
@@ -30,6 +29,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
   getClientInfo: () => { name: string, capabilities: Record<string, any> },
   logger?: Logger
 ) => {
+  const provider = Object.values(providers)[0];
+  if (!provider) {
+    throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
+  }
   const log: Logger = logger ?? (provider as any).logger ?? console;
 
   async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {

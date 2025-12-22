@@ -79,20 +79,15 @@ export class PayMCP {
             let wrapped = handler;
 
             if (subscription) {
-                const provider = Object.values(self.providers)[0];
-                if (!provider) {
-                    throw new Error(`[PayMCP] No payment provider configured (tool: ${name}).`);
-                }
-
                 if (!self.subscriptionToolsRegistered) {
-                    registerSubscriptionTools(self.server, provider);
+                    registerSubscriptionTools(self.server, self.providers);
                     self.subscriptionToolsRegistered = true;
                 }
 
                 const subscriptionWrapper = makeSubscriptionWrapper(
                     handler,
                     self.server,
-                    provider,
+                    self.providers,
                     subscription,
                     name,
                     self.stateStore,
@@ -106,12 +101,6 @@ export class PayMCP {
                 };
 
             } else if (price) {
-                // pick the first provider (or a specific one by name? TBD)
-                const provider = Object.values(self.providers)[0];
-                if (!provider) {
-                    throw new Error(`[PayMCP] No payment provider configured (tool: ${name}).`);
-                }
-
                 // append price to the description
                 config = {
                     ...config,
@@ -120,7 +109,7 @@ export class PayMCP {
 
                 // wrap the handler in a payment flow
                 const paymentWrapper = self.wrapperFactory(
-                    handler, self.server, provider, price, name, self.stateStore, config, self.getClientInfo, self.logger
+                    handler, self.server, self.providers, price, name, self.stateStore, config, self.getClientInfo, self.logger
                 );
 
                 if (config._meta && [Mode.TWO_STEP, Mode.DYNAMIC_TOOLS].includes(self.flow)) { //removing _meta from original tool - it's added to confirm tool

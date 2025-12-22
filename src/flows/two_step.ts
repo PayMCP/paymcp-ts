@@ -209,7 +209,7 @@ function ensureConfirmTool(
 export const makePaidWrapper: PaidWrapperFactory = (
   func,
   server: McpServerLike,
-  provider: BasePaymentProvider,
+  providers,
   priceInfo: PriceConfig,
   toolName: string,
   stateStore: StateStore,
@@ -217,6 +217,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
   _getClientInfo: Record<string, any>,
   logger?: Logger
 ) => {
+  const provider = Object.values(providers)[0];
+  if (!provider) {
+    throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
+  }
   const log: Logger = logger ?? (provider as any).logger ?? console;
 
   // Eagerly register confirm tool so the client sees it in the initial tool list.

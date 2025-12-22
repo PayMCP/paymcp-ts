@@ -9,7 +9,7 @@ import { makePaidWrapper as makeResubmitWrapper } from "./resubmit.js";
 export const makePaidWrapper: PaidWrapperFactory = (
   func,
   server,
-  provider,
+  providers,
   priceInfo,
   toolName,
   stateStore,
@@ -17,12 +17,16 @@ export const makePaidWrapper: PaidWrapperFactory = (
   getClientInfo,
   logger
 ) => {
+  const provider = Object.values(providers)[0];
+  if (!provider) {
+    throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
+  }
   const log: Logger = logger ?? (provider as any).logger ?? console;
 
   const elicitationWrapper = makeElicitationWrapper(
     func,
     server,
-    provider,
+    providers,
     priceInfo,
     toolName,
     stateStore,
@@ -34,7 +38,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   const resubmitWrapper = makeResubmitWrapper(
     func,
     server,
-    provider,
+    providers,
     priceInfo,
     toolName,
     stateStore,
@@ -59,4 +63,3 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
   return wrapper as unknown as ToolHandler;
 };
-

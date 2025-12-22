@@ -82,7 +82,7 @@ function validatePaymentStatus(status: string, paymentId: string, log?: Logger):
 export const makePaidWrapper: PaidWrapperFactory = (
     func,
     _server,
-    provider,
+    providers,
     priceInfo,
     toolName,
     stateStore,
@@ -90,6 +90,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
     _getClientInfo,
     logger,
 ) => {
+    const provider = Object.values(providers)[0];
+    if (!provider) {
+        throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
+    }
     const log: Logger = logger ?? (provider as any).logger ?? console;
 
     if (!stateStore) {

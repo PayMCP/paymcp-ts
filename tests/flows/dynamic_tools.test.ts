@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makePaidWrapper, PAYMENTS, HIDDEN_TOOLS } from '../../src/flows/dynamic_tools.js';
 import type { BasePaymentProvider } from '../../src/providers/base.js';
+import type { ProviderInstances } from '../../src/providers/index.js';
 import type { PriceConfig } from '../../src/types/config.js';
 import type { McpServerLike } from '../../src/types/mcp.js';
 
 describe('DYNAMIC_TOOLS Flow', () => {
   let mockProvider: BasePaymentProvider;
+  let mockProviders: ProviderInstances;
   let mockServer: McpServerLike;
   let mockLogger: any;
   let mockStateStore: any;
@@ -23,6 +25,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       getPaymentStatus: vi.fn().mockResolvedValue('paid'),
       logger: undefined
     } as any;
+    mockProviders = { mock: mockProvider };
 
     // Setup mock server with dynamic tool registration
     registeredTools = new Map();
@@ -79,7 +82,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -99,7 +102,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -139,7 +142,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -178,7 +181,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -225,7 +228,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -255,7 +258,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -286,7 +289,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -315,7 +318,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -342,7 +345,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -369,7 +372,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -395,7 +398,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -420,7 +423,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -442,7 +445,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -472,7 +475,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -490,7 +493,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -519,7 +522,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -550,7 +553,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -624,7 +627,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -656,7 +659,7 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,

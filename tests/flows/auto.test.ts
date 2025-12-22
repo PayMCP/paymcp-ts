@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { makePaidWrapper } from "../../src/flows/auto.js";
 import type { BasePaymentProvider } from "../../src/providers/base.js";
+import type { ProviderInstances } from "../../src/providers/index.js";
 import type { PriceConfig, ToolExtraLike } from "../../src/types/config.js";
 import type { McpServerLike } from "../../src/types/mcp.js";
 
 describe("AUTO Flow", () => {
   let mockProvider: BasePaymentProvider;
+  let mockProviders: ProviderInstances;
   let mockServer: McpServerLike;
   let mockLogger: any;
   let mockStateStore: any;
@@ -20,6 +22,7 @@ describe("AUTO Flow", () => {
       getPaymentStatus: vi.fn().mockResolvedValue("paid"),
       logger: undefined,
     } as any;
+    mockProviders = { mock: mockProvider };
 
     mockServer = {} as any;
 
@@ -49,7 +52,7 @@ describe("AUTO Flow", () => {
     const wrapper = makePaidWrapper(
       mockTool,
       mockServer,
-      mockProvider,
+      mockProviders,
       priceInfo,
       "testTool",
       mockStateStore,
@@ -77,7 +80,7 @@ describe("AUTO Flow", () => {
     const wrapper = makePaidWrapper(
       mockTool,
       mockServer,
-      mockProvider,
+      mockProviders,
       priceInfo,
       "testTool",
       mockStateStore,
@@ -99,4 +102,3 @@ describe("AUTO Flow", () => {
     expect(mockTool).not.toHaveBeenCalled();
   });
 });
-

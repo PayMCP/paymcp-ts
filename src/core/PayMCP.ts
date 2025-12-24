@@ -39,7 +39,7 @@ export class PayMCP {
         
         if (Object.keys(this.providers)[0]==='x402') {
             this.logger.log("[PayMCP] `Mode` parameter will be ignored for x402 provider");
-            this.wrapperFactory = makeFlow("x402");
+            this.wrapperFactory = makeFlow("resubmit_x402");
         } else {
              this.wrapperFactory = makeFlow(this.flow);
         }

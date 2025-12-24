@@ -156,4 +156,3 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
     return wrapper as unknown as ToolHandler;
 };
-

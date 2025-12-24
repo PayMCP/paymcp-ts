@@ -31,7 +31,8 @@ function isProvider(x: unknown): x is BasePaymentProvider {
 
 function keyFor(inst: any, fallback?: string): string {
   const name = (inst as any)?.slug ?? (inst as any)?.name ?? (inst as any)?.constructor?.name ?? fallback ?? "provider";
-  return String(name).toLowerCase();
+  console.log("[PayMCP] Provider name:",String(name).toLowerCase().replace("provider",""));
+  return String(name).toLowerCase().replace("provider","");
 }
 
 /** Allow advanced users/plugins to register additional provider classes at runtime. */

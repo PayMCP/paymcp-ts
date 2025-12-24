@@ -116,6 +116,8 @@ describe('PayMCP', () => {
         PaymentFlow.TWO_STEP,
         PaymentFlow.ELICITATION,
         PaymentFlow.PROGRESS,
+        PaymentFlow.RESUBMIT,
+        PaymentFlow.AUTO,
         // OOB is not implemented yet
       ];
 
@@ -170,6 +172,26 @@ describe('PayMCP', () => {
       expect(paymcp).toBeDefined();
     });
 
+    it('should handle RESUBMIT flow', () => {
+      const config: PayMCPOptions = {
+        ...basicConfig,
+        paymentFlow: PaymentFlow.RESUBMIT,
+      };
+
+      const paymcp = createPayMCP(mockServer, config);
+      expect(paymcp).toBeDefined();
+    });
+
+    it('should handle AUTO flow', () => {
+      const config: PayMCPOptions = {
+        ...basicConfig,
+        paymentFlow: PaymentFlow.AUTO,
+      };
+
+      const paymcp = createPayMCP(mockServer, config);
+      expect(paymcp).toBeDefined();
+    });
+
     it('should throw for OOB flow (not implemented)', () => {
       const config: PayMCPOptions = {
         ...basicConfig,
@@ -177,6 +199,25 @@ describe('PayMCP', () => {
       };
 
       expect(() => createPayMCP(mockServer, config)).toThrow('Unknown payment flow: OOB');
+    });
+  });
+
+  describe('schema augmentation', () => {
+    it('adds optional payment_id in AUTO flow', () => {
+      const originalRegisterTool = mockServer.registerTool;
+      createPayMCP(mockServer, { ...basicConfig, paymentFlow: PaymentFlow.AUTO });
+
+      (mockServer as any).registerTool(
+        'paidTool',
+        {
+          price: { amount: 1, currency: 'USD' },
+          inputSchema: {},
+        },
+        vi.fn()
+      );
+
+      const passedConfig = (originalRegisterTool as any).mock.calls[0][1];
+      expect(passedConfig.inputSchema.payment_id).toBeDefined();
     });
   });
 

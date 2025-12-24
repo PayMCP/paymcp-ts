@@ -5,6 +5,7 @@ import * as twoStepMod from "./two_step.js";
 import * as resubmitMod from "./resubmit.js";
 import * as progressMod from "./progress.js";
 import * as dynamicToolsMod from "./dynamic_tools.js";
+import * as autoMod from "./auto.js";
 
 
 /** Registry of known flows. */
@@ -14,7 +15,8 @@ const FLOW_MAP: Record<string, FlowModule> = {
   progress: progressMod,
   dynamic_tools: dynamicToolsMod,
   list_change: dynamicToolsMod,
-  resubmit: resubmitMod
+  resubmit: resubmitMod,
+  auto: autoMod,
 };
 
 /** Select a flow by name (case-insensitive) or throw an error. */

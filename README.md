@@ -12,7 +12,7 @@ See the [full documentation](https://paymcp.info).
 
 - ✅ Add **per‑tool `price` config** when you register MCP tools to enable pay‑per‑request billing.
 - ✅ Gate tools behind **active subscriptions** (when your provider supports them) with built‑in helper tools.
-- 🔁 Pay‑per‑request flows support multiple **modes** (TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS).
+- 🔁 Pay‑per‑request flows support multiple **modes** (AUTO / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS).
 - 🔌 Built-in support for major providers ([see list](#supported-providers)) — plus a pluggable interface to add your own.
 - ⚙️ Easy **drop‑in integration**: `installPayMCP(server, options)` — no need to rewrite tools.
 - 🛡 Server‑side verification with your payment provider runs before the tool logic.
@@ -55,7 +55,7 @@ import { StripeProvider } from 'paymcp/providers';
 installPayMCP(server, {
   // Use a provider that matches your monetization: Stripe supports subscriptions; others are pay-per-request only.
   providers: [new StripeProvider({ apiKey: "sk_test_..." })],
-  mode: Mode.TWO_STEP, // optional, TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS
+  mode: Mode.AUTO, // optional (default: AUTO). AUTO / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS
 });
 ```
 
@@ -217,7 +217,7 @@ await redisClient.connect();
 
 installPayMCP(server, {
   providers: [ /* ... */ ],
-  mode: Mode.TWO_STEP,
+  mode: Mode.AUTO,
   stateStore: new RedisStateStore(redisClient),
 });
 ```
@@ -230,7 +230,13 @@ installPayMCP(server, {
 
 The `mode` option controls how the user is guided through pay‑per‑request payment flows. Choose what fits your UX and client capabilities.
 
-### `Mode.TWO_STEP` (default)
+### `Mode.AUTO` (default)
+Chooses the best flow at runtime based on client capabilities:
+
+- If `capabilities.elicitation` is available → uses `Mode.ELICITATION`.
+- Otherwise → uses `Mode.RESUBMIT`.
+
+### `Mode.TWO_STEP`
 Splits the original tool into two MCP methods.
 
 1. **Initiate**: original tool returns a `payment_url` + `payment_id` + `next_step` (e.g. `confirm_payment`).
@@ -256,7 +262,7 @@ Keeps the tool call open, shows a payment link, and streams **progress updates**
 ### `Mode.DYNAMIC_TOOLS`
 Steer the client and the LLM by changing the visible tool set at specific points in the flow (e.g., temporarily expose `confirm_payment_*`), thereby guiding the next valid action.
 
-> When in doubt, start with **`TWO_STEP`** — highest compatibility.
+> When in doubt, start with **`AUTO`** — it uses ELICITATION when supported, otherwise RESUBMIT.
 
 ---
 

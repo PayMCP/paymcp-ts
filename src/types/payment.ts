@@ -18,4 +18,5 @@ export type PaymentFlow = Mode;
 export interface CreatePaymentResult {
   paymentId: string;
   paymentUrl: string; 
+  paymentData?: any;
 }

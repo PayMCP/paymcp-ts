@@ -6,7 +6,7 @@ import * as resubmitMod from "./resubmit.js";
 import * as progressMod from "./progress.js";
 import * as dynamicToolsMod from "./dynamic_tools.js";
 import * as autoMod from "./auto.js";
-
+import * as x402Mod from './x402.js'
 
 /** Registry of known flows. */
 const FLOW_MAP: Record<string, FlowModule> = {
@@ -17,6 +17,7 @@ const FLOW_MAP: Record<string, FlowModule> = {
   list_change: dynamicToolsMod,
   resubmit: resubmitMod,
   auto: autoMod,
+  x402: x402Mod
 };
 
 /** Select a flow by name (case-insensitive) or throw an error. */

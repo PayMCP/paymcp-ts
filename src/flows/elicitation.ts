@@ -8,6 +8,7 @@ import { paymentPromptMessage } from "../utils/messages.js";
 import { StateStore } from "../types/state.js";
 import { runElicitationLoop } from "../utils/elicitation.js";
 import { AbortWatcher } from "../utils/abortWatcher.js";
+import { callOriginal } from "../utils/tool.js";
 
 /**
  * Wrap a tool handler with an *elicitation-based* payment flow:
@@ -217,12 +218,3 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
   return wrapper as unknown as ToolHandler;
 };
-
-/** Safely invoke the original tool handler preserving args. */
-async function callOriginal(func: ToolHandler, args: any | undefined, extra: ToolExtraLike) {
-  if (args !== undefined) {
-    return await func(args, extra);
-  } else {
-    return await func(extra);
-  }
-}

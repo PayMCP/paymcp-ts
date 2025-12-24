@@ -4,6 +4,7 @@ import { Logger } from "../types/logger.js";
 import { z } from "zod";
 import { decodeJwtPayloadUnverified } from "../utils/jwt.js";
 import type { ProviderInstances } from "../providers/index.js";
+import { callOriginal } from "../utils/tool.js";
 
 async function ensureSubscriptionAllowed(
     provider: unknown,
@@ -165,20 +166,6 @@ export const makeSubscriptionWrapper: SubscriptionWrapperFactory = (
     return wrapper as unknown as ToolHandler;
 }
 
-// ---------------------------------------------------------------------------
-// Helper: safely invoke the original tool handler preserving args shape
-// ---------------------------------------------------------------------------
-async function callOriginal(
-    func: ToolHandler,
-    args: any | undefined,
-    extra: ToolExtraLike
-) {
-    if (args !== undefined) {
-        return await func(args, extra);
-    } else {
-        return await func(extra);
-    }
-}
 
 export function registerSubscriptionTools(
     server: unknown,

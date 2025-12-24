@@ -45,6 +45,11 @@ export interface ToolExtraLike {
         token: string,
         userId?: string,
         email?: string
+    };
+    requestInfo?: {
+        headers?: {
+            "payment-signature" : string
+        }
     }
     reportProgress?: (args: { progress?: number; total?: number; message?: string; }) => Promise<void> | void;
 }

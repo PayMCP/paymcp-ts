@@ -4,8 +4,8 @@ import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
 import { Logger } from "../types/logger.js";
 import { ToolExtraLike } from "../types/config.js";
 import { normalizeStatus } from "../utils/payment.js";
-import { StateStore } from "../types/state.js";
 import { AbortWatcher } from "../utils/abortWatcher.js";
+import { callOriginal } from "../utils/tool.js";
 
 // ---------------------------------------------------------------------------
 // Helper: Create payment error with consistent structure
@@ -209,17 +209,3 @@ export const makePaidWrapper: PaidWrapperFactory = (
     return wrapper as unknown as ToolHandler;
 };
 
-// ---------------------------------------------------------------------------
-// Helper: safely invoke the original tool handler preserving args shape
-// ---------------------------------------------------------------------------
-async function callOriginal(
-    func: ToolHandler,
-    args: any | undefined,
-    extra: ToolExtraLike
-) {
-    if (args !== undefined) {
-        return await func(args, extra);
-    } else {
-        return await func(extra);
-    }
-}

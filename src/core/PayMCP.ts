@@ -10,6 +10,7 @@ import { InMemoryStateStore } from "../state/inMemory.js";
 import { setup as setupDynamicTools } from "../flows/dynamic_tools.js";
 import { z } from "zod";
 import { makeSubscriptionWrapper, registerSubscriptionTools } from "../subscriptions/index.js";
+import { buildX402middleware } from "../utils/x402.js";
 
 type ProvidersInput = ProviderConfig | BasePaymentProvider[];
 
@@ -24,6 +25,7 @@ export class PayMCP {
     private subscriptionToolsRegistered = false;
     private clientInfo = {name:"Unknown client", capabilities: {}}
     private logger;
+    private paidtools: Record<string, {amount:number,currency:string,description?:string}>={}
 
     constructor(server: McpServerLike, opts: PayMCPOptions) {
         this.logger = opts.logger ?? console;
@@ -33,9 +35,15 @@ export class PayMCP {
         if (opts.mode && opts.paymentFlow && opts.mode !== opts.paymentFlow) {
             this.logger.warn?.("[PayMCP] Both `mode` and `paymentFlow` were provided; `mode` takes precedence. `paymentFlow` will be deprecated soon.");
         }
-
         this.stateStore = opts.stateStore ?? new InMemoryStateStore();
-        this.wrapperFactory = makeFlow(this.flow);
+        
+        if (Object.keys(this.providers)[0]==='x402') {
+            this.logger.log("[PayMCP] `Mode` parameter will be ignored for x402 provider");
+            this.wrapperFactory = makeFlow("x402");
+        } else {
+             this.wrapperFactory = makeFlow(this.flow);
+        }
+        
         this.originalRegisterTool = server.registerTool.bind(server);
         this.patch();
         this.patchInitialize();
@@ -127,7 +135,7 @@ export class PayMCP {
                         "Optional payment identifier returned by a previous call when payment is required"
                     );
                 }
-
+                self.paidtools[name]={amount:price.amount,currency:price.currency,description:config.description};
                 wrapped = async function (...args: any[]): Promise<any> {
                     return await paymentWrapper(...args);
                 };
@@ -181,6 +189,10 @@ export class PayMCP {
 
     getClientInfo=()=>{
         return this.clientInfo;
+    }
+
+    getX402Middleware=()=>{
+        return buildX402middleware(this.providers, this.stateStore, this.paidtools, this.logger);
     }
 }
 

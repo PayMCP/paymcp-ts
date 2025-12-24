@@ -31,22 +31,8 @@ import { AbortWatcher } from "../utils/abortWatcher.js";
 
 import { z } from "zod";
 import { StateStore } from "../types/state.js";
+import { callOriginal } from "../utils/tool.js";
 
-/**
- * Safely invoke the original tool handler preserving the (args, extra) vs (extra)
- * call shapes used by the MCP TS SDK.
- */
-async function callOriginal(
-  func: ToolHandler,
-  toolArgs: any | undefined,
-  extra: any
-) {
-  if (toolArgs !== undefined) {
-    return await func(toolArgs, extra);
-  } else {
-    return await func(extra);
-  }
-}
 
 /**
  * Register (or return existing) confirmation tool.

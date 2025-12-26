@@ -1,4 +1,4 @@
-import { PayMCPOptions, PayToolConfig } from "../types/config.js";
+import { ClientInfo, PayMCPOptions, PayToolConfig } from "../types/config.js";
 import { McpServerLike } from "../types/mcp.js";
 import { Mode } from "../types/payment.js";
 import { buildProviders, ProviderInstances } from "../providers/index.js";
@@ -23,7 +23,7 @@ export class PayMCP {
     private originalRegisterTool: McpServerLike["registerTool"];
     private installed = false;
     private subscriptionToolsRegistered = false;
-    private clientInfo = {name:"Unknown client", capabilities: {}}
+    private clientInfo: ClientInfo = {name:"Unknown client", capabilities: {}}
     private logger;
     private paidtools: Record<string, {amount:number,currency:string,description?:string}>={}
 
@@ -37,12 +37,16 @@ export class PayMCP {
         }
         this.stateStore = opts.stateStore ?? new InMemoryStateStore();
         
-        if (Object.keys(this.providers)[0]==='x402') {
-            this.logger.log("[PayMCP] `Mode` parameter will be ignored for x402 provider");
-            this.wrapperFactory = makeFlow("resubmit_x402");
-        } else {
-             this.wrapperFactory = makeFlow(this.flow);
-        }
+        if (Object.keys(this.providers)[0]==='x402' && this.flow!==Mode.X402) {
+            this.logger.warn?.(`[PayMCP] ${this.flow} mode is not supported for x402 provider. Switching to ${Mode.X402} mode.`);
+            this.flow=Mode.X402
+        } 
+        if (this.flow===Mode.X402 && Object.keys(this.providers)[0]!=='x402') {
+            this.logger.warn?.(`[PayMCP] x402 mode is not supported for '${Object.keys(this.providers)[0]}' provider. Switching to ${Mode.RESUBMIT} mode.`);
+            this.flow=Mode.RESUBMIT
+        } 
+        
+        this.wrapperFactory = makeFlow(this.flow);
         
         this.originalRegisterTool = server.registerTool.bind(server);
         this.patch();
@@ -192,7 +196,8 @@ export class PayMCP {
     }
 
     getX402Middleware=()=>{
-        return buildX402middleware(this.providers, this.stateStore, this.paidtools, this.logger);
+        const clientInfo=this.getClientInfo();
+        return buildX402middleware(this.providers, this.stateStore, this.paidtools, clientInfo, this.logger);
     }
 }
 

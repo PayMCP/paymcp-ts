@@ -48,8 +48,15 @@ export interface ToolExtraLike {
     };
     requestInfo?: {
         headers?: {
-            "payment-signature" : string
+            "payment-signature"? : string
+            "x-payment"? : string
         }
     }
     reportProgress?: (args: { progress?: number; total?: number; message?: string; }) => Promise<void> | void;
+}
+
+export interface ClientInfo {
+    name: string;
+    sessionId?:string;
+    capabilities: Record<string,any>
 }

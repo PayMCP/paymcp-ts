@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { makePaidWrapper } from '../../src/flows/resubmit_x402.js';
+import { makePaidWrapper } from '../../src/flows/x402.js';
 import type { BasePaymentProvider } from '../../src/providers/base.js';
 import type { ProviderInstances } from '../../src/providers/index.js';
 import type { PriceConfig } from '../../src/types/config.js';

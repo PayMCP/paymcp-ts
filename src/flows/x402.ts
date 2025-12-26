@@ -3,7 +3,6 @@
 import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
 import { Logger } from "../types/logger.js";
 import { ToolExtraLike } from "../types/config.js";
-import { normalizeStatus } from "../utils/payment.js";
 import { AbortWatcher } from "../utils/abortWatcher.js";
 import { callOriginal } from "../utils/tool.js";
 
@@ -52,7 +51,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     toolName,
     stateStore,
     _config,
-    _getClientInfo,
+    getClientInfo,
     logger,
 ) => {
     const provider = Object.values(providers)[0];
@@ -71,7 +70,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
     async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
         log?.debug?.(
-            `[PayMCP:Resubmit] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`
+            `[PayMCP:x402] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`
         );
 
 
@@ -81,16 +80,17 @@ export const makePaidWrapper: PaidWrapperFactory = (
         const extra: ToolExtraLike = hasArgs
             ? (maybeExtra as ToolExtraLike)
             : (paramsOrExtra as ToolExtraLike);
-        const abortWatcher = new AbortWatcher((extra as any)?.signal, log);
+        //const abortWatcher = new AbortWatcher((extra as any)?.signal, log);
 
 
-        const paymentSigB64 = extra.requestInfo?.headers?.['payment-signature']
+        const paymentSigB64 = extra.requestInfo?.headers?.['payment-signature'] ?? extra.requestInfo?.headers?.['x-payment'];
+
         if (!paymentSigB64) { //that shouldn't be possible if x402middlware installed. If not - return json-rpc error just in case
             const { paymentId, paymentData } = await provider.createPayment(
-                    priceInfo.amount,
-                    priceInfo.currency,
-                    `${toolName}() execution fee`
-                );
+                priceInfo.amount,
+                priceInfo.currency,
+                `${toolName}() execution fee`
+            );
             const challengeId = paymentData?.accepts?.[0]?.extra?.challengeId;
             if (!challengeId) {
                 throw new Error("Payment provider did not return challengeId in payment requirements");
@@ -103,16 +103,23 @@ export const makePaidWrapper: PaidWrapperFactory = (
         const sig = JSON.parse(
             Buffer.from(paymentSigB64, "base64").toString("utf8")
         );
-        
-        const challengeId = sig.accepted.extra.challengeId;
+
+        const clientInfo = getClientInfo();
+
+        const challengeId = sig.accepted?.extra?.challengeId ?? `${clientInfo.sessionId}-${toolName}`
+
+        log.log("[PayMCP getting paymentData from ", `${clientInfo.sessionId}-${toolName}`)
 
         const storedData = challengeId ? await stateStore.get(String(challengeId)) : null;
         if (!storedData?.args?.paymentData) {
             throw new Error("Unknown challenge ID");
         }
 
+        const x402v = sig.x402Version;
         const expected = storedData.args.paymentData.accepts?.[0];
-        const got = sig.accepted;
+        const got = x402v === 1
+            ? getPaymentFieldsForV1(sig, challengeId)
+            : sig.accepted;
         if (!expected || !got) {
             throw new Error("Invalid payment data for signature verification");
         }
@@ -120,11 +127,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
         const normAddr = (a: any) => (typeof a === "string" ? a.toLowerCase() : "");
 
         const mismatch: string[] = [];
-        if (String(expected.amount) !== String(got.amount)) mismatch.push("amount");
+        if (String(expected.amount ?? expected.maxAmountRequired) !== String(got.amount)) mismatch.push("amount");
         if (String(expected.network) !== String(got.network)) mismatch.push("network");
-        if (normAddr(expected.asset) !== normAddr(got.asset)) mismatch.push("asset");
+        if (x402v !== 1 && normAddr(expected.asset) !== normAddr(got.asset)) mismatch.push("asset");
         if (normAddr(expected.payTo) !== normAddr(got.payTo)) mismatch.push("payTo");
-        if (String(expected.extra?.challengeId) !== String(got.extra?.challengeId)) mismatch.push("challengeId");
+        if (x402v !== 1 && String(expected.extra?.challengeId) !== String(got.extra?.challengeId)) mismatch.push("challengeId");
 
         if (mismatch.length) {
             logger?.warn?.("[PayMCP] Incorrect signature", { mismatch, expected, got });
@@ -135,7 +142,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
         if (payment_status === 'error') {
             await stateStore.delete(String(challengeId));
-            throw new Error("Payment verification error");
+            throw new Error("Payment failed");
         }
 
         if (payment_status === 'paid') {
@@ -152,6 +159,14 @@ export const makePaidWrapper: PaidWrapperFactory = (
             retryInstructions: "Wait for confirmation, then retry this tool.",
             status,
         });
+    }
+
+    const getPaymentFieldsForV1 = (sig: any, challengeId:string) => {
+        return {
+            amount: sig.payload?.authorization?.value,
+            network: sig.network,
+            payTo: sig.payload?.authorization?.to,
+        }
     }
 
     return wrapper as unknown as ToolHandler;

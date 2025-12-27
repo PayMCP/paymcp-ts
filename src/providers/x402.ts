@@ -66,6 +66,7 @@ export interface X402ProviderOpts {
     resourceInfo?: ResourceInfo;
     facilitator?: FacilitatorConfig;
     x402Version?: number;
+    gasLimit: string;
 }
 
 export class X402Provider extends BasePaymentProvider {
@@ -74,13 +75,14 @@ export class X402Provider extends BasePaymentProvider {
     private network = DEFAULT_NETWORK;
     private multiplier = DEFAULT_USDC_MULTIPLIER;
     private asset = assetsMap[`${DEFAULT_NETWORK}:${DEFAULT_ASSET}`];
-    private domainName = DEFAULT_ASSET; // USDC
+    private domainName = "USD Coin"; 
     private domainVersion = "2"; // Circle USDC uses version "2"
     private facilitator: FacilitatorConfig = {
         url: FACILITATOR_BASE,
     }
     private resourceInfo;
     private feePayer = "";
+    private gasLimit= "1000000";
     private x402Version = 2;
 
     constructor(opts: X402ProviderOpts) {
@@ -119,8 +121,10 @@ export class X402Provider extends BasePaymentProvider {
         }
 
         if (opts.domainName) this.domainName = opts.domainName;
+        if (this.network==="eip155:84532" && this.domainName==='USD Coin') this.domainName='USDC';//base Sepolia need USDC
         if (opts.domainVersion) this.domainVersion = opts.domainVersion;
         if (this.network.startsWith("solana")) this._updateFacilitatorFeePayer();
+        if (opts.gasLimit) this.gasLimit="1000000";
         this.logger.debug("[X402Provider] ready");
     }
 
@@ -219,7 +223,7 @@ export class X402Provider extends BasePaymentProvider {
                     network: v1_network_map[this.network] ?? this.network,
                     asset: this.asset,
                     payTo: this.payTo,
-                    maxTimeoutSeconds: 300,
+                    maxTimeoutSeconds: 900,
                     maxAmountRequired: amountStr,
                     resource: this.resourceInfo?.url ?? "https://paymcp.info", //resource is required for V1
                     description: this.resourceInfo?.description ?? "Premium processing fee", //description is required for V1
@@ -229,7 +233,9 @@ export class X402Provider extends BasePaymentProvider {
                         version: this.domainVersion,
                         ...this.network.startsWith("solana") ? {
                             feePayer: this.feePayer
-                        } : {}
+                        } : {
+                            gasLimit: this.gasLimit
+                        }
                     },
                 },
             ],
@@ -251,7 +257,7 @@ export class X402Provider extends BasePaymentProvider {
                     "amount": amountStr,
                     "asset": this.asset,
                     "payTo": this.payTo,
-                    "maxTimeoutSeconds": 300,
+                    "maxTimeoutSeconds": 900,
                     "extra": {
                         "name": this.domainName,
                         "version": this.domainVersion,
@@ -259,7 +265,9 @@ export class X402Provider extends BasePaymentProvider {
                         "description": description,
                         ...this.network.startsWith("solana") ? {
                             feePayer: this.feePayer
-                        } : {}
+                        } : {
+                            gasLimit: this.gasLimit
+                        }
                     }
                 }
             ]
@@ -281,7 +289,14 @@ export class X402Provider extends BasePaymentProvider {
             return "error";
         }
 
-        const payTo = sig.accepted.network.startsWith('solana') ? sig.accepted.payTo : sig.payload.authorization?.to;
+        const networkStr = sig?.x402Version === 1 ? sig?.network : sig?.accepted?.network;
+        const isSolana = typeof networkStr === "string" && networkStr.startsWith("solana");
+
+        const payTo = sig?.x402Version === 1
+            ? sig?.payload?.authorization?.to
+            : (isSolana ? sig?.accepted?.payTo : sig?.payload?.authorization?.to);
+
+
         if (payTo !== this.payTo) {
             this.logger.warn?.(`[X402Provider] getPaymentStatus invalid payTo ${payTo}`);
             return 'error';

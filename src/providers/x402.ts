@@ -17,15 +17,23 @@ const assetsMap: Record<string, string> = {
 const v1_network_map: Record<string, string> = {
     "eip155:8453": "base",
     "eip155:84532": "base-sepolia",
-    "base":"base",
-    "base-sepolia": "base-sepolia"
+    "base": "base",
+    "base-sepolia": "base-sepolia",
+    "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "solana-devnet",
+    "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "solana-mainnet",
+    "solana-devnet": "solana-devnet",
+    "solana-mainnet": "solana-mainnet"
 }
 
 const v2_network_map: Record<string, string> = {
     "eip155:8453": "eip155:8453",
     "eip155:84532": "eip155:84532",
     "base": "eip155:8453",
-    "base-sepolia": "eip155:84532"
+    "base-sepolia": "eip155:84532",
+    "solana-devnet": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+    "solana-mainnet": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+    "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
 }
 
 interface ResourceInfo {
@@ -72,6 +80,7 @@ export class X402Provider extends BasePaymentProvider {
         url: FACILITATOR_BASE,
     }
     private resourceInfo;
+    private feePayer = "";
     private x402Version = 2;
 
     constructor(opts: X402ProviderOpts) {
@@ -111,7 +120,50 @@ export class X402Provider extends BasePaymentProvider {
 
         if (opts.domainName) this.domainName = opts.domainName;
         if (opts.domainVersion) this.domainVersion = opts.domainVersion;
+        if (this.network.startsWith("solana")) this._updateFacilitatorFeePayer();
         this.logger.debug("[X402Provider] ready");
+    }
+
+    _updateFacilitatorFeePayer = async () => {
+        let headers: Record<string, string> = {
+            "Content-Type": "application/json",
+        };
+
+        if (this.facilitator.createAuthHeaders) {
+            const host = new URL(this.facilitator.url ?? FACILITATOR_BASE).host;
+            const authHeaders = this.facilitator.createAuthHeaders({
+                host,
+                method: "GET",
+                path: "/platform/v2/x402/supported",
+            });
+            if (authHeaders) headers = { ...headers, ...authHeaders };
+        }
+        const supportedRes = await fetch(`${this.facilitator.url}/supported`, {
+            method: "GET",
+            headers
+        });
+        if (!supportedRes.ok) {
+            const errText = await supportedRes.text();
+            this.logger.error(`[PayMCP] x402 get facilitator feePayer failed for: ${errText}`);
+            return;
+        }
+
+        const supportedJson = await supportedRes.json();
+
+        const network =
+            this.x402Version === 1
+                ? v1_network_map[this.network] ?? this.network
+                : v2_network_map[this.network] ?? this.network;
+
+        const kind = supportedJson.kinds?.find((k: any) =>
+            k.scheme === "exact" &&
+            k.x402Version === this.x402Version &&
+            k.network === network &&
+            k.extra?.feePayer
+        );
+
+        this.feePayer = kind.extra.feePayer;
+        this.logger.debug("[PayMCP] facilitator feePayer ", this.feePayer);
     }
 
     _createAuthHeadersForCDP = (opts?: CreateAuthHeadersProps) => {
@@ -148,7 +200,6 @@ export class X402Provider extends BasePaymentProvider {
             ? this.getPaymentRequirementsV1(amountStr)
             : this.getPaymentRequirementsV2(challengeId, amountStr, description);
 
-        this.logger.info?.("[PayMCP] Payment required",JSON.stringify(paymentRequired,null,4))
 
         this.logger.debug(`[X402Provider] createPayment ${challengeId}`);
         return {
@@ -175,14 +226,17 @@ export class X402Provider extends BasePaymentProvider {
                     mimeType: this.resourceInfo?.mimeType ?? "application/json",
                     extra: {
                         name: this.domainName,
-                        version: this.domainVersion
+                        version: this.domainVersion,
+                        ...this.network.startsWith("solana") ? {
+                            feePayer: this.feePayer
+                        } : {}
                     },
                 },
             ],
         };
     }
 
-    getPaymentRequirementsV2=(challengeId: string,  amountStr: string, description: string)=>{
+    getPaymentRequirementsV2 = (challengeId: string, amountStr: string, description: string) => {
         return {
             "x402Version": this.x402Version,
             "error": "Payment required",
@@ -202,7 +256,10 @@ export class X402Provider extends BasePaymentProvider {
                         "name": this.domainName,
                         "version": this.domainVersion,
                         "challengeId": challengeId,
-                        "description": description
+                        "description": description,
+                        ...this.network.startsWith("solana") ? {
+                            feePayer: this.feePayer
+                        } : {}
                     }
                 }
             ]
@@ -214,8 +271,19 @@ export class X402Provider extends BasePaymentProvider {
             Buffer.from(paymentSignatureB64, "base64").toString("utf8")
         );
 
-        if (!sig.payload.authorization.to || sig.payload.authorization.to !== this.payTo) {
-            this.logger.warn?.(`[X402Provider] getPaymentStatus invalid payTo ${sig.payload.authorization.to}`);
+        const amountStr =
+            sig?.accepted?.amount ??
+            sig?.payload?.authorization?.value ??
+            sig?.payload?.authorization?.amount;
+
+        if (!amountStr) {
+            this.logger.error(`[PayMCP] Missing amount in payment signature payload`);
+            return "error";
+        }
+
+        const payTo = sig.accepted.network.startsWith('solana') ? sig.accepted.payTo : sig.payload.authorization?.to;
+        if (payTo !== this.payTo) {
+            this.logger.warn?.(`[X402Provider] getPaymentStatus invalid payTo ${payTo}`);
             return 'error';
         }
 
@@ -233,12 +301,20 @@ export class X402Provider extends BasePaymentProvider {
             if (authHeaders) headers = { ...headers, ...authHeaders };
         }
 
+        const paymentRequirements = sig?.x402Version === 1
+            ? this.getPaymentRequirementsV1(String(amountStr))?.accepts[0]
+            : this.getPaymentRequirementsV2(
+                sig.accepted?.extra?.challengeId,
+                String(amountStr),
+                sig.accepted?.extra?.description
+            )?.accepts[0];
+
+        //if (paymentRequirements.extra?.feePayer) delete paymentRequirements.extra?.feePayer; // fee_payer_not_managed_by_facilitator
+
         const body = {
-                x402Version: sig.x402Version,
-                paymentPayload: sig,
-                paymentRequirements: sig?.x402Version === 1 
-                    ? this.getPaymentRequirementsV1(sig?.payload?.authorization?.value)?.accepts[0]
-                    : this.getPaymentRequirementsV2(sig.accepted?.extra?.challengeId, sig?.payload?.authorization?.value, sig.accepted?.extra?.description)?.accepts[0] 
+            x402Version: sig.x402Version,
+            paymentPayload: sig,
+            paymentRequirements
         };
 
         const verifyRes = await fetch(`${this.facilitator.url}/verify`, {
@@ -285,6 +361,7 @@ export class X402Provider extends BasePaymentProvider {
 
         if (!settleJson.success) {
             this.logger.error(`[PayMCP] x402 settle failed: ${settleJson.errorReason}`);
+            if (settleJson.errorReason === 'failed_to_execute_transfer') this.logger.warn?.(`[PayMCP] Make sure purchaser has enough gas to sign the transaction`);
             return "error"
         }
 

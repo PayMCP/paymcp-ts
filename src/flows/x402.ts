@@ -104,6 +104,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
             Buffer.from(paymentSigB64, "base64").toString("utf8")
         );
 
+        log.debug("[PayMCP] decoded signature",sig)
+
         const clientInfo = getClientInfo();
 
         const challengeId = sig.accepted?.extra?.challengeId ?? `${clientInfo.sessionId}-${toolName}`

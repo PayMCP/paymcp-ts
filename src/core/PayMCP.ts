@@ -37,12 +37,13 @@ export class PayMCP {
         }
         this.stateStore = opts.stateStore ?? new InMemoryStateStore();
         
-        if (Object.keys(this.providers)[0]==='x402' && this.flow!==Mode.X402) {
-            this.logger.warn?.(`[PayMCP] ${this.flow} mode is not supported for x402 provider. Switching to ${Mode.X402} mode.`);
-            this.flow=Mode.X402
+        if (Object.keys(this.providers).includes('x402') && this.flow!==Mode.X402 && this.flow!==Mode.AUTO) {
+            const newmode=Object.keys(this.providers).length>1 ? Mode.AUTO : Mode.X402;
+            this.logger.warn?.(`[PayMCP] ${this.flow} mode is not supported for x402 provider. Switching to ${newmode} mode.`);
+            this.flow=newmode
         } 
-        if (this.flow===Mode.X402 && Object.keys(this.providers)[0]!=='x402') {
-            this.logger.warn?.(`[PayMCP] x402 mode is not supported for '${Object.keys(this.providers)[0]}' provider. Switching to ${Mode.RESUBMIT} mode.`);
+        if (this.flow===Mode.X402 && !Object.keys(this.providers).includes('x402')) {
+            this.logger.warn?.(`[PayMCP] x402 mode is not supported for providers: '${Object.keys(this.providers).join(",")}'. Switching to ${Mode.RESUBMIT} mode.`);
             this.flow=Mode.RESUBMIT
         } 
         

@@ -5,6 +5,7 @@ import type { ToolExtraLike } from "../types/config.js";
 import { Logger } from "../types/logger.js";
 import { makePaidWrapper as makeElicitationWrapper } from "./elicitation.js";
 import { makePaidWrapper as makeResubmitWrapper } from "./resubmit.js";
+import { makePaidWrapper as makeX402Wrapper } from "./x402.js";
 
 export const makePaidWrapper: PaidWrapperFactory = (
   func,
@@ -47,14 +48,32 @@ export const makePaidWrapper: PaidWrapperFactory = (
     logger
   );
 
+  const x402Wrapper = makeX402Wrapper(
+    func,
+    server,
+    providers,
+    priceInfo,
+    toolName,
+    stateStore,
+    config,
+    getClientInfo,
+    logger
+  );
+
   async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
     const clientInfo = getClientInfo?.() ?? { name: "Unknown client", capabilities: {} };
+    const hasX402 = Boolean((clientInfo as any)?.capabilities?.x402) && Object.keys(providers).includes("x402");
     const hasElicitation = Boolean((clientInfo as any)?.capabilities?.elicitation);
     log.debug?.(
       `[PayMCP:AUTO] tool=${toolName} client=${clientInfo?.name ?? "unknown"} elicitation=${hasElicitation}`
     );
 
-    const selected = hasElicitation ? elicitationWrapper : resubmitWrapper;
+
+    const selected = hasX402 
+                    ? x402Wrapper 
+                    : (hasElicitation 
+                        ? elicitationWrapper 
+                        : resubmitWrapper);
     if (arguments.length === 2) {
       return await (selected as ToolHandler)(paramsOrExtra, maybeExtra as ToolExtraLike);
     }

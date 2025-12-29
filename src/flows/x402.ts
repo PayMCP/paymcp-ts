@@ -64,7 +64,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
             paymentSigB64 = Buffer.from(JSON.stringify(extra._meta["x402/payment"]), "utf8").toString("base64");
         }
 
-        const clientInfo = getClientInfo();
+        const clientInfo = await getClientInfo(extra.sessionId as string);
 
         if (!paymentSigB64) {
             const { paymentId, paymentData } = await provider.createPayment(

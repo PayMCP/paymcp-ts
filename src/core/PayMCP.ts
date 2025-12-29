@@ -23,9 +23,8 @@ export class PayMCP {
     private originalRegisterTool: McpServerLike["registerTool"];
     private installed = false;
     private subscriptionToolsRegistered = false;
-    private clientInfo: ClientInfo = {name:"Unknown client", capabilities: {}}
     private logger;
-    private paidtools: Record<string, {amount:number,currency:string,description?:string}>={}
+    private paidtools: Record<string, { amount: number, currency: string, description?: string }> = {}
 
     constructor(server: McpServerLike, opts: PayMCPOptions) {
         this.logger = opts.logger ?? console;
@@ -36,22 +35,23 @@ export class PayMCP {
             this.logger.warn?.("[PayMCP] Both `mode` and `paymentFlow` were provided; `mode` takes precedence. `paymentFlow` will be deprecated soon.");
         }
         this.stateStore = opts.stateStore ?? new InMemoryStateStore();
-        
-        if (Object.keys(this.providers).includes('x402') && this.flow!==Mode.X402 && this.flow!==Mode.AUTO) {
-            const newmode=Object.keys(this.providers).length>1 ? Mode.AUTO : Mode.X402;
+
+        if (Object.keys(this.providers).includes('x402') && this.flow !== Mode.X402 && this.flow !== Mode.AUTO) {
+            const newmode = Object.keys(this.providers).length > 1 ? Mode.AUTO : Mode.X402;
             this.logger.warn?.(`[PayMCP] ${this.flow} mode is not supported for x402 provider. Switching to ${newmode} mode.`);
-            this.flow=newmode
-        } 
-        if (this.flow===Mode.X402 && !Object.keys(this.providers).includes('x402')) {
+            this.flow = newmode
+        }
+        if (this.flow === Mode.X402 && !Object.keys(this.providers).includes('x402')) {
             this.logger.warn?.(`[PayMCP] x402 mode is not supported for providers: '${Object.keys(this.providers).join(",")}'. Switching to ${Mode.RESUBMIT} mode.`);
-            this.flow=Mode.RESUBMIT
-        } 
-        
+            this.flow = Mode.RESUBMIT
+        }
+
         this.wrapperFactory = makeFlow(this.flow);
-        
+
         this.originalRegisterTool = server.registerTool.bind(server);
         this.patch();
         this.patchInitialize();
+        this.patchSetHandlers();
 
         // DYNAMIC_TOOLS flow requires patching server.connect() and tools/list handler
         // CRITICAL: Must be synchronous to patch server.connect() BEFORE it's called
@@ -129,7 +129,8 @@ export class PayMCP {
                     delete config._meta
                 }
 
-                if (
+                //adding OPTIONAL payment_id if RESUBMIT or AUTO
+                if ( 
                     config.inputSchema &&
                     [Mode.RESUBMIT, Mode.AUTO].includes(self.flow) &&
                     typeof config.inputSchema === 'object'
@@ -140,7 +141,7 @@ export class PayMCP {
                         "Optional payment identifier returned by a previous call when payment is required"
                     );
                 }
-                self.paidtools[name]={amount:price.amount,currency:price.currency,description:config.description};
+                self.paidtools[name] = { amount: price.amount, currency: price.currency, description: config.description };
                 wrapped = async function (...args: any[]): Promise<any> {
                     return await paymentWrapper(...args);
                 };
@@ -154,25 +155,76 @@ export class PayMCP {
         this.installed = true;
     }
 
+
+    //need for tools/list handler setup
+    //tools/list handler may not exist during PayMCP setup
+    //so, we have to updata set handler and catch then tools/list handler set
+    private patchSetHandlers() {
+        if (this.flow !== Mode.RESUBMIT && this.flow !== Mode.AUTO) return;
+        const srv: any = (this.server as any).server ?? this.server;
+        const handlers: any = srv?._requestHandlers;
+        if (!handlers?.set || (handlers as any)._paymcp_set_patched) return;
+        const originalSet = handlers.set.bind(handlers);
+        const self=this;
+        handlers.set = (key: any, value: any) => {
+            const res = originalSet(key, value);
+            if (key === 'tools/list') {
+                try {
+                    self.patchListTools();
+                } catch (e) {
+                    self.logger?.debug?.('[PayMCP] patchListTools failed', e);
+                }
+            }
+            return res;   
+        }
+        (handlers as any)._paymcp_set_patched = true;
+    }
+
     /** Intercept initialize to capture client capabilities per session. */
     private patchInitialize() {
         const srv: any = (this.server as any).server ?? this.server;
         const handlers = srv?._requestHandlers;
         if (!handlers?.has?.('initialize')) return;
-
+        this.logger.log?.("PayMCP available handlers", handlers);
         const original = handlers.get('initialize');
         if ((original as any)?._paymcp_caps_patched) return;
-
+        const self=this;
         const patched = async (request: any, extra: any) => {
-            const clientInfo = request?.params?.clientInfo ?? {"name":"Unknown client"};
-            Object.assign(this.clientInfo, { name: clientInfo.name, sessionId: extra?.sessionId, capabilities: request?.params?.capabilities ?? {} });
-            this.logger.debug(`[PayMCP] Client: ${JSON.stringify(this.clientInfo)}`);
-            const res=await original(request, extra);
+            const clientInfo = request?.params?.clientInfo ?? { "name": "Unknown client" };
+            self.stateStore.set(`session-${extra.sessionId}`,{ name: clientInfo.name, sessionId: extra?.sessionId, capabilities: request?.params?.capabilities ?? {} },{ttlSeconds:60*60*24})//save for 24 hours
+            this.logger.debug(`[PayMCP] Client: ${JSON.stringify(clientInfo)}`);
+            const res = await original(request, extra);
             return res;
         };
 
         (patched as any)._paymcp_caps_patched = true;
         handlers.set('initialize', patched);
+    }
+
+    private patchListTools() {
+        if (this.flow !== Mode.AUTO) return; //need only in auto mode
+        const srv: any = (this.server as any).server ?? this.server;
+        const handlers = srv?._requestHandlers;
+        if (!handlers?.has?.('tools/list')) return;
+        const original = handlers.get('tools/list');
+        if ((original as any)?._paymcp_caps_patched) return;
+        const self=this;
+        const patched = async (request: any, extra: any) => {
+            
+            const res = await original(request, extra);
+            const clientInfo = await self.getClientInfo(extra.sessionId);
+            this.logger.debug("[PAYMCP] LIST called by", extra.sessionId, clientInfo, self.flow);
+            if (clientInfo?.capabilities?.x402 || clientInfo?.capabilities?.elicitation) { //hiding optional payment_id if x402 or elicitation available
+                res.tools.forEach((tool: any) => {
+                    if (tool.inputSchema.properties.payment_id) {
+                        delete tool.inputSchema.properties.payment_id
+                    }
+                });
+            }
+            return res
+        };
+        (patched as any)._paymcp_caps_patched = true;
+        handlers.set('tools/list', patched);
     }
 
     /**
@@ -193,13 +245,13 @@ export class PayMCP {
         }
     }
 
-    getClientInfo=()=>{
-        return this.clientInfo;
+    getClientInfo = async (sessionId:string) => {
+        const clientInfo= (await this.stateStore.get(`session-${sessionId}`))?.args;
+        return clientInfo;
     }
 
-    getX402Middleware=()=>{
-        const clientInfo=this.getClientInfo();
-        return buildX402middleware(this.providers, this.stateStore, this.paidtools, clientInfo, this.logger);
+    getX402Middleware = () => {
+        return buildX402middleware(this.providers, this.stateStore, this.paidtools, this.flow, this.getClientInfo, this.logger);
     }
 }
 

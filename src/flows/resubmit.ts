@@ -106,7 +106,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
     async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
         log?.debug?.(
-            `[PayMCP:Resubmit] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`
+            `[PayMCP:Resubmit] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`,paramsOrExtra
         );
 
         // Normalize (args, extra) vs (extra) call shapes (SDK calls tool cb this way).
@@ -119,7 +119,6 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
         try {
             const existedPaymentId = toolArgs?.payment_id;
-
             if (!existedPaymentId) {
                 // Create payment session
                 const { paymentId, paymentUrl } = await provider.createPayment(
@@ -144,6 +143,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
                     retryInstructions: "Follow the link, complete payment, then retry with payment_id.",
                     status: "required",
                 });
+            } else {
+                log.debug(`[PayMCP:Resubmit] got payment id=${existedPaymentId}`)
             }
 
             // LOCK: Acquire per-payment-id lock to prevent concurrent access

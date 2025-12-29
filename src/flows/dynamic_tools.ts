@@ -10,7 +10,7 @@
  */
 import type { PaidWrapperFactory, ToolHandler } from '../types/flows.js';
 import type { McpServerLike } from '../types/mcp.js';
-import type { PriceConfig } from '../types/config.js';
+import type { ClientInfo, PriceConfig } from '../types/config.js';
 import type { Logger } from '../types/logger.js';
 import type { StateStore } from '../types/state.js';
 import { randomUUID } from 'crypto';
@@ -48,7 +48,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
   toolName: string,
   _stateStore: StateStore,
   config: any,
-  _getClientInfo: ()=> {name: string,capabilities: Record<string, any>},
+  _getClientInfo: (sessionId:string)=>Promise<ClientInfo>,
   logger?: Logger
 ) => {
   const provider = Object.values(providers)[0];

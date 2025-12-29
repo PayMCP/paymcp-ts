@@ -61,7 +61,12 @@ export const makePaidWrapper: PaidWrapperFactory = (
   );
 
   async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
-    const clientInfo = getClientInfo?.() ?? { name: "Unknown client", capabilities: {} };
+    // Normalize (args, extra) vs (extra) call shapes (SDK calls tool cb this way).
+    const hasArgs = arguments.length === 2;
+    const extra: ToolExtraLike = hasArgs
+      ? (maybeExtra as ToolExtraLike)
+      : (paramsOrExtra as ToolExtraLike);
+    const clientInfo = await getClientInfo(extra.sessionId as string) ?? { name: "Unknown client", capabilities: {} };
     const hasX402 = Boolean((clientInfo as any)?.capabilities?.x402) && Object.keys(providers).includes("x402");
     const hasElicitation = Boolean((clientInfo as any)?.capabilities?.elicitation);
     log.debug?.(
@@ -69,11 +74,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
     );
 
 
-    const selected = hasX402 
-                    ? x402Wrapper 
-                    : (hasElicitation 
-                        ? elicitationWrapper 
-                        : resubmitWrapper);
+    const selected = hasX402
+      ? x402Wrapper
+      : (hasElicitation
+        ? elicitationWrapper
+        : resubmitWrapper);
     if (arguments.length === 2) {
       return await (selected as ToolHandler)(paramsOrExtra, maybeExtra as ToolExtraLike);
     }

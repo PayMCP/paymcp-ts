@@ -23,20 +23,49 @@ class AsyncLock {
 }
 
 export class InMemoryStateStore implements StateStore {
-  private store = new Map<string, { args: any; ts: number }>();
+  private store = new Map<string, { args: any; ts: number; expiresAt?: number }>();
   private paymentLocks = new Map<string, AsyncLock>();
   private locksLock = new AsyncLock();
+  private sweepInterval: NodeJS.Timeout;
 
-  async set(key: string, args: any) {
-    this.store.set(key, { args, ts: Date.now() });
+  constructor() {
+    // Run cleanup every 10 minutes
+    this.sweepInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [key, entry] of this.store.entries()) {
+        if (typeof entry.expiresAt === "number" && entry.expiresAt <= now) {
+          this.store.delete(key);
+          console.debug(`Delete from store ${key}`,this.store);
+        }
+      }
+    }, 10 * 60 * 1000);
+
+    // Do not keep Node.js process alive just because of the sweeper
+    this.sweepInterval.unref?.();
+  }
+
+  async set(key: string, args: any, options?: { ttlSeconds?: number }) {
+    const ts = Date.now();
+    const ttlSeconds = options?.ttlSeconds ?? 60 * 60; // default 60 minutes
+    const expiresAt = ts + ttlSeconds * 1000;
+    this.store.set(key, { args, ts, expiresAt });
+    console.debug(`Setting to store ${key}`,{ args, ts, expiresAt });
   }
 
   async get(key: string) {
-    return this.store.get(key);
+    const entry = this.store.get(key);
+    if (!entry) return undefined;
+
+    if (typeof entry.expiresAt === "number" && entry.expiresAt <= Date.now()) {
+      this.store.delete(key);
+      return undefined;
+    }
+
+    return entry;
   }
 
   async delete(key: string) {
-    this.store.delete(key);
+    this.store.delete(key)
   }
 
   /**

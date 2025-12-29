@@ -3,43 +3,19 @@
 import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
 import { Logger } from "../types/logger.js";
 import { ToolExtraLike } from "../types/config.js";
-import { AbortWatcher } from "../utils/abortWatcher.js";
 import { callOriginal } from "../utils/tool.js";
 
-// ---------------------------------------------------------------------------
-// Helper: Create payment error with consistent structure
-// ---------------------------------------------------------------------------
-interface PaymentErrorOptions {
-    message: string;
-    code: number;
-    error: string;
-    paymentId: string;
-    retryInstructions: string;
-    status?: string;
-    paymentUrl?: string;
-    data?: any;
-    headers?: string[];
-}
 
-function createPaymentError(options: PaymentErrorOptions): never {
-    const err = new Error(options.message);
-    (err as any).code = options.code;
-    (err as any).error = options.error;
-    if (options.data) (err as any).data = options.data
-    else (err as any).data = {
-        payment_id: options.paymentId,
-        retry_instructions: options.retryInstructions,
-        ...(options.paymentUrl && { payment_url: options.paymentUrl }),
-        annotations: {
-            payment: {
-                status: options.status ?? "unknown",
-                payment_id: options.paymentId,
-            },
-        },
-    };
-    if (options.headers) (err as any).headers = options.headers;
 
-    throw err;
+export class McpError extends Error {
+    constructor(
+        public readonly code: number,
+        message: string,
+        public readonly data?: unknown
+    ) {
+        super(`MCP error ${code}: ${message}`);
+        this.name = 'McpError';
+    }
 }
 
 
@@ -80,37 +56,54 @@ export const makePaidWrapper: PaidWrapperFactory = (
         const extra: ToolExtraLike = hasArgs
             ? (maybeExtra as ToolExtraLike)
             : (paramsOrExtra as ToolExtraLike);
-        //const abortWatcher = new AbortWatcher((extra as any)?.signal, log);
 
 
-        const paymentSigB64 = extra.requestInfo?.headers?.['payment-signature'] ?? extra.requestInfo?.headers?.['x-payment'];
+        let paymentSigB64 = extra.requestInfo?.headers?.['payment-signature'] ?? extra.requestInfo?.headers?.['x-payment'];
 
-        if (!paymentSigB64) { //that shouldn't be possible if x402middlware installed. If not - return json-rpc error just in case
+        if (!paymentSigB64 && extra?._meta?.["x402/payment"]) { //mcp clients may put payment in _meta/"x402/payment" - (https://github.com/coinbase/x402/blob/main/specs/transports-v2/mcp.md)
+            paymentSigB64 = Buffer.from(JSON.stringify(extra._meta["x402/payment"]), "utf8").toString("base64");
+        }
+
+        const clientInfo = getClientInfo();
+
+        if (!paymentSigB64) {
             const { paymentId, paymentData } = await provider.createPayment(
                 priceInfo.amount,
                 priceInfo.currency,
                 `${toolName}() execution fee`
             );
-            const challengeId = paymentData?.accepts?.[0]?.extra?.challengeId;
+            let challengeId: string = "";
+            if (paymentData?.x402Version === 1) {
+                if (!clientInfo) throw ("Session ID is not found");
+                challengeId = `${clientInfo.sessionId}-${toolName}`; //x402 v1 payment response doesn't return payment Requirements and can't set any extra data. So, the only way to save paymentData is to use session
+            } else {
+                challengeId = paymentData?.accepts?.[0]?.extra?.challengeId;
+            }
+
             if (!challengeId) {
                 throw new Error("Payment provider did not return challengeId in payment requirements");
             }
             // Store by challengeId so the follow-up request (PAYMENT-SIGNATURE) can be verified statelessly across instances
             await stateStore.set(String(challengeId), { paymentData });
-            createPaymentError(paymentData);
+
+            return {
+                error: {
+                    message: `Payment required`,
+                    code: 402,
+                    data: paymentData,
+                }, isError: true
+            }
         }
 
         const sig = JSON.parse(
             Buffer.from(paymentSigB64, "base64").toString("utf8")
         );
 
-        log.debug("[PayMCP] decoded signature",sig)
 
-        const clientInfo = getClientInfo();
 
         const challengeId = sig.accepted?.extra?.challengeId ?? `${clientInfo.sessionId}-${toolName}`
 
-        log.log("[PayMCP getting paymentData from ", `${clientInfo.sessionId}-${toolName}`)
+        const normAddr = (a: any) => (typeof a === "string" ? a.toLowerCase() : "");
 
         const storedData = challengeId ? await stateStore.get(String(challengeId)) : null;
         if (!storedData?.args?.paymentData) {
@@ -118,15 +111,23 @@ export const makePaidWrapper: PaidWrapperFactory = (
         }
 
         const x402v = sig.x402Version;
-        const expected = storedData.args.paymentData.accepts?.[0];
+        const networkStr = sig?.x402Version === 1 ? sig?.network : sig?.accepted?.network;
+        const isSolana = typeof networkStr === "string" && networkStr.startsWith("solana");
+        const payToAddress = sig?.x402Version === 1
+            ? sig?.payload?.authorization?.to
+            : (isSolana ? sig?.accepted?.payTo : sig?.payload?.authorization?.to);
+        const expected = storedData.args.paymentData.accepts.find((pt:any)=> (pt.network === networkStr && normAddr(payToAddress) === normAddr(pt.payTo)));
+        
+        if (!expected) {
+            log.debug("[PayMCP]",storedData.args.paymentData.accepts, networkStr, payToAddress)
+            throw new Error("Cannot locate accepted payment mehtod");
+        }
         const got = x402v === 1
             ? getPaymentFieldsForV1(sig, challengeId)
             : sig.accepted;
         if (!expected || !got) {
             throw new Error("Invalid payment data for signature verification");
         }
-
-        const normAddr = (a: any) => (typeof a === "string" ? a.toLowerCase() : "");
 
         const mismatch: string[] = [];
         if (String(expected.amount ?? expected.maxAmountRequired) !== String(got.amount)) mismatch.push("amount");
@@ -136,7 +137,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
         if (x402v !== 1 && String(expected.extra?.challengeId) !== String(got.extra?.challengeId)) mismatch.push("challengeId");
 
         if (mismatch.length) {
-            logger?.warn?.("[PayMCP] Incorrect signature", { mismatch, expected, got });
+            log?.warn?.("[PayMCP] Incorrect signature", { mismatch, expected, got });
             throw new Error("Incorrect signature");
         }
 
@@ -153,17 +154,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
             return toolResult;
         }
 
-        createPaymentError({
-            message: `Payment is not confirmed yet.\nAsk user to complete payment and retry.\nPayment ID: ${challengeId}`,
-            code: 402,
-            error: "payment_pending",
-            paymentId: challengeId,
-            retryInstructions: "Wait for confirmation, then retry this tool.",
-            status,
-        });
+        throw (`Payment is not confirmed yet.\nAsk user to complete payment and retry.\nPayment ID: ${challengeId}`);
     }
 
-    const getPaymentFieldsForV1 = (sig: any, challengeId:string) => {
+    const getPaymentFieldsForV1 = (sig: any, challengeId: string) => {
         return {
             amount: sig.payload?.authorization?.value,
             network: sig.network,

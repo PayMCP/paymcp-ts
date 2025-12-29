@@ -166,7 +166,8 @@ export class PayMCP {
             const clientInfo = request?.params?.clientInfo ?? {"name":"Unknown client"};
             Object.assign(this.clientInfo, { name: clientInfo.name, sessionId: extra?.sessionId, capabilities: request?.params?.capabilities ?? {} });
             this.logger.debug(`[PayMCP] Client: ${JSON.stringify(this.clientInfo)}`);
-            return await original(request, extra);
+            const res=await original(request, extra);
+            return res;
         };
 
         (patched as any)._paymcp_caps_patched = true;

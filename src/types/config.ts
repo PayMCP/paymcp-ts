@@ -40,6 +40,7 @@ export interface ToolExtraLike {
     sendNotification?: (note: { method: string; params?: any }) => Promise<any>;
     sessionId?: string;
     requestId?: number | string;
+    _meta?: Record<string,any>;
     signal?: AbortSignal;
     authInfo?: {
         token: string,

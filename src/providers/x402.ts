@@ -7,6 +7,8 @@ import { randomUUID } from "node:crypto";
 const DEFAULT_USDC_MULTIPLIER = 1_000_000; // 6 decimals
 const DEFAULT_ASSET = "USDC";
 const DEFAULT_NETWORK = "eip155:8453";
+const DEFAULT_DOMAIN_NAME = "USD Coin";
+const DEFAULT_DOMAIN_VERSION = "2"; // Circle USDC uses version "2"
 const FACILITATOR_BASE = "https://api.cdp.coinbase.com/platform/v2/x402";
 
 const assetsMap: Record<string, string> = {
@@ -55,53 +57,52 @@ interface FacilitatorConfig {
     createAuthHeaders?: (opts?: CreateAuthHeadersProps) => Record<string, string> | undefined;
 }
 
-export interface X402ProviderOpts {
-    payTo: string;
+interface PayTo {
+    address: string;
+    network?: string;
     asset?: string;
     multiplier?: number;
-    logger?: Logger;
-    network?: string;
     domainName?: string;
     domainVersion?: string;
+    gasLimit?: string;
+}
+
+export interface X402ProviderOpts {
+    payTo: PayTo[];
+    logger?: Logger;
     resourceInfo?: ResourceInfo;
     facilitator?: FacilitatorConfig;
     x402Version?: number;
-    gasLimit: string;
+    gasLimit?: string;
 }
 
 export class X402Provider extends BasePaymentProvider {
 
-    private payTo: string;
-    private network = DEFAULT_NETWORK;
-    private multiplier = DEFAULT_USDC_MULTIPLIER;
-    private asset = assetsMap[`${DEFAULT_NETWORK}:${DEFAULT_ASSET}`];
-    private domainName = "USD Coin"; 
-    private domainVersion = "2"; // Circle USDC uses version "2"
+    private payTo: PayTo[];
     private facilitator: FacilitatorConfig = {
         url: FACILITATOR_BASE,
     }
     private resourceInfo;
-    private feePayer = "";
-    private gasLimit= "1000000";
     private x402Version = 2;
+    private feePayer:string | undefined;
 
     constructor(opts: X402ProviderOpts) {
         super("", opts.logger);
-        this.payTo = opts.payTo;
-        if (opts.multiplier) this.multiplier = opts.multiplier;
+        this.payTo = opts.payTo.map((p) => {
+            const network = p.network ?? DEFAULT_NETWORK;
 
-        // Network first (it affects which default asset address we should use)
-        if (opts.network) this.network = opts.network;
-
-        // Asset:
-        // - If opts.asset is a symbol like "USDC", resolve via assetsMap for the chosen network.
-        // - If opts.asset is already an address, keep it as-is.
-        // - If opts.asset is not provided, pick the network-appropriate default (e.g. Base Sepolia USDC).
-        if (opts.asset) {
-            this.asset = assetsMap[`${this.network}:${opts.asset}`] ?? opts.asset;
-        } else {
-            this.asset = assetsMap[`${this.network}:${DEFAULT_ASSET}`];
-        }
+            const norm: PayTo = {
+                address: p.address,
+                network,
+                asset: (p.asset ? assetsMap[`${network}:${p.asset}`] : assetsMap[`${network}:${DEFAULT_ASSET}`]) ?? p.asset ,
+                multiplier: p.multiplier ?? DEFAULT_USDC_MULTIPLIER,
+                domainName: p.domainName ?? DEFAULT_DOMAIN_NAME,
+                domainVersion: p.domainVersion ?? DEFAULT_DOMAIN_VERSION
+            }
+            if (network === "eip155:84532" && norm.domainName === 'USD Coin') norm.domainName = 'USDC';//base Sepolia need USDC
+            return norm;
+        });
+        
         if (opts.facilitator?.url) {
             this.facilitator.url = opts.facilitator?.url;
         }
@@ -120,15 +121,14 @@ export class X402Provider extends BasePaymentProvider {
             this.x402Version = opts.x402Version;
         }
 
-        if (opts.domainName) this.domainName = opts.domainName;
-        if (this.network==="eip155:84532" && this.domainName==='USD Coin') this.domainName='USDC';//base Sepolia need USDC
-        if (opts.domainVersion) this.domainVersion = opts.domainVersion;
-        if (this.network.startsWith("solana")) this._updateFacilitatorFeePayer();
-        if (opts.gasLimit) this.gasLimit="1000000";
+        const feePayerRequired=this.payTo.filter(p=>p.network?.startsWith("solana"));
+        if (feePayerRequired.length) this._updateFacilitatorFeePayer(feePayerRequired[0].network as string);
+
+
         this.logger.debug("[X402Provider] ready");
     }
 
-    _updateFacilitatorFeePayer = async () => {
+    _updateFacilitatorFeePayer = async (network: string) => {
         let headers: Record<string, string> = {
             "Content-Type": "application/json",
         };
@@ -142,6 +142,7 @@ export class X402Provider extends BasePaymentProvider {
             });
             if (authHeaders) headers = { ...headers, ...authHeaders };
         }
+
         const supportedRes = await fetch(`${this.facilitator.url}/supported`, {
             method: "GET",
             headers
@@ -154,20 +155,20 @@ export class X402Provider extends BasePaymentProvider {
 
         const supportedJson = await supportedRes.json();
 
-        const network =
+        const _network =
             this.x402Version === 1
-                ? v1_network_map[this.network] ?? this.network
-                : v2_network_map[this.network] ?? this.network;
+                ? v1_network_map[network] ?? network
+                : v2_network_map[network] ?? network;
 
         const kind = supportedJson.kinds?.find((k: any) =>
             k.scheme === "exact" &&
             k.x402Version === this.x402Version &&
-            k.network === network &&
+            k.network === _network &&
             k.extra?.feePayer
         );
 
         this.feePayer = kind.extra.feePayer;
-        this.logger.debug("[PayMCP] facilitator feePayer ", this.feePayer);
+        this.logger.debug("[PayMCP] FeePayer for Solana", this.feePayer);
     }
 
     _createAuthHeadersForCDP = (opts?: CreateAuthHeadersProps) => {
@@ -196,13 +197,9 @@ export class X402Provider extends BasePaymentProvider {
 
         const challengeId = randomUUID();
 
-        // x402 expects integer amounts in the token's smallest units (e.g. USDC has 6 decimals).
-        // Keep it as a string to avoid floating-point issues.
-        const amountStr = BigInt(Math.round(amount * this.multiplier)).toString();
-
         const paymentRequired = this.x402Version === 1
-            ? this.getPaymentRequirementsV1(amountStr)
-            : this.getPaymentRequirementsV2(challengeId, amountStr, description);
+            ? this.getPaymentRequirementsV1(amount)
+            : this.getPaymentRequirementsV2(challengeId, amount, description);
 
 
         this.logger.debug(`[X402Provider] createPayment ${challengeId}`);
@@ -213,64 +210,72 @@ export class X402Provider extends BasePaymentProvider {
         };
     }
 
-    getPaymentRequirementsV1 = (amountStr: string) => {
+    getPaymentRequirementsV1 = (amount: number) => {
         return {
             x402Version: 1,
             ...(this.resourceInfo ? { resourceInfo: this.resourceInfo } : {}),
-            accepts: [
-                {
+            accepts: this.payTo.map((p) => {
+                // x402 expects integer amounts in the token's smallest units (e.g. USDC has 6 decimals).
+                // Keep it as a string to avoid floating-point issues.
+                const amountStr = toBaseUnits(amount,p.multiplier as number);
+                return {
                     scheme: "exact",
-                    network: v1_network_map[this.network] ?? this.network,
-                    asset: this.asset,
-                    payTo: this.payTo,
+                    network: v1_network_map[p.network as string] ?? p.network,
+                    asset: p.asset,
+                    payTo: p.address,
                     maxTimeoutSeconds: 900,
                     maxAmountRequired: amountStr,
                     resource: this.resourceInfo?.url ?? "https://paymcp.info", //resource is required for V1
                     description: this.resourceInfo?.description ?? "Premium processing fee", //description is required for V1
                     mimeType: this.resourceInfo?.mimeType ?? "application/json",
                     extra: {
-                        name: this.domainName,
-                        version: this.domainVersion,
-                        ...this.network.startsWith("solana") ? {
+                        name: p.domainName,
+                        version: p.domainVersion,
+                        ...this.feePayer ? {
                             feePayer: this.feePayer
-                        } : {
-                            gasLimit: this.gasLimit
-                        }
+                        } : {},
+                        ...p.gasLimit ? {
+                            gasLimit: p.gasLimit
+                        } : {}
                     },
-                },
-            ],
+                }
+            })
         };
     }
 
-    getPaymentRequirementsV2 = (challengeId: string, amountStr: string, description: string) => {
+    getPaymentRequirementsV2 = (challengeId: string, amount: number, description: string) => {
         return {
             "x402Version": this.x402Version,
             "error": "Payment required",
             ...this.resourceInfo ? {
                 "resourceInfo": this.resourceInfo
             } : {},
-            "accepts": [
-                {
+            accepts: this.payTo.map((p) => {
+                // x402 expects integer amounts in the token's smallest units (e.g. USDC has 6 decimals).
+                // Keep it as a string to avoid floating-point issues.
+                const amountStr = toBaseUnits(amount,p.multiplier as number);
+                return {
                     "scheme": "exact",
                     "x402Version": this.x402Version,
-                    "network": v2_network_map[this.network] ?? this.network,
+                    "network": v2_network_map[p.network as string] ?? p.network,
                     "amount": amountStr,
-                    "asset": this.asset,
-                    "payTo": this.payTo,
+                    "asset": p.asset,
+                    "payTo": p.address,
                     "maxTimeoutSeconds": 900,
                     "extra": {
-                        "name": this.domainName,
-                        "version": this.domainVersion,
+                        "name": p.domainName,
+                        "version": p.domainVersion,
                         "challengeId": challengeId,
                         "description": description,
-                        ...this.network.startsWith("solana") ? {
+                        ...this.feePayer ? {
                             feePayer: this.feePayer
-                        } : {
-                            gasLimit: this.gasLimit
-                        }
+                        } : {},
+                        ...p.gasLimit ? {
+                            gasLimit: p.gasLimit
+                        } : {}
                     }
                 }
-            ]
+            })
         }
     }
 
@@ -292,13 +297,14 @@ export class X402Provider extends BasePaymentProvider {
         const networkStr = sig?.x402Version === 1 ? sig?.network : sig?.accepted?.network;
         const isSolana = typeof networkStr === "string" && networkStr.startsWith("solana");
 
-        const payTo = sig?.x402Version === 1
+        const payToAddress = sig?.x402Version === 1
             ? sig?.payload?.authorization?.to
             : (isSolana ? sig?.accepted?.payTo : sig?.payload?.authorization?.to);
 
+        const choosenPayTo = this.payTo.find(pt => (networkStr === (sig?.x402Version===1 ? v1_network_map[pt.network as string] : v2_network_map[pt.network as string]) && payToAddress === pt.address));
 
-        if (payTo !== this.payTo) {
-            this.logger.warn?.(`[X402Provider] getPaymentStatus invalid payTo ${payTo}`);
+        if (!choosenPayTo) {
+            this.logger.warn?.(`[X402Provider] getPaymentStatus invalid payTo`);
             return 'error';
         }
 
@@ -316,15 +322,24 @@ export class X402Provider extends BasePaymentProvider {
             if (authHeaders) headers = { ...headers, ...authHeaders };
         }
 
-        const paymentRequirements = sig?.x402Version === 1
-            ? this.getPaymentRequirementsV1(String(amountStr))?.accepts[0]
+
+        const paymentRequirementsAll = sig?.x402Version === 1
+            ? this.getPaymentRequirementsV1(0)?.accepts
             : this.getPaymentRequirementsV2(
                 sig.accepted?.extra?.challengeId,
-                String(amountStr),
+                0,
                 sig.accepted?.extra?.description
-            )?.accepts[0];
-
-        //if (paymentRequirements.extra?.feePayer) delete paymentRequirements.extra?.feePayer; // fee_payer_not_managed_by_facilitator
+            )?.accepts;
+        
+        const paymentRequirements=paymentRequirementsAll.find((pt)=>(networkStr === (sig?.x402Version===1 ? v1_network_map[pt.network as string] : v2_network_map[pt.network as string])));
+        if (!paymentRequirements) {
+            this.logger.warn?.(`[PayMCP X402Provider] error locating requirements`);
+            return 'error';
+        }
+        if (sig?.x402Version === 1)
+            (paymentRequirements as any).maxAmountRequired=amountStr; //show  str amount
+        else 
+            (paymentRequirements as any).amount=amountStr; //show  str amount
 
         const body = {
             x402Version: sig.x402Version,
@@ -384,4 +399,12 @@ export class X402Provider extends BasePaymentProvider {
 
     }
 
+}
+
+
+function toBaseUnits(
+    amount: number,
+    multiplier: number
+): string {
+    return BigInt(Math.round(amount * multiplier)).toString()
 }

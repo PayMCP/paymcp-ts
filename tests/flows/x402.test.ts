@@ -175,7 +175,7 @@ describe('RESUBMIT x402 Flow', () => {
 
     await expect(
       wrapper({ param: 'value' }, { requestInfo: { headers: { 'payment-signature': signature } } })
-    ).rejects.toThrow('Payment verification error');
+    ).rejects.toThrow('Payment failed');
     expect(mockStateStore.delete).toHaveBeenCalledWith('challenge_123');
   });
 

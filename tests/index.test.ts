@@ -20,7 +20,6 @@ describe('Index Exports', () => {
     expect(PaymentFlow.TWO_STEP).toBe('TWO_STEP');
     expect(PaymentFlow.ELICITATION).toBe('ELICITATION');
     expect(PaymentFlow.PROGRESS).toBe('PROGRESS');
-    expect(PaymentFlow.OOB).toBe('OOB');
   });
 
   it('should have all expected exports available', async () => {

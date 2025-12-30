@@ -30,7 +30,7 @@ describe('X402Provider', () => {
   describe('createPayment', () => {
     it('should build x402 payment requirements with defaults', async () => {
       const provider = new X402Provider({
-        payTo: '0xPayTo',
+        payTo: [{ address: '0xPayTo' }],
         logger: mockLogger
       });
 
@@ -63,7 +63,7 @@ describe('X402Provider', () => {
       };
 
       const provider = new X402Provider({
-        payTo: '0xPayTo',
+        payTo: [{ address: '0xPayTo' }],
         resourceInfo,
         logger: mockLogger
       });
@@ -75,9 +75,7 @@ describe('X402Provider', () => {
 
     it('should resolve asset symbols using network mapping', async () => {
       const provider = new X402Provider({
-        payTo: '0xPayTo',
-        network: 'eip155:84532',
-        asset: 'USDC',
+        payTo: [{ address: '0xPayTo', network: 'eip155:84532', asset: 'USDC' }],
         logger: mockLogger
       });
 
@@ -90,7 +88,7 @@ describe('X402Provider', () => {
   describe('getPaymentStatus', () => {
     it('should return error when payTo does not match signature', async () => {
       const provider = new X402Provider({
-        payTo: '0xPayTo',
+        payTo: [{ address: '0xPayTo' }],
         logger: mockLogger
       });
 
@@ -115,10 +113,10 @@ describe('X402Provider', () => {
 
     it('should verify and settle payment with facilitator', async () => {
       const provider = new X402Provider({
-        payTo: '0xPayTo',
+        payTo: [{ address: '0xPayTo' }],
         facilitator: {
           url: 'https://facilitator.test',
-          apiKey: 'test_key'
+          createAuthHeaders: () => ({ Authorization: 'Bearer test_key' })
         },
         logger: mockLogger
       });
@@ -139,7 +137,7 @@ describe('X402Provider', () => {
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({ success: true })
+          json: () => Promise.resolve({ isValid: true })
         })
         .mockResolvedValueOnce({
           ok: true,
@@ -186,7 +184,7 @@ describe('X402Provider', () => {
 
     it('should return error when verify fails', async () => {
       const provider = new X402Provider({
-        payTo: '0xPayTo',
+        payTo: [{ address: '0xPayTo' }],
         logger: mockLogger
       });
 
@@ -217,7 +215,7 @@ describe('X402Provider', () => {
 
     it('should return error when settle fails', async () => {
       const provider = new X402Provider({
-        payTo: '0xPayTo',
+        payTo: [{ address: '0xPayTo' }],
         logger: mockLogger
       });
 
@@ -225,7 +223,7 @@ describe('X402Provider', () => {
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({ success: true })
+          json: () => Promise.resolve({ isValid: true })
         })
         .mockResolvedValueOnce({
           ok: true,

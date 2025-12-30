@@ -83,8 +83,8 @@ describe('Provider Index', () => {
         const result = buildProviders([provider1, provider2]);
 
         expect(result).toEqual({
-          provider1: provider1,
-          provider2: provider2
+          '1': provider1,
+          '2': provider2
         });
       });
 
@@ -105,7 +105,7 @@ describe('Provider Index', () => {
         const result = buildProviders([provider]);
 
         expect(result).toEqual({
-          mockprovider: provider
+          mock: provider
         });
       });
 
@@ -119,7 +119,7 @@ describe('Provider Index', () => {
         const result = buildProviders([provider]);
 
         expect(result).toEqual({
-          provider: provider
+          '': provider
         });
       });
 
@@ -360,7 +360,7 @@ describe('Provider Index', () => {
 
         const result = buildProviders([provider]);
 
-        expect(result['testprovider']).toBe(provider);
+        expect(result['test']).toBe(provider);
       });
     });
 

@@ -179,6 +179,115 @@ describe('RESUBMIT x402 Flow', () => {
     expect(mockStateStore.delete).toHaveBeenCalledWith('challenge_123');
   });
 
+  it('should return payment required when no signature provided', async () => {
+    const mockTool = vi.fn();
+    const wrapper = makePaidWrapper(
+      mockTool,
+      mockServer,
+      mockProviders,
+      priceInfo,
+      'testTool',
+      mockStateStore,
+      {},
+      clientInfo,
+      mockLogger
+    );
+
+    await expect(wrapper({ param: 'value' }, {} as any)).resolves.toEqual(
+      expect.objectContaining({
+        isError: true,
+        error: expect.objectContaining({
+          code: 402,
+          message: 'Payment required',
+          data: paymentData,
+        }),
+      })
+    );
+    expect(mockProvider.createPayment).toHaveBeenCalledWith(25, 'USD', 'testTool() execution fee');
+  });
+
+  it('should handle x402 v1 signatures and execute tool', async () => {
+    const v1PaymentData = {
+      x402Version: 1,
+      accepts: [
+        {
+          scheme: 'exact',
+          network: 'base',
+          asset: 'USDC',
+          payTo: '0xPayTo',
+          maxAmountRequired: '1000000',
+        },
+      ],
+    };
+    mockProvider.createPayment = vi.fn().mockResolvedValue({
+      paymentId: 'challenge_123',
+      paymentUrl: '',
+      paymentData: v1PaymentData,
+    });
+    mockProvider.getPaymentStatus = vi.fn().mockResolvedValue('paid');
+
+    const v1ClientInfo = () => ({ name: 'test', sessionId: 's1', capabilities: {} });
+    storage.set('s1-testTool', { args: { paymentData: v1PaymentData } });
+
+    const mockTool = vi.fn().mockResolvedValue({ ok: true });
+    const wrapper = makePaidWrapper(
+      mockTool,
+      mockServer,
+      mockProviders,
+      priceInfo,
+      'testTool',
+      mockStateStore,
+      {},
+      v1ClientInfo,
+      mockLogger
+    );
+
+    const signature = encodeSignature({
+      x402Version: 1,
+      network: 'base',
+      payload: { authorization: { to: '0xPayTo', value: '1000000' } },
+    });
+
+    const result = await wrapper({ param: 'value' }, { requestInfo: { headers: { 'payment-signature': signature } } });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockProvider.getPaymentStatus).toHaveBeenCalledWith(signature);
+    expect(mockStateStore.delete).toHaveBeenCalledWith('s1-testTool');
+  });
+
+  it('should throw pending error when payment is not confirmed', async () => {
+    storage.set('challenge_123', { args: { paymentData } });
+    mockProvider.getPaymentStatus = vi.fn().mockResolvedValue('pending');
+
+    const mockTool = vi.fn();
+    const wrapper = makePaidWrapper(
+      mockTool,
+      mockServer,
+      mockProviders,
+      priceInfo,
+      'testTool',
+      mockStateStore,
+      {},
+      clientInfo,
+      mockLogger
+    );
+
+    const signature = encodeSignature({
+      payload: { authorization: { to: '0xPayTo' } },
+      accepted: {
+        amount: '1000000',
+        network: 'eip155:8453',
+        asset: '0xasset',
+        payTo: '0xPayTo',
+        extra: { challengeId: 'challenge_123' },
+      },
+    });
+
+    await expect(
+      wrapper({ param: 'value' }, { requestInfo: { headers: { 'payment-signature': signature } } })
+    ).rejects.toThrow('Payment is not confirmed yet');
+  });
+
   it('should execute tool after successful payment', async () => {
     storage.set('challenge_123', { args: { paymentData } });
 

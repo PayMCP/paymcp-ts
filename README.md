@@ -2,6 +2,8 @@
 
 **Provider‑agnostic payment layer for MCP (Model Context Protocol) tools and agents.**
 
+> 🆕 **x402 protocol is now fully supported.** PayMCP includes native support for the [x402 payment protocol](https://www.x402.org/) and a dedicated `Mode.X402` for clients capable of automatic on-chain payments.
+
 `paymcp` is a lightweight SDK that helps you add monetization to your MCP‑based tools, servers, or agents. Pick per‑tool pricing (pay‑per‑request) or subscription gating while still using MCP's native tool/resource interface.
 
 See the [full documentation](https://paymcp.info).
@@ -12,7 +14,7 @@ See the [full documentation](https://paymcp.info).
 
 - ✅ Add **per‑tool `price` config** when you register MCP tools to enable pay‑per‑request billing.
 - ✅ Gate tools behind **active subscriptions** (when your provider supports them) with built‑in helper tools.
-- 🔁 Pay‑per‑request flows support multiple **modes** (AUTO / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS).
+- 🔁 Pay‑per‑request flows support multiple **modes** (AUTO / X402 / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS).
 - 🔌 Built-in support for major providers ([see list](#supported-providers)) — plus a pluggable interface to add your own.
 - ⚙️ Easy **drop‑in integration**: `installPayMCP(server, options)` — no need to rewrite tools.
 - 🛡 Server‑side verification with your payment provider runs before the tool logic.
@@ -55,7 +57,7 @@ import { StripeProvider } from 'paymcp/providers';
 installPayMCP(server, {
   // Use a provider that matches your monetization: Stripe supports subscriptions; others are pay-per-request only.
   providers: [new StripeProvider({ apiKey: "sk_test_..." })],
-  mode: Mode.AUTO, // optional (default: AUTO). AUTO / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS
+  mode: Mode.AUTO, // optional (default: AUTO). AUTO / X402 / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS
 });
 ```
 
@@ -139,6 +141,8 @@ Built-in support is available for the following providers. You can also [write a
 - ✅ [PayPal](https://paypal.com) — pay‑per‑request
 - ✅ [Square](https://squareup.com) — pay‑per‑request
 - ✅ [Walleot](https://walleot.com/developers) — pay‑per‑request
+- ✅ **USDC‑x402 (Base)** — pay‑per‑request ([x402 protocol](https://www.x402.org/))
+- ✅ **USDC‑SPL‑x402 (Solana)** — pay‑per‑request ([x402 protocol](https://www.x402.org/))
 
 - 🔜 More providers welcome! Open an issue or PR.
 
@@ -233,16 +237,9 @@ The `mode` option controls how the user is guided through pay‑per‑request pa
 ### `Mode.AUTO` (default)
 Chooses the best flow at runtime based on client capabilities:
 
-- If `capabilities.elicitation` is available → uses `Mode.ELICITATION`.
-- Otherwise → uses `Mode.RESUBMIT`.
-
-### `Mode.TWO_STEP`
-Splits the original tool into two MCP methods.
-
-1. **Initiate**: original tool returns a `payment_url` + `payment_id` + `next_step` (e.g. `confirm_payment`).
-2. **Confirm**: dynamically registered tool verifies payment (server‑side) and, if paid, runs the original logic.
-
-Works in almost all clients (even very simple ones).
+- If the client advertises support for `x402` → uses `Mode.X402`.
+- Else if `capabilities.elicitation` is available → uses `Mode.ELICITATION`.
+- Otherwise → falls back to `Mode.RESUBMIT`.
 
 ### `Mode.RESUBMIT`
 
@@ -253,6 +250,14 @@ Adds an optional `payment_id` to the original tool signature.
 
 Similar compatibility to TWO_STEP, but with a simpler surface.
 
+### `Mode.TWO_STEP`
+Splits the original tool into two MCP methods.
+
+1. **Initiate**: original tool returns a `payment_url` + `payment_id` + `next_step` (e.g. `confirm_payment`).
+2. **Confirm**: dynamically registered tool verifies payment (server‑side) and, if paid, runs the original logic.
+
+Works in almost all clients (even very simple ones).
+
 ### `Mode.ELICITATION`
 PayMCP sends the user a payment link via MCP **elicitation** (if the client supports the capability). The user can Accept / Cancel inline; once paid, the original tool runs in the same call.
 
@@ -262,7 +267,68 @@ Keeps the tool call open, shows a payment link, and streams **progress updates**
 ### `Mode.DYNAMIC_TOOLS`
 Steer the client and the LLM by changing the visible tool set at specific points in the flow (e.g., temporarily expose `confirm_payment_*`), thereby guiding the next valid action.
 
+### `Mode.X402`
+
+Uses the [x402 protocol](https://www.x402.org/) for **automatic on‑chain payments**.
+
+In this mode, PayMCP returns an **MCP error with HTTP status `402 Payment Required`** in the response body, formatted according to the x402 specification. Clients that support x402 can automatically complete the payment and retry the tool call without additional user interaction.
+
+⚠️ **Important limitations**:
+
+- `Mode.X402` can be used **only if you are certain the MCP client supports automatic payments via x402**.
+- **Most major MCP clients do NOT currently support x402.**
+- If client support is uncertain, **use `Mode.AUTO` instead** — it will safely fall back to other compatible flows.
+
+**Supported assets (current x402 protocol):**
+- **USDC on Base**
+- **USDC on Solana** (often referred to as **USDC‑SPL**)
+
+To accept payments in `Mode.X402`, you **must** use the `X402Provider`.
+
+#### X402 Provider Configuration
+
+Minimal setup for accepting **USDC payments** using x402:
+
+```ts
+import { X402Provider } from "paymcp/providers";
+
+const provider = new X402Provider({
+  payTo: [{ address: "0xYourAddress" }],
+  facilitator: {
+    apiKeyId: process.env.CDP_API_KEY_ID,
+    apiKeySecret: process.env.CDP_API_KEY_SECRET,
+  },
+});
+```
+
+> The mainnet facilitator requires a Coinbase Developer Platform (CDP) account.
+
+For **development and testing**, you can use the free public facilitator:
+
+```ts
+const provider = new X402Provider({
+  payTo: [{
+    address: "0xYourAddress",
+    network: "eip155:84532", // Base Sepolia testnet
+  }],
+  facilitator: {
+    url: "https://www.x402.org/facilitator",
+  },
+});
+```
+
+`eip155:84532` is the **CAIP‑2 network identifier** for the Base Sepolia testnet.
+
+For detailed configuration options refer to the [full documentation](https://paymcp.info).
+
+You can configure **multiple `payTo` entries** to enable **multi‑network or multi‑asset acceptance** within the same provider instance.
+
+> ⚠️ **Note:** `Mode.X402` works only with MCP clients that explicitly support the x402 payment protocol. Since most existing clients do not, it is strongly recommended to use `Mode.AUTO` unless you fully control the client environment.
+
+
 > When in doubt, start with **`AUTO`** — it uses ELICITATION when supported, otherwise RESUBMIT.
+
+
 
 ---
 

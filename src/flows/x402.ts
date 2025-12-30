@@ -7,18 +7,6 @@ import { callOriginal } from "../utils/tool.js";
 
 
 
-export class McpError extends Error {
-    constructor(
-        public readonly code: number,
-        message: string,
-        public readonly data?: unknown
-    ) {
-        super(`MCP error ${code}: ${message}`);
-        this.name = 'McpError';
-    }
-}
-
-
 export const makePaidWrapper: PaidWrapperFactory = (
     func,
     _server,

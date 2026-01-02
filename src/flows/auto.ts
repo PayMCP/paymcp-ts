@@ -55,6 +55,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
     logger
   );
 
+  if (!Object.keys(providers).length) {
+    throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
+  }
+
   async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
     // Normalize (args, extra) vs (extra) call shapes (SDK calls tool cb this way).
     const hasArgs = arguments.length === 2;

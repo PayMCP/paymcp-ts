@@ -114,11 +114,11 @@ export class PayMCP {
                 };
 
             } else if (price) {
-                // append price to the description
-                config = {
+                // append price to the description - UPDATE - don't need this since we store price in _meta now
+                /*config = {
                     ...config,
-                    description: appendPriceToDescription(config.description, price),
-                };
+                    description: appendPriceToDescription(config.description, price), 
+                };*/
 
                 // wrap the handler in a payment flow
                 const paymentWrapper = self.wrapperFactory(
@@ -127,6 +127,10 @@ export class PayMCP {
 
                 if (config._meta && [Mode.TWO_STEP, Mode.DYNAMIC_TOOLS].includes(self.flow)) { //removing _meta from original tool - it's added to confirm tool
                     delete config._meta
+                }
+
+                if (!config._meta?.price) {
+                    config._meta = { ...(config._meta ??{}), price: price }; //add price from config if not set in meta
                 }
 
                 //adding OPTIONAL payment_id if RESUBMIT or AUTO

@@ -18,7 +18,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     getClientInfo,
     logger,
 ) => {
-    const provider = Object.values(providers)[0];
+    const provider = Object.values(providers)[0]; //TODO not first but first "x402"
     if (!provider) {
         throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
     }

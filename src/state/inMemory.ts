@@ -35,7 +35,6 @@ export class InMemoryStateStore implements StateStore {
       for (const [key, entry] of this.store.entries()) {
         if (typeof entry.expiresAt === "number" && entry.expiresAt <= now) {
           this.store.delete(key);
-          console.debug(`Delete from store ${key}`,this.store);
         }
       }
     }, 10 * 60 * 1000);
@@ -49,7 +48,6 @@ export class InMemoryStateStore implements StateStore {
     const ttlSeconds = options?.ttlSeconds ?? 60 * 60; // default 60 minutes
     const expiresAt = ts + ttlSeconds * 1000;
     this.store.set(key, { args, ts, expiresAt });
-    console.debug(`Setting to store ${key}`,{ args, ts, expiresAt });
   }
 
   async get(key: string) {

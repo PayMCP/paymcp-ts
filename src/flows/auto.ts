@@ -18,13 +18,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
   getClientInfo,
   logger
 ) => {
-  const provider = Object.values(providers)[0];
-  if (!provider) {
-    throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
-  }
-  const log: Logger = logger ?? (provider as any).logger ?? console;
 
-  const elicitationWrapper = makeElicitationWrapper(
+  const getElicitationWrapper = () => makeElicitationWrapper(
     func,
     server,
     providers,
@@ -36,7 +31,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     logger
   );
 
-  const resubmitWrapper = makeResubmitWrapper(
+  const getResubmitWrapper = () => makeResubmitWrapper(
     func,
     server,
     providers,
@@ -48,7 +43,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     logger
   );
 
-  const x402Wrapper = makeX402Wrapper(
+  const getX402Wrapper = () => makeX402Wrapper(
     func,
     server,
     providers,
@@ -69,16 +64,16 @@ export const makePaidWrapper: PaidWrapperFactory = (
     const clientInfo = await getClientInfo(extra.sessionId as string) ?? { name: "Unknown client", capabilities: {} };
     const hasX402 = Boolean((clientInfo as any)?.capabilities?.x402) && Object.keys(providers).includes("x402");
     const hasElicitation = Boolean((clientInfo as any)?.capabilities?.elicitation);
-    log.debug?.(
+    logger?.debug?.(
       `[PayMCP:AUTO] tool=${toolName} client=${clientInfo?.name ?? "unknown"} elicitation=${hasElicitation}`
     );
 
 
     const selected = hasX402
-      ? x402Wrapper
+      ? getX402Wrapper()
       : (hasElicitation
-        ? elicitationWrapper
-        : resubmitWrapper);
+        ? getElicitationWrapper()
+        : getResubmitWrapper());
     if (arguments.length === 2) {
       return await (selected as ToolHandler)(paramsOrExtra, maybeExtra as ToolExtraLike);
     }

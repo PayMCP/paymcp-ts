@@ -99,7 +99,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
         {
           title: `Confirm payment for ${toolName}`,
           description: `Confirm payment ${pidStr} and execute ${toolName}()`,
-          ...config?._meta ? {_meta:config._meta}: {}
+          ...config?._meta ? {_meta:{...config._meta,price:undefined}}: {}
         },
         async (_params: any, confirmExtra?: any) => {
           const abortWatcher = new AbortWatcher((confirmExtra as any)?.signal, logger);

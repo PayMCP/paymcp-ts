@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makePaidWrapper } from '../../src/flows/two_step.js';
 import type { BasePaymentProvider } from '../../src/providers/base.js';
+import type { ProviderInstances } from '../../src/providers/index.js';
 import type { PriceConfig } from '../../src/types/config.js';
 import type { McpServerLike } from '../../src/types/mcp.js';
 
 describe('Two-Step Flow', () => {
   let mockProvider: BasePaymentProvider;
+  let mockProviders: ProviderInstances;
   let mockServer: McpServerLike;
   let mockLogger: any;
   let mockStateStore: any;
@@ -22,6 +24,7 @@ describe('Two-Step Flow', () => {
       getPaymentStatus: vi.fn().mockResolvedValue('paid'),
       logger: undefined
     } as any;
+    mockProviders = { mock: mockProvider };
 
     mockServer = {
       tools: new Map(),
@@ -75,7 +78,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -110,7 +113,7 @@ describe('Two-Step Flow', () => {
       makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -128,7 +131,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -167,7 +170,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -194,7 +197,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore
@@ -219,7 +222,7 @@ describe('Two-Step Flow', () => {
       makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -238,7 +241,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -270,7 +273,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -323,7 +326,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -355,7 +358,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -385,7 +388,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -414,7 +417,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -447,7 +450,7 @@ describe('Two-Step Flow', () => {
       makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool2',
         mockStateStore,
@@ -464,7 +467,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool2',
         mockStateStore,
@@ -490,7 +493,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -517,7 +520,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -548,7 +551,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         serverWithoutTools,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -568,7 +571,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore
@@ -585,7 +588,7 @@ describe('Two-Step Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,

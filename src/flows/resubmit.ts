@@ -4,8 +4,8 @@ import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
 import { Logger } from "../types/logger.js";
 import { ToolExtraLike } from "../types/config.js";
 import { normalizeStatus } from "../utils/payment.js";
-import { StateStore } from "../types/state.js";
 import { AbortWatcher } from "../utils/abortWatcher.js";
+import { callOriginal } from "../utils/tool.js";
 
 // ---------------------------------------------------------------------------
 // Helper: Create payment error with consistent structure
@@ -82,7 +82,7 @@ function validatePaymentStatus(status: string, paymentId: string, log?: Logger):
 export const makePaidWrapper: PaidWrapperFactory = (
     func,
     _server,
-    provider,
+    providers,
     priceInfo,
     toolName,
     stateStore,
@@ -90,6 +90,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
     _getClientInfo,
     logger,
 ) => {
+    const provider = Object.values(providers)[0];
+    if (!provider) {
+        throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
+    }
     const log: Logger = logger ?? (provider as any).logger ?? console;
 
     if (!stateStore) {
@@ -102,7 +106,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
     async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
         log?.debug?.(
-            `[PayMCP:Resubmit] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`
+            `[PayMCP:Resubmit] wrapper invoked for tool=${toolName} argsLen=${arguments.length}`,paramsOrExtra
         );
 
         // Normalize (args, extra) vs (extra) call shapes (SDK calls tool cb this way).
@@ -115,7 +119,6 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
         try {
             const existedPaymentId = toolArgs?.payment_id;
-
             if (!existedPaymentId) {
                 // Create payment session
                 const { paymentId, paymentUrl } = await provider.createPayment(
@@ -140,6 +143,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
                     retryInstructions: "Follow the link, complete payment, then retry with payment_id.",
                     status: "required",
                 });
+            } else {
+                log.debug(`[PayMCP:Resubmit] got payment id=${existedPaymentId}`)
             }
 
             // LOCK: Acquire per-payment-id lock to prevent concurrent access
@@ -205,17 +210,3 @@ export const makePaidWrapper: PaidWrapperFactory = (
     return wrapper as unknown as ToolHandler;
 };
 
-// ---------------------------------------------------------------------------
-// Helper: safely invoke the original tool handler preserving args shape
-// ---------------------------------------------------------------------------
-async function callOriginal(
-    func: ToolHandler,
-    args: any | undefined,
-    extra: ToolExtraLike
-) {
-    if (args !== undefined) {
-        return await func(args, extra);
-    } else {
-        return await func(extra);
-    }
-}

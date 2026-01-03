@@ -10,6 +10,7 @@ import { normalizeStatus } from "../utils/payment.js";
 import { safeReportProgress } from "../utils/progress.js";
 import { AbortWatcher } from "../utils/abortWatcher.js";
 import { StateStore } from "../types/state.js";
+import { callOriginal } from "../utils/tool.js";
 
 
 export const DEFAULT_POLL_MS = 3_000; // poll provider every 3s
@@ -23,7 +24,7 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export const makePaidWrapper: PaidWrapperFactory = (
     func,
     _server,
-    provider,
+    providers,
     priceInfo,
     toolName,
     stateStore: StateStore,
@@ -31,6 +32,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
     _getClientInfo,
     logger,
 ) => {
+    const provider = Object.values(providers)[0];
+    if (!provider) {
+        throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
+    }
     const log: Logger = logger ?? (provider as any).logger ?? console;
 
     async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
@@ -233,17 +238,3 @@ export const makePaidWrapper: PaidWrapperFactory = (
     return wrapper as unknown as ToolHandler;
 };
 
-// ---------------------------------------------------------------------------
-// Helper: safely invoke the original tool handler preserving args shape
-// ---------------------------------------------------------------------------
-async function callOriginal(
-    func: ToolHandler,
-    args: any | undefined,
-    extra: ToolExtraLike
-) {
-    if (args !== undefined) {
-        return await func(args, extra);
-    } else {
-        return await func(extra);
-    }
-}

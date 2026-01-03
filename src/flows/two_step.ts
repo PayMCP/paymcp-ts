@@ -24,29 +24,15 @@
 import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
 import type { McpServerLike } from "../types/mcp.js";
 import type { BasePaymentProvider } from "../providers/base.js";
-import type { PriceConfig } from "../types/config.js";
+import type { ClientInfo, PriceConfig } from "../types/config.js";
 import { paymentPromptMessage } from "../utils/messages.js";
 import { Logger } from "../types/logger.js";
 import { AbortWatcher } from "../utils/abortWatcher.js";
 
 import { z } from "zod";
 import { StateStore } from "../types/state.js";
+import { callOriginal } from "../utils/tool.js";
 
-/**
- * Safely invoke the original tool handler preserving the (args, extra) vs (extra)
- * call shapes used by the MCP TS SDK.
- */
-async function callOriginal(
-  func: ToolHandler,
-  toolArgs: any | undefined,
-  extra: any
-) {
-  if (toolArgs !== undefined) {
-    return await func(toolArgs, extra);
-  } else {
-    return await func(extra);
-  }
-}
 
 /**
  * Register (or return existing) confirmation tool.
@@ -209,14 +195,18 @@ function ensureConfirmTool(
 export const makePaidWrapper: PaidWrapperFactory = (
   func,
   server: McpServerLike,
-  provider: BasePaymentProvider,
+  providers,
   priceInfo: PriceConfig,
   toolName: string,
   stateStore: StateStore,
   config: any,
-  _getClientInfo: Record<string, any>,
+  _getClientInfo: (sessionId:string)=>Promise<ClientInfo>,
   logger?: Logger
 ) => {
+  const provider = Object.values(providers)[0];
+  if (!provider) {
+    throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
+  }
   const log: Logger = logger ?? (provider as any).logger ?? console;
 
   // Eagerly register confirm tool so the client sees it in the initial tool list.

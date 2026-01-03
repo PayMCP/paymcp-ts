@@ -5,11 +5,12 @@ import type { ToolExtraLike } from "../types/config.js";
 import { Logger } from "../types/logger.js";
 import { makePaidWrapper as makeElicitationWrapper } from "./elicitation.js";
 import { makePaidWrapper as makeResubmitWrapper } from "./resubmit.js";
+import { makePaidWrapper as makeX402Wrapper } from "./x402.js";
 
 export const makePaidWrapper: PaidWrapperFactory = (
   func,
   server,
-  provider,
+  providers,
   priceInfo,
   toolName,
   stateStore,
@@ -17,12 +18,16 @@ export const makePaidWrapper: PaidWrapperFactory = (
   getClientInfo,
   logger
 ) => {
+  const provider = Object.values(providers)[0];
+  if (!provider) {
+    throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
+  }
   const log: Logger = logger ?? (provider as any).logger ?? console;
 
   const elicitationWrapper = makeElicitationWrapper(
     func,
     server,
-    provider,
+    providers,
     priceInfo,
     toolName,
     stateStore,
@@ -34,7 +39,19 @@ export const makePaidWrapper: PaidWrapperFactory = (
   const resubmitWrapper = makeResubmitWrapper(
     func,
     server,
-    provider,
+    providers,
+    priceInfo,
+    toolName,
+    stateStore,
+    config,
+    getClientInfo,
+    logger
+  );
+
+  const x402Wrapper = makeX402Wrapper(
+    func,
+    server,
+    providers,
     priceInfo,
     toolName,
     stateStore,
@@ -44,13 +61,24 @@ export const makePaidWrapper: PaidWrapperFactory = (
   );
 
   async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
-    const clientInfo = getClientInfo?.() ?? { name: "Unknown client", capabilities: {} };
+    // Normalize (args, extra) vs (extra) call shapes (SDK calls tool cb this way).
+    const hasArgs = arguments.length === 2;
+    const extra: ToolExtraLike = hasArgs
+      ? (maybeExtra as ToolExtraLike)
+      : (paramsOrExtra as ToolExtraLike);
+    const clientInfo = await getClientInfo(extra.sessionId as string) ?? { name: "Unknown client", capabilities: {} };
+    const hasX402 = Boolean((clientInfo as any)?.capabilities?.x402) && Object.keys(providers).includes("x402");
     const hasElicitation = Boolean((clientInfo as any)?.capabilities?.elicitation);
     log.debug?.(
       `[PayMCP:AUTO] tool=${toolName} client=${clientInfo?.name ?? "unknown"} elicitation=${hasElicitation}`
     );
 
-    const selected = hasElicitation ? elicitationWrapper : resubmitWrapper;
+
+    const selected = hasX402
+      ? x402Wrapper
+      : (hasElicitation
+        ? elicitationWrapper
+        : resubmitWrapper);
     if (arguments.length === 2) {
       return await (selected as ToolHandler)(paramsOrExtra, maybeExtra as ToolExtraLike);
     }
@@ -59,4 +87,3 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
   return wrapper as unknown as ToolHandler;
 };
-

@@ -27,8 +27,13 @@ export class RedisStateStore implements StateStore {
         this.lockTimeout = options?.lockTimeout ?? 30;
     }
 
-    async set(key: string, args: any) {
-        await this.redis.set(`${this.prefix}${key}`, JSON.stringify({ args, ts: Date.now() }));
+    async set(key: string, args: any, options?: { ttlSeconds?: number }) {
+        const ttlSeconds = options?.ttlSeconds ?? this.ttl;
+        await this.redis.set(
+            `${this.prefix}${key}`,
+            JSON.stringify({ args, ts: Date.now() }),
+            { EX: ttlSeconds }
+        );
     }
 
     async get(key: string) {

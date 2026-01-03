@@ -4,10 +4,9 @@ export enum Mode {
     ELICITATION = "ELICITATION",
     TWO_STEP = "TWO_STEP",
     PROGRESS = "PROGRESS",
-    OOB = "OOB",
     DYNAMIC_TOOLS = "DYNAMIC_TOOLS",
-    RESUBMIT = "RESUBMIT"
-    // TODO: OOB
+    RESUBMIT = "RESUBMIT",
+    X402 = "X402"
 }
 
 /** @deprecated Use Mode instead.*/
@@ -18,4 +17,5 @@ export type PaymentFlow = Mode;
 export interface CreatePaymentResult {
   paymentId: string;
   paymentUrl: string; 
+  paymentData?: any;
 }

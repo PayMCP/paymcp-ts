@@ -23,15 +23,18 @@ describe('RedisStateStore', () => {
 
       expect(mockRedis.set).toHaveBeenCalledWith(
         'key1',
-        expect.stringContaining('"param1":"value1"')
+        expect.stringContaining('"param1":"value1"'),
+        { EX: 3600 }
       );
       expect(mockRedis.set).toHaveBeenCalledWith(
         'key1',
-        expect.stringContaining('"param2":42')
+        expect.stringContaining('"param2":42'),
+        { EX: 3600 }
       );
       expect(mockRedis.set).toHaveBeenCalledWith(
         'key1',
-        expect.stringContaining('"ts"')
+        expect.stringContaining('"ts"'),
+        { EX: 3600 }
       );
     });
 
@@ -40,7 +43,8 @@ describe('RedisStateStore', () => {
 
       expect(mockRedis.set).toHaveBeenCalledWith(
         'key1',
-        expect.stringContaining('"ts"')
+        expect.stringContaining('"ts"'),
+        { EX: 3600 }
       );
       const setCall = mockRedis.set.mock.calls[0];
       const storedJson = setCall[1];
@@ -53,7 +57,8 @@ describe('RedisStateStore', () => {
 
       expect(mockRedis.set).toHaveBeenCalledWith(
         'key1',
-        expect.stringContaining('"args":null')
+        expect.stringContaining('"args":null'),
+        { EX: 3600 }
       );
     });
 
@@ -70,7 +75,8 @@ describe('RedisStateStore', () => {
 
       expect(mockRedis.set).toHaveBeenCalledWith(
         'key1',
-        expect.stringContaining('"nested"')
+        expect.stringContaining('"nested"'),
+        { EX: 3600 }
       );
     });
   });

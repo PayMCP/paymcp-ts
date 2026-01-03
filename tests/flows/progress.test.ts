@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makePaidWrapper, DEFAULT_POLL_MS, MAX_WAIT_MS } from '../../src/flows/progress.js';
 import type { BasePaymentProvider } from '../../src/providers/base.js';
+import type { ProviderInstances } from '../../src/providers/index.js';
 import type { PriceConfig, ToolExtraLike } from '../../src/types/config.js';
 import type { McpServerLike } from '../../src/types/mcp.js';
 
 describe('Progress Flow', () => {
   let mockProvider: BasePaymentProvider;
+  let mockProviders: ProviderInstances;
   let mockServer: McpServerLike;
   let mockLogger: any;
   let mockStateStore: any;
@@ -25,6 +27,7 @@ describe('Progress Flow', () => {
       getPaymentStatus: vi.fn().mockResolvedValue('paid'),
       logger: undefined
     } as any;
+    mockProviders = { mock: mockProvider };
 
     mockServer = {} as McpServerLike;
 
@@ -69,7 +72,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -89,7 +92,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -131,7 +134,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -156,7 +159,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -188,7 +191,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -217,7 +220,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -249,7 +252,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -284,7 +287,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -313,7 +316,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -347,7 +350,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool'
       );
@@ -371,7 +374,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool'
       );
@@ -392,7 +395,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         vi.fn(),
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -424,7 +427,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'result' }] }),
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -455,7 +458,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'result' }] }),
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -483,7 +486,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'result' }] }),
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -512,7 +515,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'result' }] }),
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -548,7 +551,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -590,7 +593,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -618,7 +621,7 @@ describe('Progress Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,

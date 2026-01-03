@@ -1,14 +1,14 @@
 // lib/ts/paymcp/src/flows/elicitation.ts
 import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
 import type { McpServerLike } from "../types/mcp.js";
-import type { BasePaymentProvider } from "../providers/base.js";
-import type { PriceConfig, ToolExtraLike } from "../types/config.js";
+import type { ClientInfo, PriceConfig, ToolExtraLike } from "../types/config.js";
 import { Logger } from "../types/logger.js";
 import { normalizeStatus } from "../utils/payment.js";
 import { paymentPromptMessage } from "../utils/messages.js";
 import { StateStore } from "../types/state.js";
 import { runElicitationLoop } from "../utils/elicitation.js";
 import { AbortWatcher } from "../utils/abortWatcher.js";
+import { callOriginal } from "../utils/tool.js";
 
 /**
  * Wrap a tool handler with an *elicitation-based* payment flow:
@@ -22,14 +22,18 @@ import { AbortWatcher } from "../utils/abortWatcher.js";
 export const makePaidWrapper: PaidWrapperFactory = (
   func,
   _server: McpServerLike,
-  provider: BasePaymentProvider,
+  providers,
   priceInfo: PriceConfig,
   toolName: string,
   stateStore: StateStore,
   _config: any,
-  getClientInfo: () => { name: string, capabilities: Record<string, any> },
+  _getClientInfo: (sessionId:string)=>Promise<ClientInfo>,
   logger?: Logger
 ) => {
+  const provider = Object.values(providers)[0];
+  if (!provider) {
+    throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
+  }
   const log: Logger = logger ?? (provider as any).logger ?? console;
 
   async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
@@ -43,7 +47,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
     const extra: ToolExtraLike = hasArgs ? (maybeExtra as ToolExtraLike) : (paramsOrExtra as ToolExtraLike);
     const abortWatcher = new AbortWatcher((extra as any)?.signal, log);
 
-    //const clientInfo = getClientInfo();
+    //const clientInfo = await getClientInfo(extra.sessionId);
 
     try {
       const elicitSupported = typeof (extra as any)?.sendRequest === "function";
@@ -214,12 +218,3 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
   return wrapper as unknown as ToolHandler;
 };
-
-/** Safely invoke the original tool handler preserving args. */
-async function callOriginal(func: ToolHandler, args: any | undefined, extra: ToolExtraLike) {
-  if (args !== undefined) {
-    return await func(args, extra);
-  } else {
-    return await func(extra);
-  }
-}

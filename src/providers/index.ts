@@ -7,8 +7,9 @@ import { type Logger } from "../types/logger.js";
 import { AdyenProvider } from "./adyen.js";
 import { CoinbaseProvider } from "./coinbase.js";
 import { MockPaymentProvider } from "./mock.js";
+import { X402Provider } from "./x402.js";
 
-export { WalleotProvider, StripeProvider, PayPalProvider, SquareProvider, AdyenProvider, CoinbaseProvider, MockPaymentProvider };
+export { WalleotProvider, StripeProvider, PayPalProvider, SquareProvider, AdyenProvider, CoinbaseProvider, X402Provider, MockPaymentProvider };
 export type { BasePaymentProvider };
 
 type ProviderCtor = new (opts: any) => BasePaymentProvider;
@@ -20,6 +21,7 @@ const PROVIDER_MAP: Record<string, ProviderCtor> = {
   square: SquareProvider,
   adyen: AdyenProvider,
   coinbase: CoinbaseProvider,
+  x402: X402Provider,
   mock: MockPaymentProvider
 };
 
@@ -29,7 +31,8 @@ function isProvider(x: unknown): x is BasePaymentProvider {
 
 function keyFor(inst: any, fallback?: string): string {
   const name = (inst as any)?.slug ?? (inst as any)?.name ?? (inst as any)?.constructor?.name ?? fallback ?? "provider";
-  return String(name).toLowerCase();
+  console.log("[PayMCP] Provider name:",String(name).toLowerCase().replace("provider",""));
+  return String(name).toLowerCase().replace("provider","");
 }
 
 /** Allow advanced users/plugins to register additional provider classes at runtime. */

@@ -396,4 +396,33 @@ describe('BasePaymentProvider', () => {
       expect(pendingStatus).toBe('pending');
     });
   });
+
+  describe('subscription helpers', () => {
+    it('should reject getSubscriptions by default', async () => {
+      await expect(provider.getSubscriptions('user_1', 'u@example.com')).rejects.toThrow(
+        'Subscriptions are not supported for this payment provider'
+      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[BasePaymentProvider] getSubscriptions called for provider that does not support subscriptions (userId=user_1)',
+      );
+    });
+
+    it('should reject startSubscription by default', async () => {
+      await expect(provider.startSubscription('plan_1', 'user_1', 'u@example.com')).rejects.toThrow(
+        'Subscriptions are not supported for this payment provider'
+      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[BasePaymentProvider] startSubscription called for provider that does not support subscriptions (userId=user_1, planId=plan_1)',
+      );
+    });
+
+    it('should reject cancelSubscription by default', async () => {
+      await expect(provider.cancelSubscription('sub_1', 'user_1', 'u@example.com')).rejects.toThrow(
+        'Subscriptions are not supported for this payment provider'
+      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[BasePaymentProvider] cancelSubscription called for provider that does not support subscriptions (userId=user_1, subscriptionId=sub_1)',
+      );
+    });
+  });
 });

@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makePaidWrapper } from '../../src/flows/resubmit.js';
 import type { BasePaymentProvider } from '../../src/providers/base.js';
+import type { ProviderInstances } from '../../src/providers/index.js';
 import type { PriceConfig } from '../../src/types/config.js';
 import type { McpServerLike } from '../../src/types/mcp.js';
 import * as paymentUtils from '../../src/utils/payment.js';
 
 describe('RESUBMIT Flow', () => {
   let mockProvider: BasePaymentProvider;
+  let mockProviders: ProviderInstances;
   let mockServer: McpServerLike;
   let mockLogger: any;
   let mockStateStore: any;
@@ -24,6 +26,7 @@ describe('RESUBMIT Flow', () => {
       getPaymentStatus: vi.fn().mockResolvedValue('paid'),
       logger: undefined
     } as any;
+    mockProviders = { mock: mockProvider };
 
     mockServer = {
       tools: new Map(),
@@ -91,7 +94,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -132,7 +135,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -149,7 +152,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -180,7 +183,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -223,7 +226,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -259,7 +262,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -289,7 +292,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -318,7 +321,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -345,7 +348,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -372,7 +375,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -401,7 +404,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -432,7 +435,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -464,7 +467,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -494,7 +497,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -525,7 +528,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -548,7 +551,7 @@ describe('RESUBMIT Flow', () => {
         makePaidWrapper(
           mockTool,
           mockServer,
-          mockProvider,
+          mockProviders,
           priceInfo,
           'testTool',
           undefined, // No state store
@@ -565,7 +568,7 @@ describe('RESUBMIT Flow', () => {
         makePaidWrapper(
           mockTool,
           mockServer,
-          mockProvider,
+          mockProviders,
           { amount: 0, currency: '' }, // Invalid price
           'testTool',
           mockStateStore,
@@ -585,7 +588,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -617,7 +620,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -653,7 +656,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -677,7 +680,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -708,7 +711,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -737,7 +740,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -766,7 +769,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -795,7 +798,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -826,7 +829,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -852,7 +855,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -882,7 +885,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -919,7 +922,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -948,7 +951,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -974,7 +977,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -1010,7 +1013,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -1043,7 +1046,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -1080,7 +1083,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,
@@ -1102,7 +1105,7 @@ describe('RESUBMIT Flow', () => {
       const wrapper = makePaidWrapper(
         mockTool,
         mockServer,
-        mockProvider,
+        mockProviders,
         priceInfo,
         'testTool',
         mockStateStore,

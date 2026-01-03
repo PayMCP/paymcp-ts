@@ -3,6 +3,8 @@ import { SubscriptionWrapperFactory, ToolHandler } from "../types/flows.js";
 import { Logger } from "../types/logger.js";
 import { z } from "zod";
 import { decodeJwtPayloadUnverified } from "../utils/jwt.js";
+import type { ProviderInstances } from "../providers/index.js";
+import { callOriginal } from "../utils/tool.js";
 
 async function ensureSubscriptionAllowed(
     provider: unknown,
@@ -126,7 +128,7 @@ function extractUserIdAndEmail(authInfo:any,log:Logger): {userId:string,email:st
 export const makeSubscriptionWrapper: SubscriptionWrapperFactory = (
     func,
     _server,
-    provider,
+    providers,
     subscriptionInfo,
     toolName,
     _stateStore,
@@ -134,6 +136,10 @@ export const makeSubscriptionWrapper: SubscriptionWrapperFactory = (
     _getClientInfo,
     logger,
 ) => {
+    const provider = Object.values(providers)[0];
+    if (!provider) {
+        throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
+    }
     const log: Logger = logger ?? (provider as any).logger ?? console;
 
     async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
@@ -160,31 +166,17 @@ export const makeSubscriptionWrapper: SubscriptionWrapperFactory = (
     return wrapper as unknown as ToolHandler;
 }
 
-// ---------------------------------------------------------------------------
-// Helper: safely invoke the original tool handler preserving args shape
-// ---------------------------------------------------------------------------
-async function callOriginal(
-    func: ToolHandler,
-    args: any | undefined,
-    extra: ToolExtraLike
-) {
-    if (args !== undefined) {
-        return await func(args, extra);
-    } else {
-        return await func(extra);
-    }
-}
 
 export function registerSubscriptionTools(
     server: unknown,
-    provider: {
-        getSubscriptions: (userId: string, email?: string) => Promise<any>;
-        startSubscription: (planId: string, userId: string, email?: string) => Promise<any>;
-        cancelSubscription: (subscriptionId: string, userId: string, email?: string) => Promise<any>;
-    },
+    providers: ProviderInstances,
     logger?: Logger,
 ) {
     const srvAny = server as any;
+    const provider = Object.values(providers)[0];
+    if (!provider) {
+        throw new Error("[PayMCP] No payment provider configured.");
+    }
     const log: Logger = logger ?? (provider as any).logger ?? console;
 
     srvAny.registerTool(

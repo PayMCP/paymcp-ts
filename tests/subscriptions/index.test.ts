@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeSubscriptionWrapper, registerSubscriptionTools } from '../../src/subscriptions/index.js';
+import type { ProviderInstances } from '../../src/providers/index.js';
 
 function createJwt(payload: object, expiresIn: number = 3600): string {
   const header = { alg: 'HS256', typ: 'JWT' };
@@ -21,6 +22,7 @@ function createJwt(payload: object, expiresIn: number = 3600): string {
 describe('makeSubscriptionWrapper', () => {
   let mockLogger: any;
   let mockProvider: any;
+  let mockProviders: ProviderInstances;
   let mockServer: any;
   let mockStateStore: any;
 
@@ -36,6 +38,7 @@ describe('makeSubscriptionWrapper', () => {
       getSubscriptions: vi.fn(),
       logger: mockLogger
     };
+    mockProviders = { mock: mockProvider };
 
     mockServer = {};
     mockStateStore = {};
@@ -53,7 +56,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -79,7 +82,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -100,7 +103,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -126,7 +129,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -153,7 +156,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -179,7 +182,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -204,7 +207,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -229,7 +232,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -254,7 +257,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -279,7 +282,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: ['plan_a', 'plan_b', 'plan_c'] },
         'test_tool',
         mockStateStore,
@@ -299,7 +302,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: '' },
         'test_tool',
         mockStateStore,
@@ -320,7 +323,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: [] },
         'test_tool',
         mockStateStore,
@@ -347,7 +350,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -371,7 +374,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -398,7 +401,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -424,7 +427,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -451,7 +454,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -478,7 +481,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -503,7 +506,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -528,7 +531,7 @@ describe('makeSubscriptionWrapper', () => {
       const wrapper = makeSubscriptionWrapper(
         originalHandler,
         mockServer,
-        mockProvider,
+        mockProviders,
         { plan: 'plan_123' },
         'test_tool',
         mockStateStore,
@@ -547,6 +550,7 @@ describe('makeSubscriptionWrapper', () => {
 describe('registerSubscriptionTools', () => {
   let mockLogger: any;
   let mockProvider: any;
+  let mockProviders: ProviderInstances;
   let mockServer: any;
   let registeredTools: Map<string, any>;
 
@@ -564,6 +568,7 @@ describe('registerSubscriptionTools', () => {
       cancelSubscription: vi.fn(),
       logger: mockLogger
     };
+    mockProviders = { mock: mockProvider };
 
     registeredTools = new Map();
     mockServer = {
@@ -574,7 +579,7 @@ describe('registerSubscriptionTools', () => {
   });
 
   it('should register list_subscriptions tool', () => {
-    registerSubscriptionTools(mockServer, mockProvider, mockLogger);
+    registerSubscriptionTools(mockServer, mockProviders, mockLogger);
 
     expect(mockServer.registerTool).toHaveBeenCalledWith(
       'list_subscriptions',
@@ -587,7 +592,7 @@ describe('registerSubscriptionTools', () => {
   });
 
   it('should register start_subscription tool', () => {
-    registerSubscriptionTools(mockServer, mockProvider, mockLogger);
+    registerSubscriptionTools(mockServer, mockProviders, mockLogger);
 
     expect(mockServer.registerTool).toHaveBeenCalledWith(
       'start_subscription',
@@ -601,7 +606,7 @@ describe('registerSubscriptionTools', () => {
   });
 
   it('should register cancel_subscription tool', () => {
-    registerSubscriptionTools(mockServer, mockProvider, mockLogger);
+    registerSubscriptionTools(mockServer, mockProviders, mockLogger);
 
     expect(mockServer.registerTool).toHaveBeenCalledWith(
       'cancel_subscription',
@@ -622,7 +627,7 @@ describe('registerSubscriptionTools', () => {
       };
       mockProvider.getSubscriptions.mockResolvedValue(subscriptionData);
 
-      registerSubscriptionTools(mockServer, mockProvider, mockLogger);
+      registerSubscriptionTools(mockServer, mockProviders, mockLogger);
       const { handler } = registeredTools.get('list_subscriptions')!;
 
       const token = createJwt({ sub: 'user123', email: 'test@example.com' });
@@ -635,7 +640,7 @@ describe('registerSubscriptionTools', () => {
     });
 
     it('should throw when userId is not available', async () => {
-      registerSubscriptionTools(mockServer, mockProvider, mockLogger);
+      registerSubscriptionTools(mockServer, mockProviders, mockLogger);
       const { handler } = registeredTools.get('list_subscriptions')!;
 
       const extra = { authInfo: {} };
@@ -653,7 +658,7 @@ describe('registerSubscriptionTools', () => {
       };
       mockProvider.startSubscription.mockResolvedValue(startResult);
 
-      registerSubscriptionTools(mockServer, mockProvider, mockLogger);
+      registerSubscriptionTools(mockServer, mockProviders, mockLogger);
       const { handler } = registeredTools.get('start_subscription')!;
 
       const token = createJwt({ sub: 'user123', email: 'test@example.com' });
@@ -666,7 +671,7 @@ describe('registerSubscriptionTools', () => {
     });
 
     it('should throw when userId is not available', async () => {
-      registerSubscriptionTools(mockServer, mockProvider, mockLogger);
+      registerSubscriptionTools(mockServer, mockProviders, mockLogger);
       const { handler } = registeredTools.get('start_subscription')!;
 
       const extra = { authInfo: {} };
@@ -675,7 +680,7 @@ describe('registerSubscriptionTools', () => {
     });
 
     it('should throw when planId is not provided', async () => {
-      registerSubscriptionTools(mockServer, mockProvider, mockLogger);
+      registerSubscriptionTools(mockServer, mockProviders, mockLogger);
       const { handler } = registeredTools.get('start_subscription')!;
 
       const extra = { authInfo: { userId: 'user123' } };
@@ -693,7 +698,7 @@ describe('registerSubscriptionTools', () => {
       };
       mockProvider.cancelSubscription.mockResolvedValue(cancelResult);
 
-      registerSubscriptionTools(mockServer, mockProvider, mockLogger);
+      registerSubscriptionTools(mockServer, mockProviders, mockLogger);
       const { handler } = registeredTools.get('cancel_subscription')!;
 
       const token = createJwt({ sub: 'user123', email: 'test@example.com' });
@@ -706,7 +711,7 @@ describe('registerSubscriptionTools', () => {
     });
 
     it('should throw when userId is not available', async () => {
-      registerSubscriptionTools(mockServer, mockProvider, mockLogger);
+      registerSubscriptionTools(mockServer, mockProviders, mockLogger);
       const { handler } = registeredTools.get('cancel_subscription')!;
 
       const extra = { authInfo: {} };
@@ -715,7 +720,7 @@ describe('registerSubscriptionTools', () => {
     });
 
     it('should throw when subscriptionId is not provided', async () => {
-      registerSubscriptionTools(mockServer, mockProvider, mockLogger);
+      registerSubscriptionTools(mockServer, mockProviders, mockLogger);
       const { handler } = registeredTools.get('cancel_subscription')!;
 
       const extra = { authInfo: { userId: 'user123' } };

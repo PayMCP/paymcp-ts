@@ -40,11 +40,24 @@ export interface ToolExtraLike {
     sendNotification?: (note: { method: string; params?: any }) => Promise<any>;
     sessionId?: string;
     requestId?: number | string;
+    _meta?: Record<string,any>;
     signal?: AbortSignal;
     authInfo?: {
         token: string,
         userId?: string,
         email?: string
+    };
+    requestInfo?: {
+        headers?: {
+            "payment-signature"? : string
+            "x-payment"? : string
+        }
     }
     reportProgress?: (args: { progress?: number; total?: number; message?: string; }) => Promise<void> | void;
+}
+
+export interface ClientInfo {
+    name: string;
+    sessionId?:string;
+    capabilities: Record<string,any>
 }

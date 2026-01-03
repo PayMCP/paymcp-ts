@@ -118,7 +118,6 @@ describe('PayMCP', () => {
         PaymentFlow.PROGRESS,
         PaymentFlow.RESUBMIT,
         PaymentFlow.AUTO,
-        // OOB is not implemented yet
       ];
 
       flows.forEach(flow => {
@@ -131,14 +130,6 @@ describe('PayMCP', () => {
       });
     });
 
-    it('should throw for unimplemented OOB flow', () => {
-      const config: PayMCPOptions = {
-        ...basicConfig,
-        paymentFlow: PaymentFlow.OOB,
-      };
-
-      expect(() => createPayMCP(mockServer, config)).toThrow('Unknown payment flow: OOB');
-    });
   });
 
   describe('payment flow selection', () => {
@@ -192,14 +183,6 @@ describe('PayMCP', () => {
       expect(paymcp).toBeDefined();
     });
 
-    it('should throw for OOB flow (not implemented)', () => {
-      const config: PayMCPOptions = {
-        ...basicConfig,
-        paymentFlow: PaymentFlow.OOB,
-      };
-
-      expect(() => createPayMCP(mockServer, config)).toThrow('Unknown payment flow: OOB');
-    });
   });
 
   describe('schema augmentation', () => {

@@ -18,47 +18,46 @@ export const makePaidWrapper: PaidWrapperFactory = (
   getClientInfo,
   logger
 ) => {
-  const provider = Object.values(providers)[0];
-  if (!provider) {
+
+  const getElicitationWrapper = () => makeElicitationWrapper(
+    func,
+    server,
+    providers,
+    priceInfo,
+    toolName,
+    stateStore,
+    config,
+    getClientInfo,
+    logger
+  );
+
+  const getResubmitWrapper = () => makeResubmitWrapper(
+    func,
+    server,
+    providers,
+    priceInfo,
+    toolName,
+    stateStore,
+    config,
+    getClientInfo,
+    logger
+  );
+
+  const getX402Wrapper = () => makeX402Wrapper(
+    func,
+    server,
+    providers,
+    priceInfo,
+    toolName,
+    stateStore,
+    config,
+    getClientInfo,
+    logger
+  );
+
+  if (!Object.keys(providers).length) {
     throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
   }
-  const log: Logger = logger ?? (provider as any).logger ?? console;
-
-  const elicitationWrapper = makeElicitationWrapper(
-    func,
-    server,
-    providers,
-    priceInfo,
-    toolName,
-    stateStore,
-    config,
-    getClientInfo,
-    logger
-  );
-
-  const resubmitWrapper = makeResubmitWrapper(
-    func,
-    server,
-    providers,
-    priceInfo,
-    toolName,
-    stateStore,
-    config,
-    getClientInfo,
-    logger
-  );
-
-  const x402Wrapper = makeX402Wrapper(
-    func,
-    server,
-    providers,
-    priceInfo,
-    toolName,
-    stateStore,
-    config,
-    getClientInfo,
-    logger
-  );
 
   async function wrapper(paramsOrExtra: any, maybeExtra?: ToolExtraLike) {
     // Normalize (args, extra) vs (extra) call shapes (SDK calls tool cb this way).
@@ -69,16 +68,16 @@ export const makePaidWrapper: PaidWrapperFactory = (
     const clientInfo = await getClientInfo(extra.sessionId as string) ?? { name: "Unknown client", capabilities: {} };
     const hasX402 = Boolean((clientInfo as any)?.capabilities?.x402) && Object.keys(providers).includes("x402");
     const hasElicitation = Boolean((clientInfo as any)?.capabilities?.elicitation);
-    log.debug?.(
+    logger?.debug?.(
       `[PayMCP:AUTO] tool=${toolName} client=${clientInfo?.name ?? "unknown"} elicitation=${hasElicitation}`
     );
 
 
     const selected = hasX402
-      ? x402Wrapper
+      ? getX402Wrapper()
       : (hasElicitation
-        ? elicitationWrapper
-        : resubmitWrapper);
+        ? getElicitationWrapper()
+        : getResubmitWrapper());
     if (arguments.length === 2) {
       return await (selected as ToolHandler)(paramsOrExtra, maybeExtra as ToolExtraLike);
     }

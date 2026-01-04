@@ -8,11 +8,10 @@ export const buildX402middleware = (providers: ProviderInstances, stateStore: St
     return async (req: any, res: any, next: any) => {
         const rpcMethod = (req.body as any)?.method;
         if (rpcMethod === 'tools/call') {
-            const providername = Object.keys(providers).find(p=>p==='x402');
+            const provider = providers["x402"];
             const sessionId = req.headers['mcp-session-id'] as string;
             const clientInfo = await getClientInfo(sessionId);
-            if (providername === 'x402' && (mode===Mode.X402 || (mode===Mode.AUTO && clientInfo.capabilities.x402))) {
-                const provider = providers[providername];
+            if (provider && (mode===Mode.X402 || (mode===Mode.AUTO && clientInfo?.capabilities?.x402))) {
                 const toolName = (req.body as any)?.params?.name ?? 'unknown';
                 const priceInfo = paidtools[toolName];
                 if (priceInfo) {

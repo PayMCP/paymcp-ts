@@ -30,7 +30,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
   _getClientInfo: (sessionId:string)=>Promise<ClientInfo>,
   logger?: Logger
 ) => {
-  const provider = Object.values(providers)[0];
+  const providerName = Object.keys(providers).find(p => p !== 'x402'); //first non-x402 provider
+  const provider = (providerName ? providers[providerName] : undefined)!;
   if (!provider) {
     throw new Error(`[PayMCP] No payment provider configured (tool: ${toolName}).`);
   }

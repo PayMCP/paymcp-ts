@@ -83,7 +83,9 @@ server.registerTool(
       a: z.number(),
       b: z.number(),
     },
-    price: { amount: 0.19, currency: "USD" },
+    _meta: {
+        price: { amount: 0.19, currency: "USD" },
+    }
   },
   async ({ a, b }, extra) => {
     // `extra` is required by the PayMCP tool signature — include it even if unused
@@ -114,7 +116,9 @@ server.registerTool(
   {
     title: "Generate report",
     description: "Requires an active Pro subscription.",
-    subscription: { plan: "price_pro_monthly" }, // or array of accepted plan ids
+    _meta: {
+        subscription: { plan: "price_pro_monthly" }, // or array of accepted plan ids
+    }
   },
   async (extra) => {
     return { content: [{ type: "text", text: "Your report" }] };

@@ -1,5 +1,11 @@
 # Changelog
 
+
+# 0.8.2
+### Changed
+- Price/subscription setup moved to the tool `_meta`
+- Removed auto‑adding pricing hints to the tool descriptions.
+
 # 0.8.1
 ### Added
 - Mode.AUTO now supports configuring both a traditional provider and an X402 provider, automatically selecting X402 when the client has an X402 wallet.

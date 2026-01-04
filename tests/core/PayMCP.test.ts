@@ -757,8 +757,9 @@ describe('PayMCP', () => {
       // Verify we're looking at the original tool, not the confirmation tool
       expect(registeredToolName).toBe('test_tool');
 
-      // Verify _meta was deleted from the registered config
-      expect(registeredConfig._meta).toBeUndefined();
+      // Verify _meta keeps price (moved from description to meta)
+      expect(registeredConfig._meta).toBeDefined();
+      expect(registeredConfig._meta?.price).toEqual({ amount: 2.50, currency: 'USD' });
 
       // But original toolConfig should still have _meta (not mutated)
       expect(toolConfig._meta).toBeDefined();
@@ -795,8 +796,9 @@ describe('PayMCP', () => {
       // Get the config that was actually registered (first call, second argument)
       const registeredConfig = originalRegisterTool.mock.calls[0][1];
 
-      // Verify _meta was deleted from the registered config
-      expect(registeredConfig._meta).toBeUndefined();
+      // Verify _meta keeps price (moved from description to meta)
+      expect(registeredConfig._meta).toBeDefined();
+      expect(registeredConfig._meta?.price).toEqual({ amount: 2.50, currency: 'USD' });
 
       // But original toolConfig should still have _meta (not mutated)
       expect(toolConfig._meta).toBeDefined();

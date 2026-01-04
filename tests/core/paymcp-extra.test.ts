@@ -107,7 +107,8 @@ describe('PayMCP Extra Coverage', () => {
       const [name, config, wrappedHandler] = testToolCall!;
 
       expect(name).toBe('test_tool');
-      expect(config.description).toContain('10 USD');
+      expect(config.description).toBe('Test tool');
+      expect(config._meta?.price).toEqual({ amount: 10, currency: 'USD' });
       expect(typeof wrappedHandler).toBe('function');
       // The wrapped handler should be different from the original
       expect(wrappedHandler).not.toBe(handler);

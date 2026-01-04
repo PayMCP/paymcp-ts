@@ -62,7 +62,8 @@ installPayMCP(server, {
 ```
 
 
-> The first provider listed is used by default for priced tools. Multi‑provider selection coming soon.
+> 💡 **Tip:** In `Mode.AUTO`, you can configure both a traditional provider (e.g. Stripe) and an X402 provider.
+> If the client has an X402 wallet, PayMCP will automatically use the x402 protocol; otherwise, it falls back to the traditional provider.
 
 ### 3. Choose how to charge (pick one per tool)
 
@@ -234,12 +235,16 @@ installPayMCP(server, {
 
 The `mode` option controls how the user is guided through pay‑per‑request payment flows. Choose what fits your UX and client capabilities.
 
+
 ### `Mode.AUTO` (default)
 Chooses the best flow at runtime based on client capabilities:
 
 - If the client advertises support for `x402` → uses `Mode.X402`.
 - Else if `capabilities.elicitation` is available → uses `Mode.ELICITATION`.
 - Otherwise → falls back to `Mode.RESUBMIT`.
+
+In addition, `Mode.AUTO` supports configuring multiple payment providers at once.
+If both a traditional provider and an X402 provider are configured, PayMCP will automatically use the X402 provider when the client has an X402 wallet, and fall back to the traditional provider otherwise.
 
 ### `Mode.RESUBMIT`
 

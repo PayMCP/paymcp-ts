@@ -1,5 +1,8 @@
 # Changelog
 
+# 0.8.3
+### Changed
+- Default x402 facilitator is now https://facilitator.paymcp.info
 
 # 0.8.2
 ### Changed

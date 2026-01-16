@@ -5,6 +5,7 @@
 > 🆕 **x402 protocol is now fully supported.** PayMCP includes native support for the [x402 payment protocol](https://www.x402.org/) and a dedicated `Mode.X402` for clients capable of automatic on-chain payments.
 
 `paymcp` is a lightweight SDK that helps you add monetization to your MCP‑based tools, servers, or agents. Pick per‑tool pricing (pay‑per‑request) or subscription gating while still using MCP's native tool/resource interface.
+Paper: [https://zenodo.org/records/18158720](https://zenodo.org/records/18158720)
 
 See the [full documentation](https://paymcp.info).
 
@@ -302,27 +303,18 @@ Minimal setup for accepting **USDC payments** using x402:
 import { X402Provider } from "paymcp/providers";
 
 const provider = new X402Provider({
-  payTo: [{ address: "0xYourAddress" }],
-  facilitator: {
-    apiKeyId: process.env.CDP_API_KEY_ID,
-    apiKeySecret: process.env.CDP_API_KEY_SECRET,
-  },
+  payTo: [{ address: "0xYourAddress" }]
 });
 ```
 
-> The mainnet facilitator requires a Coinbase Developer Platform (CDP) account.
-
-For **development and testing**, you can use the free public facilitator:
+For **development and testing**, you can use Base Sepolia testnet:
 
 ```ts
 const provider = new X402Provider({
   payTo: [{
     address: "0xYourAddress",
     network: "eip155:84532", // Base Sepolia testnet
-  }],
-  facilitator: {
-    url: "https://www.x402.org/facilitator",
-  },
+  }]
 });
 ```
 

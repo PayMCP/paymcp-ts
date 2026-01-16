@@ -10,6 +10,7 @@ const DEFAULT_NETWORK = "eip155:8453";
 const DEFAULT_DOMAIN_NAME = "USD Coin";
 const DEFAULT_DOMAIN_VERSION = "2"; // Circle USDC uses version "2"
 const FACILITATOR_BASE = "https://api.cdp.coinbase.com/platform/v2/x402";
+const FACILITATOR_PAYMCP = "https://facilitator.paymcp.info"
 
 const assetsMap: Record<string, string> = {
     "eip155:8453:USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // Base USDC
@@ -51,7 +52,7 @@ interface CreateAuthHeadersProps {
 }
 
 interface FacilitatorConfig {
-    url?: string;
+    url: string;
     apiKeyId?: string;
     apiKeySecret?: string;
     createAuthHeaders?: (opts?: CreateAuthHeadersProps) => Record<string, string> | undefined;
@@ -80,7 +81,7 @@ export class X402Provider extends BasePaymentProvider {
 
     private payTo: PayTo[];
     private facilitator: FacilitatorConfig = {
-        url: FACILITATOR_BASE,
+        url: FACILITATOR_PAYMCP,
     }
     private resourceInfo;
     private x402Version = 2;
@@ -105,6 +106,7 @@ export class X402Provider extends BasePaymentProvider {
         
         if (opts.facilitator?.url) {
             this.facilitator.url = opts.facilitator?.url;
+            if (this.facilitator.url==='https://api.cdp.coinbase.com') this.facilitator.url=FACILITATOR_BASE; //just in case
         }
         if (opts.facilitator?.createAuthHeaders) {
             this.facilitator.createAuthHeaders = opts.facilitator.createAuthHeaders;
@@ -134,7 +136,7 @@ export class X402Provider extends BasePaymentProvider {
         };
 
         if (this.facilitator.createAuthHeaders) {
-            const host = new URL(this.facilitator.url ?? FACILITATOR_BASE).host;
+            const host = new URL(this.facilitator.url).host;
             const authHeaders = this.facilitator.createAuthHeaders({
                 host,
                 method: "GET",
@@ -313,7 +315,7 @@ export class X402Provider extends BasePaymentProvider {
         };
 
         if (this.facilitator.createAuthHeaders) {
-            const host = new URL(this.facilitator.url ?? FACILITATOR_BASE).host;
+            const host = new URL(this.facilitator.url).host;
             const authHeaders = this.facilitator.createAuthHeaders({
                 host,
                 method: "POST",
@@ -367,7 +369,7 @@ export class X402Provider extends BasePaymentProvider {
         }
 
         if (this.facilitator.createAuthHeaders) {
-            const host = new URL(this.facilitator.url ?? FACILITATOR_BASE).host;
+            const host = new URL(this.facilitator.url).host;
             const authHeaders = this.facilitator.createAuthHeaders({
                 host,
                 method: "POST",

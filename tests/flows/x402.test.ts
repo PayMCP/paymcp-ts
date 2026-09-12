@@ -20,6 +20,7 @@ describe('RESUBMIT x402 Flow', () => {
   const clientInfo = () => ({ name: 'test', capabilities: {} });
 
   const paymentData = {
+    x402Version: 2,
     accepts: [
       {
         scheme: 'exact',
@@ -80,6 +81,114 @@ describe('RESUBMIT x402 Flow', () => {
   afterEach(() => {
     vi.clearAllMocks();
     storage.clear();
+  });
+
+  const makeWrapper = (toolName = 'premiumReport') =>
+    makePaidWrapper(
+      vi.fn(),
+      mockServer,
+      mockProviders,
+      priceInfo,
+      toolName,
+      mockStateStore,
+      {},
+      clientInfo,
+      mockLogger
+    );
+
+  it('should default the v2 resource URL to the tool being paid for', async () => {
+    const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
+
+    // x402 v2 marks `resource` required; the provider cannot know the tool name.
+    expect(result.error.data.resource).toEqual({ url: 'mcp://tool/premiumReport' });
+  });
+
+  it('should fill only the missing URL of a partial v2 resource', async () => {
+    (mockProvider.createPayment as any).mockResolvedValue({
+      paymentId: 'challenge_123',
+      paymentUrl: '',
+      paymentData: { ...paymentData, resource: { description: 'Paid tool' } }
+    });
+
+    const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
+
+    expect(result.error.data.resource).toEqual({
+      description: 'Paid tool',
+      url: 'mcp://tool/premiumReport'
+    });
+  });
+
+  it('should treat a challenge without x402Version as v2', async () => {
+    const { x402Version, ...versionless } = paymentData as any;
+    (mockProvider.createPayment as any).mockResolvedValue({
+      paymentId: 'challenge_123',
+      paymentUrl: '',
+      paymentData: versionless
+    });
+
+    const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
+
+    expect(result.error.data.resource).toEqual({ url: 'mcp://tool/premiumReport' });
+  });
+
+  it('should replace an undefined v2 resource URL', async () => {
+    (mockProvider.createPayment as any).mockResolvedValue({
+      paymentId: 'challenge_123',
+      paymentUrl: '',
+      paymentData: { ...paymentData, resource: { url: undefined, description: 'Paid tool' } }
+    });
+
+    const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
+
+    // `url` is required; an unset config value must not produce an empty one.
+    expect(result.error.data.resource).toEqual({
+      url: 'mcp://tool/premiumReport',
+      description: 'Paid tool'
+    });
+  });
+
+  it('should tolerate a non-object v2 resource', async () => {
+    (mockProvider.createPayment as any).mockResolvedValue({
+      paymentId: 'challenge_123',
+      paymentUrl: '',
+      paymentData: { ...paymentData, resource: 'https://example.com/premium' }
+    });
+
+    const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
+
+    expect(result.error.data.resource).toEqual({ url: 'mcp://tool/premiumReport' });
+  });
+
+  it('should keep a configured v2 resource URL', async () => {
+    (mockProvider.createPayment as any).mockResolvedValue({
+      paymentId: 'challenge_123',
+      paymentUrl: '',
+      paymentData: {
+        ...paymentData,
+        resource: { url: 'https://example.com/premium', description: 'Paid tool' }
+      }
+    });
+
+    const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
+
+    expect(result.error.data.resource).toEqual({
+      url: 'https://example.com/premium',
+      description: 'Paid tool'
+    });
+  });
+
+  it('should not add a resource field on the v1 path', async () => {
+    (mockProvider.createPayment as any).mockResolvedValue({
+      paymentId: 'challenge_123',
+      paymentUrl: '',
+      paymentData: { ...paymentData, x402Version: 1 }
+    });
+
+    const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
+
+    // v1 carries `resource` inside each accepts entry and it is part of what the
+    // facilitator verifies, so the flow must not touch it.
+    expect(result.error.data).not.toHaveProperty('resource');
   });
 
   it('should reject when challenge ID is unknown', async () => {
@@ -199,7 +308,7 @@ describe('RESUBMIT x402 Flow', () => {
         error: expect.objectContaining({
           code: 402,
           message: 'Payment required',
-          data: paymentData,
+          data: { ...paymentData, resource: { url: 'mcp://tool/testTool' } },
         }),
       })
     );

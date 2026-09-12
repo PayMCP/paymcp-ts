@@ -2,7 +2,20 @@ import { ProviderInstances } from "../providers/index.js"
 import { ClientInfo } from "../types/config.js";
 import { Logger } from "../types/logger.js";
 import { StateStore } from "../types/state.js";
+import type { ResourceInfo } from "../providers/x402.js";
 import { Mode } from "../types/payment.js";
+
+/**
+ * x402 v2 marks PaymentRequired.resource required, and its `url` in turn. The provider
+ * builds the challenge but knows nothing about tools, so callers fill the URL in here.
+ * A configured URL always wins; anything that is not an object is ignored.
+ */
+export function withDefaultUrl(resource: unknown, toolName: string): ResourceInfo {
+    const base: Record<string, any> =
+        resource && typeof resource === "object" && !Array.isArray(resource) ? { ...resource } : {};
+    if (!base.url) base.url = `mcp://tool/${encodeURIComponent(toolName)}`;
+    return base as ResourceInfo;
+}
 
 export const buildX402middleware = (providers: ProviderInstances, stateStore: StateStore, paidtools: Record<string, { amount: number, currency: string, description?: string }>, mode:Mode, getClientInfo: (sessionId:string)=> Promise<ClientInfo>, logger:Logger) => {
     return async (req: any, res: any, next: any) => {
@@ -17,8 +30,20 @@ export const buildX402middleware = (providers: ProviderInstances, stateStore: St
                 if (priceInfo) {
                     const paymentSig = (req.headers['payment-signature'.toLowerCase()] ?? req.headers['PAYMENT-SIGNATURE'.toLowerCase()] ?? req.headers['X-PAYMENT'.toLowerCase()]) as string | undefined;
                     if (!paymentSig) {
-                        const { paymentId, paymentData } = await provider.createPayment(priceInfo.amount, priceInfo.currency, priceInfo.description ?? "");
-                        const x402version=paymentData.x402Version;
+                        const { paymentId, paymentData: rawPaymentData } = await provider.createPayment(priceInfo.amount, priceInfo.currency, priceInfo.description ?? "");
+                        if (!rawPaymentData) {
+                            // this is async Express middleware: a throw here becomes an unhandled
+                            // rejection and the request hangs, so hand the error to Express instead
+                            logger?.error?.("[PayMCP] x402 provider returned no payment requirements");
+                            return next(new Error("Payment provider did not return payment requirements"));
+                        }
+                        const x402version=rawPaymentData.x402Version;
+                        // v2 requires a top-level ResourceInfo; the provider has no tool name, so default
+                        // the URL to the tool being paid for. Build a new object rather than mutating
+                        // what the provider returned.
+                        const paymentData = x402version !== 1
+                            ? { ...rawPaymentData, resource: withDefaultUrl(rawPaymentData?.resource, toolName) }
+                            : rawPaymentData;
                         if (x402version===1) { //x402 v1 payment response doesn't return payment Requirements and can't set any extra data. So, the only way to save paymentData is to use session
                             if (!clientInfo.sessionId) {
                                 return res.status(400).send("Error: No session id provided by MCP client");

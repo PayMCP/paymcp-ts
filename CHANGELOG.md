@@ -1,5 +1,15 @@
 # Changelog
 
+# 0.9.0
+### Breaking Changes
+- x402 v2 challenges now carry the resource description under `resource`, the field name the v2 `PaymentRequired` schema defines. It was previously emitted as `resourceInfo`, which is not an x402 field, so v2 clients never found it. Anyone reading the old key must switch. The `resourceInfo` constructor option keeps its name.
+
+### Fixed
+- `resource` is required by the v2 schema but was omitted unless `resourceInfo` was configured. Every v2 challenge PayMCP sends now carries it, defaulting to `mcp://tool/<toolName>` — the form used by the x402 MCP transport spec. A configured URL still wins.
+- `ResourceInfo.description` and `.mimeType` are now optional, matching the spec, and the configuration type no longer requires `url` — PayMCP fills it in.
+
+x402 v1 challenges are unchanged, including their non-standard top-level `resourceInfo`, which is left alone deliberately: in v1 the fields the facilitator verifies live inside `accepts`.
+
 # 0.8.3
 ### Changed
 - Default x402 facilitator is now https://facilitator.paymcp.info

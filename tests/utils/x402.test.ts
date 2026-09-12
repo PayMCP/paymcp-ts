@@ -1,6 +1,43 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { buildX402middleware } from "../../src/utils/x402.js";
+import { buildX402middleware, withDefaultUrl } from "../../src/utils/x402.js";
 import { Mode } from "../../src/types/payment.js";
+
+describe("withDefaultUrl", () => {
+  it("defaults the url when there is nothing to merge", () => {
+    for (const input of [undefined, null, {}, "https://example.com", ["https://example.com"]]) {
+      expect(withDefaultUrl(input, "myTool")).toEqual({ url: "mcp://tool/myTool" });
+    }
+  });
+
+  it("keeps a configured url and merges the rest", () => {
+    expect(withDefaultUrl({ url: "https://example.com/r", description: "d" }, "myTool")).toEqual({
+      url: "https://example.com/r",
+      description: "d"
+    });
+  });
+
+  it("replaces a url that is undefined or empty", () => {
+    expect(withDefaultUrl({ url: undefined, description: "d" }, "myTool")).toEqual({
+      url: "mcp://tool/myTool",
+      description: "d"
+    });
+    expect(withDefaultUrl({ url: "" }, "myTool")).toEqual({ url: "mcp://tool/myTool" });
+  });
+
+  it("escapes the tool name", () => {
+    expect(withDefaultUrl(undefined, "Weather Report")).toEqual({
+      url: "mcp://tool/Weather%20Report"
+    });
+  });
+
+  it("never mutates its argument", () => {
+    // providers may hand out the same resourceInfo object on every call, so mutating
+    // it would pin the first tool's url onto every later challenge.
+    const input = { description: "d" };
+    withDefaultUrl(input, "myTool");
+    expect(input).toEqual({ description: "d" });
+  });
+});
 
 describe("buildX402middleware", () => {
   const toolName = "testTool";
@@ -37,6 +74,77 @@ describe("buildX402middleware", () => {
     next = vi.fn();
   });
 
+  it("keeps a configured resource on the middleware path", async () => {
+    mockProvider.createPayment = vi.fn().mockResolvedValue({
+      paymentId: "pay_123",
+      paymentData: {
+        x402Version: 2,
+        resource: { url: "https://example.com/r", description: "Paid tool" },
+      },
+    });
+    const providers = { x402: mockProvider };
+    const getClientInfo = vi.fn().mockResolvedValue({
+      sessionId: "s1",
+      capabilities: { x402: true },
+    });
+    const req = {
+      body: { method: "tools/call", params: { name: toolName } },
+      headers: { "mcp-session-id": "s1" },
+    };
+
+    const middleware = buildX402middleware(
+      providers as any,
+      mockStateStore,
+      paidtools,
+      Mode.AUTO,
+      getClientInfo,
+      mockLogger
+    );
+
+    await middleware(req, res, next);
+
+    expect(res.json).toHaveBeenCalledWith({
+      x402Version: 2,
+      resource: { url: "https://example.com/r", description: "Paid tool" },
+    });
+  });
+
+  const runMiddleware = async (providers: any) => {
+    const getClientInfo = vi.fn().mockResolvedValue({ sessionId: "s1", capabilities: { x402: true } });
+    const req = {
+      body: { method: "tools/call", params: { name: toolName } },
+      headers: { "mcp-session-id": "s1" },
+    };
+    const middleware = buildX402middleware(
+      providers, mockStateStore, paidtools, Mode.AUTO, getClientInfo, mockLogger
+    );
+    await middleware(req, res, next);
+  };
+
+  it("treats a challenge without x402Version as v2", async () => {
+    mockProvider.createPayment = vi.fn().mockResolvedValue({
+      paymentId: "pay_123",
+      paymentData: { accepts: [] },
+    });
+
+    await runMiddleware({ x402: mockProvider });
+
+    expect(res.json).toHaveBeenCalledWith({
+      accepts: [],
+      resource: { url: `mcp://tool/${toolName}` },
+    });
+  });
+
+  it("hands the error to Express when the provider returns no requirements", async () => {
+    mockProvider.createPayment = vi.fn().mockResolvedValue({ paymentId: "pay_123" });
+
+    await runMiddleware({ x402: mockProvider });
+
+    // throwing here would be an unhandled rejection and the request would hang
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    expect(res.status).not.toHaveBeenCalledWith(402);
+  });
+
   it("returns 402 and stores payment data for x402 v2", async () => {
     const providers = { x402: mockProvider };
     const getClientInfo = vi.fn().mockResolvedValue({
@@ -60,11 +168,12 @@ describe("buildX402middleware", () => {
     await middleware(req, res, next);
 
     expect(mockProvider.createPayment).toHaveBeenCalledWith(1, "USD", "Test fee");
-    expect(mockStateStore.set).toHaveBeenCalledWith("pay_123", { paymentData: { x402Version: 2 } });
+    const expectedPaymentData = { x402Version: 2, resource: { url: `mcp://tool/${toolName}` } };
+    expect(mockStateStore.set).toHaveBeenCalledWith("pay_123", { paymentData: expectedPaymentData });
     expect(res.status).toHaveBeenCalledWith(402);
     expect(res.setHeader).toHaveBeenCalledWith("PAYMENT-REQUIRED", expect.any(String));
     expect(res.setHeader).toHaveBeenCalledWith("Content-Type", "application/json");
-    expect(res.json).toHaveBeenCalledWith({ x402Version: 2 });
+    expect(res.json).toHaveBeenCalledWith(expectedPaymentData);
     expect(next).not.toHaveBeenCalled();
   });
 

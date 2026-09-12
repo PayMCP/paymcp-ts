@@ -55,7 +55,7 @@ describe('X402Provider', () => {
       );
     });
 
-    it('should include resourceInfo when provided', async () => {
+    it('should expose resourceInfo under the canonical v2 `resource` field', async () => {
       const resourceInfo = {
         url: 'https://example.com/resource',
         description: 'Example resource',
@@ -70,7 +70,77 @@ describe('X402Provider', () => {
 
       const result = await provider.createPayment(2, 'USD', 'With resource');
 
-      expect(result.paymentData?.resourceInfo).toEqual(resourceInfo);
+      // x402 v2 PaymentRequired carries ResourceInfo under `resource`, not `resourceInfo`.
+      expect(Object.keys(result.paymentData ?? {}).sort()).toEqual([
+        'accepts',
+        'error',
+        'resource',
+        'x402Version'
+      ]);
+      expect((result.paymentData as any)?.resource).toEqual(resourceInfo);
+    });
+
+    it('should leave the v1 challenge shape alone', async () => {
+      const resourceInfo = { url: 'https://example.com/r', description: 'd', mimeType: 'text/plain' };
+      const provider = new X402Provider({
+        payTo: [{ address: '0xPayTo' }],
+        x402Version: 1,
+        resourceInfo,
+        logger: mockLogger
+      });
+
+      const result = await provider.createPayment(1, 'USD', 'v1 fee');
+      const data = result.paymentData as any;
+
+      // v1 keeps the non-standard top-level `resourceInfo`, and carries resource
+      // details inside accepts — those are part of what the facilitator verifies.
+      expect(Object.keys(data).sort()).toEqual(['accepts', 'resourceInfo', 'x402Version']);
+      expect(data.resourceInfo).toEqual(resourceInfo);
+      expect(data.accepts[0]).toMatchObject({
+        resource: 'https://example.com/r',
+        description: 'd',
+        mimeType: 'text/plain'
+      });
+    });
+
+    it('should accept a resourceInfo without a url', async () => {
+      const provider = new X402Provider({
+        payTo: [{ address: '0xPayTo' }],
+        // No url: the tool name is not knowable here, so the caller fills it in.
+        resourceInfo: { description: 'Paid tool' },
+        logger: mockLogger
+      });
+
+      const result = await provider.createPayment(2, 'USD', 'Partial resource');
+
+      expect((result.paymentData as any)?.resource).toEqual({ description: 'Paid tool' });
+    });
+
+    it('should copy resourceInfo instead of sharing it across calls', async () => {
+      const resourceInfo = { description: 'Paid tool' };
+      const provider = new X402Provider({
+        payTo: [{ address: '0xPayTo' }],
+        resourceInfo,
+        logger: mockLogger
+      });
+
+      const first = await provider.createPayment(1, 'USD', 'a');
+      const second = await provider.createPayment(1, 'USD', 'b');
+
+      // callers complete the URL; sharing would pin the first tool's URL on every later challenge
+      expect((first.paymentData as any).resource).not.toBe(resourceInfo);
+      expect((first.paymentData as any).resource).not.toBe((second.paymentData as any).resource);
+    });
+
+    it('should leave the v2 resource for the caller when resourceInfo is not configured', async () => {
+      const provider = new X402Provider({
+        payTo: [{ address: '0xPayTo' }],
+        logger: mockLogger
+      });
+
+      const result = await provider.createPayment(2, 'USD', 'No resource');
+
+      expect(result.paymentData).not.toHaveProperty('resource');
     });
 
     it('should resolve asset symbols using network mapping', async () => {

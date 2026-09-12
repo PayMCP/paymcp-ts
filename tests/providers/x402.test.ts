@@ -80,6 +80,29 @@ describe('X402Provider', () => {
       expect((result.paymentData as any)?.resource).toEqual(resourceInfo);
     });
 
+    it('should leave the v1 challenge shape alone', async () => {
+      const resourceInfo = { url: 'https://example.com/r', description: 'd', mimeType: 'text/plain' };
+      const provider = new X402Provider({
+        payTo: [{ address: '0xPayTo' }],
+        x402Version: 1,
+        resourceInfo,
+        logger: mockLogger
+      });
+
+      const result = await provider.createPayment(1, 'USD', 'v1 fee');
+      const data = result.paymentData as any;
+
+      // v1 keeps the non-standard top-level `resourceInfo`, and carries resource
+      // details inside accepts — those are part of what the facilitator verifies.
+      expect(Object.keys(data).sort()).toEqual(['accepts', 'resourceInfo', 'x402Version']);
+      expect(data.resourceInfo).toEqual(resourceInfo);
+      expect(data.accepts[0]).toMatchObject({
+        resource: 'https://example.com/r',
+        description: 'd',
+        mimeType: 'text/plain'
+      });
+    });
+
     it('should accept a resourceInfo without a url', async () => {
       const provider = new X402Provider({
         payTo: [{ address: '0xPayTo' }],

@@ -32,7 +32,10 @@ export const buildX402middleware = (providers: ProviderInstances, stateStore: St
                     if (!paymentSig) {
                         const { paymentId, paymentData: rawPaymentData } = await provider.createPayment(priceInfo.amount, priceInfo.currency, priceInfo.description ?? "");
                         if (!rawPaymentData) {
-                            throw new Error("Payment provider did not return payment requirements");
+                            // this is async Express middleware: a throw here becomes an unhandled
+                            // rejection and the request hangs, so hand the error to Express instead
+                            logger?.error?.("[PayMCP] x402 provider returned no payment requirements");
+                            return next(new Error("Payment provider did not return payment requirements"));
                         }
                         const x402version=rawPaymentData.x402Version;
                         // v2 requires a top-level ResourceInfo; the provider has no tool name, so default

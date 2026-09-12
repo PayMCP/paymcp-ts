@@ -109,6 +109,42 @@ describe("buildX402middleware", () => {
     });
   });
 
+  const runMiddleware = async (providers: any) => {
+    const getClientInfo = vi.fn().mockResolvedValue({ sessionId: "s1", capabilities: { x402: true } });
+    const req = {
+      body: { method: "tools/call", params: { name: toolName } },
+      headers: { "mcp-session-id": "s1" },
+    };
+    const middleware = buildX402middleware(
+      providers, mockStateStore, paidtools, Mode.AUTO, getClientInfo, mockLogger
+    );
+    await middleware(req, res, next);
+  };
+
+  it("treats a challenge without x402Version as v2", async () => {
+    mockProvider.createPayment = vi.fn().mockResolvedValue({
+      paymentId: "pay_123",
+      paymentData: { accepts: [] },
+    });
+
+    await runMiddleware({ x402: mockProvider });
+
+    expect(res.json).toHaveBeenCalledWith({
+      accepts: [],
+      resource: { url: `mcp://tool/${toolName}` },
+    });
+  });
+
+  it("hands the error to Express when the provider returns no requirements", async () => {
+    mockProvider.createPayment = vi.fn().mockResolvedValue({ paymentId: "pay_123" });
+
+    await runMiddleware({ x402: mockProvider });
+
+    // throwing here would be an unhandled rejection and the request would hang
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    expect(res.status).not.toHaveBeenCalledWith(402);
+  });
+
   it("returns 402 and stores payment data for x402 v2", async () => {
     const providers = { x402: mockProvider };
     const getClientInfo = vi.fn().mockResolvedValue({

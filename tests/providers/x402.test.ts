@@ -55,7 +55,7 @@ describe('X402Provider', () => {
       );
     });
 
-    it('should include resourceInfo when provided', async () => {
+    it('should expose resourceInfo under the canonical v2 `resource` field', async () => {
       const resourceInfo = {
         url: 'https://example.com/resource',
         description: 'Example resource',
@@ -70,7 +70,25 @@ describe('X402Provider', () => {
 
       const result = await provider.createPayment(2, 'USD', 'With resource');
 
-      expect(result.paymentData?.resourceInfo).toEqual(resourceInfo);
+      // x402 v2 PaymentRequired carries ResourceInfo under `resource`, not `resourceInfo`.
+      expect(Object.keys(result.paymentData ?? {}).sort()).toEqual([
+        'accepts',
+        'error',
+        'resource',
+        'x402Version'
+      ]);
+      expect((result.paymentData as any)?.resource).toEqual(resourceInfo);
+    });
+
+    it('should omit the v2 resource field when resourceInfo is not configured', async () => {
+      const provider = new X402Provider({
+        payTo: [{ address: '0xPayTo' }],
+        logger: mockLogger
+      });
+
+      const result = await provider.createPayment(2, 'USD', 'No resource');
+
+      expect(result.paymentData).not.toHaveProperty('resource');
     });
 
     it('should resolve asset symbols using network mapping', async () => {

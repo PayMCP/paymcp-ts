@@ -249,8 +249,9 @@ export class X402Provider extends BasePaymentProvider {
         return {
             "x402Version": this.x402Version,
             "error": "Payment required",
+            // x402 v2 names this top-level field `resource` (ResourceInfo object).
             ...this.resourceInfo ? {
-                "resourceInfo": this.resourceInfo
+                "resource": this.resourceInfo
             } : {},
             accepts: this.payTo.map((p) => {
                 // x402 expects integer amounts in the token's smallest units (e.g. USDC has 6 decimals).

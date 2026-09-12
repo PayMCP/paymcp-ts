@@ -1,0 +1,116 @@
+name: "Release"
+
+# Publishes to npm when a version lands on main. `develop` is merged into main
+# through a PR as usual; that merge is what triggers this.
+#
+# Nothing is published unless the version in package.json is one npm does not
+# already have, so re-running or merging again is a no-op rather than an error.
+#
+# The publish job runs in the "release" environment. Give that environment a
+# required reviewer in repo settings and every release becomes one deliberate
+# click — npm only allows unpublishing under narrow conditions, so treat a
+# publish as permanent.
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: "check version"
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - id: v
+        name: Compare package.json version against npm
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          # An unpublished package has no versions at all; treat that as "new".
+          PUBLISHED=$(npm view "${NAME}" versions --json 2>/dev/null || echo '[]')
+          if node -e "process.exit(JSON.parse(process.argv[1]).includes(process.argv[2]) ? 0 : 1)" "$PUBLISHED" "$VERSION"; then
+            echo "${NAME} ${VERSION} is already on npm - nothing to do"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "${NAME} ${VERSION} is new - will publish"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    name: "publish ${{ needs.check.outputs.version }}"
+    needs: check
+    if: needs.check.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    # Approval gate. Also the place to scope npm trusted publishing to.
+    environment: release
+    permissions:
+      contents: write   # create the tag and the GitHub Release
+      id-token: write   # npm trusted publishing (OIDC) and provenance
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        run: npm install -g pnpm@10.12.4
+
+      - uses: actions/setup-node@v7
+        with:
+          # Node 22 so npm is new enough for trusted publishing; the test job
+          # still runs on 18, which is what the package supports.
+          node-version: '22'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Use an npm that supports trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The PR gate already ran these, but a release is worth re-proving on the
+      # exact commit being shipped.
+      - name: Run tests
+        run: pnpm run test
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Publish to npm
+        # With trusted publishing configured on npmjs.com this needs no secret.
+        # If you use an automation token instead, add it as the NPM_TOKEN secret
+        # and it takes precedence; leaving it unset falls back to OIDC.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
+
+      - name: Tag and create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The section for this version, up to the next "# <number>" heading.
+          awk -v want="# ${VERSION}" '
+            $0 == want { found = 1; next }
+            found && /^# [0-9]/ { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "No CHANGELOG section for ${VERSION}." > notes.md
+          fi
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+          gh release create "v${VERSION}" --title "v${VERSION}" --notes-file notes.md

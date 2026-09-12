@@ -13,7 +13,7 @@ import { Mode } from "../types/payment.js";
 export function withDefaultUrl(resource: unknown, toolName: string): ResourceInfo {
     const base: Record<string, any> =
         resource && typeof resource === "object" && !Array.isArray(resource) ? { ...resource } : {};
-    if (!base.url) base.url = `mcp://tool/${toolName}`;
+    if (!base.url) base.url = `mcp://tool/${encodeURIComponent(toolName)}`;
     return base as ResourceInfo;
 }
 

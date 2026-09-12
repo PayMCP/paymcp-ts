@@ -93,6 +93,22 @@ describe('X402Provider', () => {
       expect((result.paymentData as any)?.resource).toEqual({ description: 'Paid tool' });
     });
 
+    it('should copy resourceInfo instead of sharing it across calls', async () => {
+      const resourceInfo = { description: 'Paid tool' };
+      const provider = new X402Provider({
+        payTo: [{ address: '0xPayTo' }],
+        resourceInfo,
+        logger: mockLogger
+      });
+
+      const first = await provider.createPayment(1, 'USD', 'a');
+      const second = await provider.createPayment(1, 'USD', 'b');
+
+      // callers complete the URL; sharing would pin the first tool's URL on every later challenge
+      expect((first.paymentData as any).resource).not.toBe(resourceInfo);
+      expect((first.paymentData as any).resource).not.toBe((second.paymentData as any).resource);
+    });
+
     it('should leave the v2 resource for the caller when resourceInfo is not configured', async () => {
       const provider = new X402Provider({
         payTo: [{ address: '0xPayTo' }],

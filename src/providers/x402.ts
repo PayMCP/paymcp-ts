@@ -264,7 +264,8 @@ export class X402Provider extends BasePaymentProvider {
             // provider has no tool name. The flow and the middleware complete it; see
             // withDefaultUrl() in utils/x402.ts.
             ...this.resourceInfo ? {
-                "resource": this.resourceInfo
+                // copy: callers complete the URL, and this object is shared across calls
+                "resource": { ...this.resourceInfo }
             } : {},
             accepts: this.payTo.map((p) => {
                 // x402 expects integer amounts in the token's smallest units (e.g. USDC has 6 decimals).

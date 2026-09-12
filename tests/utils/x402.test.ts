@@ -24,6 +24,12 @@ describe("withDefaultUrl", () => {
     expect(withDefaultUrl({ url: "" }, "myTool")).toEqual({ url: "mcp://tool/myTool" });
   });
 
+  it("escapes the tool name", () => {
+    expect(withDefaultUrl(undefined, "Weather Report")).toEqual({
+      url: "mcp://tool/Weather%20Report"
+    });
+  });
+
   it("never mutates its argument", () => {
     // providers may hand out the same resourceInfo object on every call, so mutating
     // it would pin the first tool's url onto every later challenge.

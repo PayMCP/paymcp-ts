@@ -60,11 +60,12 @@ describe("buildX402middleware", () => {
     await middleware(req, res, next);
 
     expect(mockProvider.createPayment).toHaveBeenCalledWith(1, "USD", "Test fee");
-    expect(mockStateStore.set).toHaveBeenCalledWith("pay_123", { paymentData: { x402Version: 2 } });
+    const expectedPaymentData = { x402Version: 2, resource: { url: `mcp://tool/${toolName}` } };
+    expect(mockStateStore.set).toHaveBeenCalledWith("pay_123", { paymentData: expectedPaymentData });
     expect(res.status).toHaveBeenCalledWith(402);
     expect(res.setHeader).toHaveBeenCalledWith("PAYMENT-REQUIRED", expect.any(String));
     expect(res.setHeader).toHaveBeenCalledWith("Content-Type", "application/json");
-    expect(res.json).toHaveBeenCalledWith({ x402Version: 2 });
+    expect(res.json).toHaveBeenCalledWith(expectedPaymentData);
     expect(next).not.toHaveBeenCalled();
   });
 

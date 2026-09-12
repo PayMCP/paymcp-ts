@@ -17,8 +17,14 @@ export const buildX402middleware = (providers: ProviderInstances, stateStore: St
                 if (priceInfo) {
                     const paymentSig = (req.headers['payment-signature'.toLowerCase()] ?? req.headers['PAYMENT-SIGNATURE'.toLowerCase()] ?? req.headers['X-PAYMENT'.toLowerCase()]) as string | undefined;
                     if (!paymentSig) {
-                        const { paymentId, paymentData } = await provider.createPayment(priceInfo.amount, priceInfo.currency, priceInfo.description ?? "");
-                        const x402version=paymentData.x402Version;
+                        const { paymentId, paymentData: rawPaymentData } = await provider.createPayment(priceInfo.amount, priceInfo.currency, priceInfo.description ?? "");
+                        const x402version=rawPaymentData.x402Version;
+                        // v2 requires a top-level ResourceInfo; the provider has no tool name, so default
+                        // the URL to the tool being paid for. Build a new object rather than mutating
+                        // what the provider returned.
+                        const paymentData = x402version !== 1
+                            ? { ...rawPaymentData, resource: { url: `mcp://tool/${toolName}`, ...(rawPaymentData?.resource ?? {}) } }
+                            : rawPaymentData;
                         if (x402version===1) { //x402 v1 payment response doesn't return payment Requirements and can't set any extra data. So, the only way to save paymentData is to use session
                             if (!clientInfo.sessionId) {
                                 return res.status(400).send("Error: No session id provided by MCP client");

@@ -55,11 +55,21 @@ export const makePaidWrapper: PaidWrapperFactory = (
         const clientInfo = await getClientInfo(extra.sessionId as string);
 
         if (!paymentSigB64) {
-            const { paymentId, paymentData } = await provider.createPayment(
+            const { paymentId, paymentData: rawPaymentData } = await provider.createPayment(
                 priceInfo.amount,
                 priceInfo.currency,
                 `${toolName}() execution fee`
             );
+            // v2 requires a top-level ResourceInfo; the provider has no tool name, so default
+            // the URL to the tool being paid for. Build a new object rather than mutating
+            // what the provider returned.
+            const paymentData = rawPaymentData?.x402Version !== 1
+                ? {
+                    ...rawPaymentData,
+                    resource: { url: `mcp://tool/${toolName}`, ...(rawPaymentData?.resource ?? {}) },
+                }
+                : rawPaymentData;
+
             let challengeId: string = "";
             if (paymentData?.x402Version === 1) {
                 if (!clientInfo) throw ("Session ID is not found");

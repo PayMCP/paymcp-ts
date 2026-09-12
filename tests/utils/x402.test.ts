@@ -1,6 +1,37 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { buildX402middleware } from "../../src/utils/x402.js";
+import { buildX402middleware, withDefaultUrl } from "../../src/utils/x402.js";
 import { Mode } from "../../src/types/payment.js";
+
+describe("withDefaultUrl", () => {
+  it("defaults the url when there is nothing to merge", () => {
+    for (const input of [undefined, null, {}, "https://example.com", ["https://example.com"]]) {
+      expect(withDefaultUrl(input, "myTool")).toEqual({ url: "mcp://tool/myTool" });
+    }
+  });
+
+  it("keeps a configured url and merges the rest", () => {
+    expect(withDefaultUrl({ url: "https://example.com/r", description: "d" }, "myTool")).toEqual({
+      url: "https://example.com/r",
+      description: "d"
+    });
+  });
+
+  it("replaces a url that is undefined or empty", () => {
+    expect(withDefaultUrl({ url: undefined, description: "d" }, "myTool")).toEqual({
+      url: "mcp://tool/myTool",
+      description: "d"
+    });
+    expect(withDefaultUrl({ url: "" }, "myTool")).toEqual({ url: "mcp://tool/myTool" });
+  });
+
+  it("never mutates its argument", () => {
+    // providers may hand out the same resourceInfo object on every call, so mutating
+    // it would pin the first tool's url onto every later challenge.
+    const input = { description: "d" };
+    withDefaultUrl(input, "myTool");
+    expect(input).toEqual({ description: "d" });
+  });
+});
 
 describe("buildX402middleware", () => {
   const toolName = "testTool";
@@ -35,6 +66,41 @@ describe("buildX402middleware", () => {
       send: vi.fn().mockReturnThis(),
     };
     next = vi.fn();
+  });
+
+  it("keeps a configured resource on the middleware path", async () => {
+    mockProvider.createPayment = vi.fn().mockResolvedValue({
+      paymentId: "pay_123",
+      paymentData: {
+        x402Version: 2,
+        resource: { url: "https://example.com/r", description: "Paid tool" },
+      },
+    });
+    const providers = { x402: mockProvider };
+    const getClientInfo = vi.fn().mockResolvedValue({
+      sessionId: "s1",
+      capabilities: { x402: true },
+    });
+    const req = {
+      body: { method: "tools/call", params: { name: toolName } },
+      headers: { "mcp-session-id": "s1" },
+    };
+
+    const middleware = buildX402middleware(
+      providers as any,
+      mockStateStore,
+      paidtools,
+      Mode.AUTO,
+      getClientInfo,
+      mockLogger
+    );
+
+    await middleware(req, res, next);
+
+    expect(res.json).toHaveBeenCalledWith({
+      x402Version: 2,
+      resource: { url: "https://example.com/r", description: "Paid tool" },
+    });
   });
 
   it("returns 402 and stores payment data for x402 v2", async () => {

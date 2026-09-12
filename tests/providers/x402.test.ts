@@ -80,7 +80,20 @@ describe('X402Provider', () => {
       expect((result.paymentData as any)?.resource).toEqual(resourceInfo);
     });
 
-    it('should omit the v2 resource field when resourceInfo is not configured', async () => {
+    it('should accept a resourceInfo without a url', async () => {
+      const provider = new X402Provider({
+        payTo: [{ address: '0xPayTo' }],
+        // No url: the tool name is not knowable here, so the caller fills it in.
+        resourceInfo: { description: 'Paid tool' },
+        logger: mockLogger
+      });
+
+      const result = await provider.createPayment(2, 'USD', 'Partial resource');
+
+      expect((result.paymentData as any)?.resource).toEqual({ description: 'Paid tool' });
+    });
+
+    it('should leave the v2 resource for the caller when resourceInfo is not configured', async () => {
       const provider = new X402Provider({
         payTo: [{ address: '0xPayTo' }],
         logger: mockLogger

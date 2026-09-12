@@ -131,7 +131,7 @@ describe('RESUBMIT x402 Flow', () => {
     expect(result.error.data.resource).toEqual({ url: 'mcp://tool/premiumReport' });
   });
 
-  it('should replace an empty v2 resource URL', async () => {
+  it('should replace an undefined v2 resource URL', async () => {
     (mockProvider.createPayment as any).mockResolvedValue({
       paymentId: 'challenge_123',
       paymentUrl: '',

@@ -39,11 +39,20 @@ const v2_network_map: Record<string, string> = {
     "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
 }
 
-interface ResourceInfo {
-    url: string;
+/**
+ * What an operator may configure. `url` is optional: when it is absent PayMCP
+ * fills in the tool being paid for, which the provider itself cannot know.
+ */
+export interface ResourceInfoConfig {
+    url?: string;
     // Optional per x402 v2 spec section 5.1.2.
     description?: string;
     mimeType?: string;
+}
+
+/** What goes on the wire: x402 v2 requires `url`. */
+export interface ResourceInfo extends ResourceInfoConfig {
+    url: string;
 }
 
 interface CreateAuthHeadersProps {
@@ -72,7 +81,7 @@ interface PayTo {
 export interface X402ProviderOpts {
     payTo: PayTo[];
     logger?: Logger;
-    resourceInfo?: ResourceInfo;
+    resourceInfo?: ResourceInfoConfig;
     facilitator?: FacilitatorConfig;
     x402Version?: number;
     gasLimit?: string;
@@ -84,7 +93,7 @@ export class X402Provider extends BasePaymentProvider {
     private facilitator: FacilitatorConfig = {
         url: FACILITATOR_PAYMCP,
     }
-    private resourceInfo?: ResourceInfo;
+    private resourceInfo?: ResourceInfoConfig;
     private x402Version = 2;
     private feePayer:string | undefined;
 
@@ -251,6 +260,9 @@ export class X402Provider extends BasePaymentProvider {
             "x402Version": this.x402Version,
             "error": "Payment required",
             // x402 v2 names this top-level field `resource` (ResourceInfo object).
+            // v2 marks `resource` required, but its `url` identifies the MCP tool and the
+            // provider has no tool name. The flow and the middleware complete it; see
+            // withDefaultUrl() in utils/x402.ts.
             ...this.resourceInfo ? {
                 "resource": this.resourceInfo
             } : {},

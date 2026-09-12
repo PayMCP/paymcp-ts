@@ -2,6 +2,7 @@ import { ProviderInstances } from "../providers/index.js"
 import { ClientInfo } from "../types/config.js";
 import { Logger } from "../types/logger.js";
 import { StateStore } from "../types/state.js";
+import type { ResourceInfo } from "../providers/x402.js";
 import { Mode } from "../types/payment.js";
 
 /**
@@ -9,10 +10,11 @@ import { Mode } from "../types/payment.js";
  * builds the challenge but knows nothing about tools, so callers fill the URL in here.
  * A configured URL always wins; anything that is not an object is ignored.
  */
-export function withDefaultUrl(resource: any, toolName: string): Record<string, any> {
-    const base = resource && typeof resource === "object" && !Array.isArray(resource) ? { ...resource } : {};
+export function withDefaultUrl(resource: unknown, toolName: string): ResourceInfo {
+    const base: Record<string, any> =
+        resource && typeof resource === "object" && !Array.isArray(resource) ? { ...resource } : {};
     if (!base.url) base.url = `mcp://tool/${toolName}`;
-    return base;
+    return base as ResourceInfo;
 }
 
 export const buildX402middleware = (providers: ProviderInstances, stateStore: StateStore, paidtools: Record<string, { amount: number, currency: string, description?: string }>, mode:Mode, getClientInfo: (sessionId:string)=> Promise<ClientInfo>, logger:Logger) => {
@@ -29,7 +31,10 @@ export const buildX402middleware = (providers: ProviderInstances, stateStore: St
                     const paymentSig = (req.headers['payment-signature'.toLowerCase()] ?? req.headers['PAYMENT-SIGNATURE'.toLowerCase()] ?? req.headers['X-PAYMENT'.toLowerCase()]) as string | undefined;
                     if (!paymentSig) {
                         const { paymentId, paymentData: rawPaymentData } = await provider.createPayment(priceInfo.amount, priceInfo.currency, priceInfo.description ?? "");
-                        const x402version=rawPaymentData?.x402Version;
+                        if (!rawPaymentData) {
+                            throw new Error("Payment provider did not return payment requirements");
+                        }
+                        const x402version=rawPaymentData.x402Version;
                         // v2 requires a top-level ResourceInfo; the provider has no tool name, so default
                         // the URL to the tool being paid for. Build a new object rather than mutating
                         // what the provider returned.

@@ -41,8 +41,9 @@ const v2_network_map: Record<string, string> = {
 
 interface ResourceInfo {
     url: string;
-    description: string;
-    mimeType: string;
+    // Optional per x402 v2 spec section 5.1.2.
+    description?: string;
+    mimeType?: string;
 }
 
 interface CreateAuthHeadersProps {
@@ -83,7 +84,7 @@ export class X402Provider extends BasePaymentProvider {
     private facilitator: FacilitatorConfig = {
         url: FACILITATOR_PAYMCP,
     }
-    private resourceInfo;
+    private resourceInfo?: ResourceInfo;
     private x402Version = 2;
     private feePayer:string | undefined;
 

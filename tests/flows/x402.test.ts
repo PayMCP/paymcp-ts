@@ -20,6 +20,7 @@ describe('RESUBMIT x402 Flow', () => {
   const clientInfo = () => ({ name: 'test', capabilities: {} });
 
   const paymentData = {
+    x402Version: 2,
     accepts: [
       {
         scheme: 'exact',
@@ -99,6 +100,62 @@ describe('RESUBMIT x402 Flow', () => {
     const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
 
     // x402 v2 marks `resource` required; the provider cannot know the tool name.
+    expect(result.error.data.resource).toEqual({ url: 'mcp://tool/premiumReport' });
+  });
+
+  it('should fill only the missing URL of a partial v2 resource', async () => {
+    (mockProvider.createPayment as any).mockResolvedValue({
+      paymentId: 'challenge_123',
+      paymentUrl: '',
+      paymentData: { ...paymentData, resource: { description: 'Paid tool' } }
+    });
+
+    const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
+
+    expect(result.error.data.resource).toEqual({
+      description: 'Paid tool',
+      url: 'mcp://tool/premiumReport'
+    });
+  });
+
+  it('should treat a challenge without x402Version as v2', async () => {
+    const { x402Version, ...versionless } = paymentData as any;
+    (mockProvider.createPayment as any).mockResolvedValue({
+      paymentId: 'challenge_123',
+      paymentUrl: '',
+      paymentData: versionless
+    });
+
+    const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
+
+    expect(result.error.data.resource).toEqual({ url: 'mcp://tool/premiumReport' });
+  });
+
+  it('should replace an empty v2 resource URL', async () => {
+    (mockProvider.createPayment as any).mockResolvedValue({
+      paymentId: 'challenge_123',
+      paymentUrl: '',
+      paymentData: { ...paymentData, resource: { url: undefined, description: 'Paid tool' } }
+    });
+
+    const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
+
+    // `url` is required; an unset config value must not produce an empty one.
+    expect(result.error.data.resource).toEqual({
+      url: 'mcp://tool/premiumReport',
+      description: 'Paid tool'
+    });
+  });
+
+  it('should tolerate a non-object v2 resource', async () => {
+    (mockProvider.createPayment as any).mockResolvedValue({
+      paymentId: 'challenge_123',
+      paymentUrl: '',
+      paymentData: { ...paymentData, resource: 'https://example.com/premium' }
+    });
+
+    const result: any = await makeWrapper()({ param: 'value' }, { requestInfo: { headers: {} } });
+
     expect(result.error.data.resource).toEqual({ url: 'mcp://tool/premiumReport' });
   });
 

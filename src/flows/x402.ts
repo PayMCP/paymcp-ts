@@ -4,6 +4,7 @@ import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
 import { Logger } from "../types/logger.js";
 import { ToolExtraLike } from "../types/config.js";
 import { callOriginal } from "../utils/tool.js";
+import { withDefaultUrl } from "../utils/x402.js";
 
 
 
@@ -64,10 +65,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
             // the URL to the tool being paid for. Build a new object rather than mutating
             // what the provider returned.
             const paymentData = rawPaymentData?.x402Version !== 1
-                ? {
-                    ...rawPaymentData,
-                    resource: { url: `mcp://tool/${toolName}`, ...(rawPaymentData?.resource ?? {}) },
-                }
+                ? { ...rawPaymentData, resource: withDefaultUrl(rawPaymentData?.resource, toolName) }
                 : rawPaymentData;
 
             let challengeId: string = "";

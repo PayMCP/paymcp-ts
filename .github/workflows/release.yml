@@ -1,15 +1,21 @@
 name: "Release"
 
-# Publishes to npm when a version lands on main. `develop` is merged into main
-# through a PR as usual; that merge is what triggers this.
+# Stages a release on npm when a version lands on main. `develop` is merged into
+# main through a PR as usual; that merge is what triggers this.
 #
-# Nothing is published unless the version in package.json is one npm does not
+# Nothing is staged unless the version in package.json is one npm does not
 # already have, so re-running or merging again is a no-op rather than an error.
 #
-# The publish job runs in the "release" environment. Give that environment a
-# required reviewer in repo settings and every release becomes one deliberate
-# click — npm only allows unpublishing under narrow conditions, so treat a
-# publish as permanent.
+# Two gates, and they check different things. The "release" environment asks
+# whether this run should happen at all - give it a required reviewer in repo
+# settings. Staging then puts the package in the registry without making it
+# public, so the tarball that would reach users can be inspected before it does:
+#
+#   npm stage list paymcp        # find the stage id
+#   npm stage download <id>      # inspect what would ship
+#   npm stage approve <id>       # publish it (asks for 2FA)
+#
+# Until that approval the version is not installable.
 on:
   push:
     branches: [ "main" ]
@@ -41,24 +47,26 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
           # An unpublished package has no versions at all; treat that as "new".
+          # A *staged* version is not public and so is invisible here - the
+          # publish job checks for that separately.
           PUBLISHED=$(npm view "${NAME}" versions --json 2>/dev/null || echo '[]')
           if node -e "process.exit(JSON.parse(process.argv[1]).includes(process.argv[2]) ? 0 : 1)" "$PUBLISHED" "$VERSION"; then
             echo "${NAME} ${VERSION} is already on npm - nothing to do"
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
-            echo "${NAME} ${VERSION} is new - will publish"
+            echo "${NAME} ${VERSION} is new - will stage"
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
   publish:
-    name: "publish ${{ needs.check.outputs.version }}"
+    name: "stage ${{ needs.check.outputs.version }}"
     needs: check
     if: needs.check.outputs.publish == 'true'
     runs-on: ubuntu-latest
     # Approval gate. Also the place to scope npm trusted publishing to.
     environment: release
     permissions:
-      contents: write   # create the tag and the GitHub Release
+      contents: write   # create the tag and the draft Release
       id-token: write   # npm trusted publishing (OIDC) and provenance
     steps:
       - uses: actions/checkout@v7
@@ -74,7 +82,7 @@ jobs:
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Use an npm that supports trusted publishing
+      - name: Use an npm that supports staged publishing
         run: npm install -g npm@latest
 
       - name: Install dependencies
@@ -88,15 +96,37 @@ jobs:
       - name: Build
         run: pnpm run build
 
-      - name: Publish to npm
+      - name: Look for an already staged version
+        id: staged
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -uo pipefail
+          NAME=$(node -p "require('./package.json').name")
+          # Best effort. A staged version occupies the same version index as a
+          # published one, so staging it twice fails; catching it here turns that
+          # into a clear skip. If this cannot authenticate it prints nothing and
+          # we fall through to npm's own error, which says the same thing.
+          LIST=$(npm stage list "${NAME}" --json 2>/dev/null || echo '[]')
+          if printf '%s' "$LIST" | grep -q "\"${VERSION}\""; then
+            echo "${NAME} ${VERSION} is already staged and waiting for approval"
+            echo "already=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stage on npm
+        if: steps.staged.outputs.already != 'true'
         # With trusted publishing configured on npmjs.com this needs no secret.
         # If you use an automation token instead, add it as the NPM_TOKEN secret
         # and it takes precedence; leaving it unset falls back to OIDC.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public
+        run: npm stage publish --provenance --access public
 
-      - name: Tag and create the GitHub Release
+      - name: Tag and draft the GitHub Release
+        if: steps.staged.outputs.already != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.check.outputs.version }}
@@ -113,4 +143,12 @@ jobs:
           fi
           git tag "v${VERSION}"
           git push origin "v${VERSION}"
-          gh release create "v${VERSION}" --title "v${VERSION}" --notes-file notes.md
+          # Draft, because the package is staged and not installable yet.
+          # Publish this release once the staged version is approved.
+          gh release create "v${VERSION}" --draft --title "v${VERSION}" --notes-file notes.md
+
+      - name: What happens next
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          echo "::notice::${VERSION} is staged, not published. Approve it with 'npm stage approve', then publish the draft GitHub Release."

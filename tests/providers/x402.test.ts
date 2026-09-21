@@ -153,6 +153,48 @@ describe('X402Provider', () => {
 
       expect(result.paymentData?.accepts?.[0]?.asset).toBe(BASE_SEPOLIA_USDC);
     });
+
+    it('should emit a nano:mainnet exact-scheme entry with XNO raw amount, no EVM asset and an XNO address', async () => {
+      const provider = new X402Provider({
+        payTo: [{ address: 'nano_1q3example9nanoaddress9nano9xno0000000000000000000000000000000', network: 'nano:mainnet' }],
+        logger: mockLogger
+      });
+
+      const result = await provider.createPayment(0.5, 'USD', 'Nano rail');
+      const accept = result.paymentData?.accepts?.[0];
+
+      expect(result.paymentData).toEqual(expect.objectContaining({ x402Version: 2, error: 'Payment required' }));
+      expect(accept).toEqual(
+        expect.objectContaining({
+          scheme: 'exact',
+          x402Version: 2,
+          network: 'nano:mainnet',
+          // 0.5 XNO in raw (10^30 raw/XNO) = 500000000000000000000000000000
+          amount: '500000000000000000000000000000',
+          payTo: 'nano_1q3example9nanoaddress9nano9xno0000000000000000000000000000000',
+          maxTimeoutSeconds: 900
+        })
+      );
+      // XNO is the native token: a nano rail must not carry a token contract address.
+      expect(accept).not.toHaveProperty('asset');
+      // EIP-712 domain name/version are EVM-only and must be absent for a nano rail.
+      expect(accept?.extra).not.toHaveProperty('name');
+      expect(accept?.extra).not.toHaveProperty('version');
+    });
+
+    it('should normalise a bare `nano` network alias to nano:mainnet with a 30-decimal raw amount', async () => {
+      const provider = new X402Provider({
+        payTo: [{ address: 'nano_2example9nanoaddress9nano9xno0000000000000000000000000000000', network: 'nano' }],
+        logger: mockLogger
+      });
+
+      const result = await provider.createPayment(0.01, 'USD', 'Nano alias');
+
+      expect(result.paymentData?.accepts?.[0]?.network).toBe('nano:mainnet');
+      // 0.01 XNO in raw
+      expect(result.paymentData?.accepts?.[0]?.amount).toBe('10000000000000000000000000000');
+      expect(result.paymentData?.accepts?.[0]).not.toHaveProperty('asset');
+    });
   });
 
   describe('getPaymentStatus', () => {
@@ -283,6 +325,7 @@ describe('X402Provider', () => {
       expect(mockLogger.error).toHaveBeenCalledWith('[PayMCP] x402 verify failed: bad verify');
     });
 
+
     it('should return error when settle fails', async () => {
       const provider = new X402Provider({
         payTo: [{ address: '0xPayTo' }],
@@ -318,6 +361,58 @@ describe('X402Provider', () => {
       expect(result).toBe('error');
       expect(global.fetch).toHaveBeenCalledTimes(2);
       expect(mockLogger.error).toHaveBeenCalledWith('[PayMCP] x402 settle failed: not settled');
+    });
+
+    it('should route nano: verification and settlement to a configured Nano-capable facilitator', async () => {
+      const NANO_ADDR = 'nano_1q3example9nanoaddress9nano9xno0000000000000000000000000000000';
+      const provider = new X402Provider({
+        payTo: [{ address: NANO_ADDR, network: 'nano:mainnet' }],
+        facilitator: { url: 'https://facilitator.pursekeeper.dev' },
+        logger: mockLogger
+      });
+
+      (global.fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ isValid: true })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ success: true })
+        });
+
+      const signature = {
+        x402Version: 2,
+        payload: { authorization: { to: NANO_ADDR } },
+        accepted: {
+          amount: '500000000000000000000000000000',
+          network: 'nano:mainnet',
+          payTo: NANO_ADDR,
+          extra: { challengeId: 'challenge_nano' }
+        }
+      };
+
+      const result = await provider.getPaymentStatus(encodeSignature(signature));
+
+      expect(result).toBe('paid');
+      expect(global.fetch).toHaveBeenNthCalledWith(
+        1,
+        'https://facilitator.pursekeeper.dev/verify',
+        expect.objectContaining({ method: 'POST' })
+      );
+      expect(global.fetch).toHaveBeenNthCalledWith(
+        2,
+        'https://facilitator.pursekeeper.dev/settle',
+        expect.objectContaining({ method: 'POST' })
+      );
+      // The paymentRequirements sent for verification carry the nano rail, with no EVM asset.
+      const verifyBody = JSON.parse((global.fetch as any).mock.calls[0][1].body);
+      expect(verifyBody.paymentRequirements).toEqual(
+        expect.objectContaining({ network: 'nano:mainnet', amount: '500000000000000000000000000000', payTo: NANO_ADDR })
+      );
+      expect(verifyBody.paymentRequirements).not.toHaveProperty('asset');
     });
   });
 });

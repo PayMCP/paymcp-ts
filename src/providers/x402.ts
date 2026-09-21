@@ -17,6 +17,12 @@ const assetsMap: Record<string, string> = {
     "eip155:84532:USDC": "0x036CbD53842c5426634e7929541eC2318f3dCF7e" // Base Sepolia USDC
 };
 
+// Nano (XNO) has no ERC-20/EIP-3009 contract: a `nano:` rail carries no EVM
+// `asset` field at all. Active network IDs that the provider passes through.
+const NANO_NETWORKS = new Set(["nano:mainnet", "nano", "nano:test-net"]);
+const DEFAULT_NANO_MULTIPLIER = 1e30; // 10^30 raw units per XNO
+const NANO_DEFAULT_NETWORK = "nano:mainnet";
+
 const v1_network_map: Record<string, string> = {
     "eip155:8453": "base",
     "eip155:84532": "base-sepolia",
@@ -25,7 +31,10 @@ const v1_network_map: Record<string, string> = {
     "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "solana-devnet",
     "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "solana-mainnet",
     "solana-devnet": "solana-devnet",
-    "solana-mainnet": "solana-mainnet"
+    "solana-mainnet": "solana-mainnet",
+    "nano:mainnet": "nano:mainnet",
+    "nano": "nano:mainnet",
+    "nano:test-net": "nano:test-net"
 }
 
 const v2_network_map: Record<string, string> = {
@@ -36,7 +45,10 @@ const v2_network_map: Record<string, string> = {
     "solana-devnet": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
     "solana-mainnet": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-    "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
+    "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    "nano:mainnet": "nano:mainnet",
+    "nano": "nano:mainnet",
+    "nano:test-net": "nano:test-net"
 }
 
 /**
@@ -101,19 +113,23 @@ export class X402Provider extends BasePaymentProvider {
         super("", opts.logger);
         this.payTo = opts.payTo.map((p) => {
             const network = p.network ?? DEFAULT_NETWORK;
+            const isNano = NANO_NETWORKS.has(network);
 
             const norm: PayTo = {
                 address: p.address,
-                network,
-                asset: (p.asset ? assetsMap[`${network}:${p.asset}`] : assetsMap[`${network}:${DEFAULT_ASSET}`]) ?? p.asset ,
-                multiplier: p.multiplier ?? DEFAULT_USDC_MULTIPLIER,
-                domainName: p.domainName ?? DEFAULT_DOMAIN_NAME,
-                domainVersion: p.domainVersion ?? DEFAULT_DOMAIN_VERSION
+                network: isNano ? (network === "nano" ? NANO_DEFAULT_NETWORK : network) : network,
+                // XNO is the native token: a `nano:` rail carries no EVM asset contract.
+                asset: isNano ? undefined
+                    : (p.asset ? assetsMap[`${network}:${p.asset}`] : assetsMap[`${network}:${DEFAULT_ASSET}`]) ?? p.asset,
+                multiplier: p.multiplier ?? (isNano ? DEFAULT_NANO_MULTIPLIER : DEFAULT_USDC_MULTIPLIER),
+                // EIP-712 domain name/version only apply to EVM rails.
+                domainName: isNano ? undefined : (p.domainName ?? DEFAULT_DOMAIN_NAME),
+                domainVersion: isNano ? undefined : (p.domainVersion ?? DEFAULT_DOMAIN_VERSION)
             }
             if (network === "eip155:84532" && norm.domainName === 'USD Coin') norm.domainName = 'USDC';//base Sepolia need USDC
             return norm;
         });
-        
+
         if (opts.facilitator?.url) {
             this.facilitator.url = opts.facilitator?.url;
             if (this.facilitator.url==='https://api.cdp.coinbase.com') this.facilitator.url=FACILITATOR_BASE; //just in case
@@ -230,10 +246,11 @@ export class X402Provider extends BasePaymentProvider {
                 // x402 expects integer amounts in the token's smallest units (e.g. USDC has 6 decimals).
                 // Keep it as a string to avoid floating-point issues.
                 const amountStr = toBaseUnits(amount,p.multiplier as number);
+                const isNano = NANO_NETWORKS.has(p.network as string);
                 return {
                     scheme: "exact",
                     network: v1_network_map[p.network as string] ?? p.network,
-                    asset: p.asset,
+                    ...(isNano ? {} : { asset: p.asset }),
                     payTo: p.address,
                     maxTimeoutSeconds: 900,
                     maxAmountRequired: amountStr,
@@ -241,8 +258,7 @@ export class X402Provider extends BasePaymentProvider {
                     description: this.resourceInfo?.description ?? "Premium processing fee", //description is required for V1
                     mimeType: this.resourceInfo?.mimeType ?? "application/json",
                     extra: {
-                        name: p.domainName,
-                        version: p.domainVersion,
+                        ...(isNano ? {} : { name: p.domainName, version: p.domainVersion }),
                         ...this.feePayer ? {
                             feePayer: this.feePayer
                         } : {},
@@ -271,17 +287,19 @@ export class X402Provider extends BasePaymentProvider {
                 // x402 expects integer amounts in the token's smallest units (e.g. USDC has 6 decimals).
                 // Keep it as a string to avoid floating-point issues.
                 const amountStr = toBaseUnits(amount,p.multiplier as number);
+                const isNano = NANO_NETWORKS.has(p.network as string);
                 return {
                     "scheme": "exact",
                     "x402Version": this.x402Version,
                     "network": v2_network_map[p.network as string] ?? p.network,
                     "amount": amountStr,
-                    "asset": p.asset,
+                    // XNO is the native token: a nano rail carries no EVM `asset` contract.
+                    ...(isNano ? {} : { "asset": p.asset }),
                     "payTo": p.address,
                     "maxTimeoutSeconds": 900,
                     "extra": {
-                        "name": p.domainName,
-                        "version": p.domainVersion,
+                        // EIP-712 domain name/version apply only to EVM rails.
+                        ...(isNano ? {} : { "name": p.domainName, "version": p.domainVersion }),
                         "challengeId": challengeId,
                         "description": description,
                         ...this.feePayer ? {
@@ -423,5 +441,22 @@ function toBaseUnits(
     amount: number,
     multiplier: number
 ): string {
-    return BigInt(Math.round(amount * multiplier)).toString()
+    // multiplier = base units per whole unit (e.g. 10^6 for USDC, 10^30 for
+    // XNO raw). JS `number` cannot hold 10^30 exactly through float math, so
+    // convert large multipliers via decimal-string math instead of `*`.
+    if (!Number.isFinite(amount) || amount < 0) {
+        return "0";
+    }
+    // `multiplier` is always a power of ten here; its log10 is the decimal
+    // places. This is exact for 1e6, 1e30 etc.
+    const digits = Math.log10(multiplier);
+    if (!Number.isInteger(digits) || digits < 0 || digits > 30) {
+        throw new Error(`[PayMCP] toBaseUnits: unsupported multiplier ${multiplier}`);
+    }
+    // Decimal-string: split "1234.5678" into whole + fraction, pad the fraction
+    // to `digits` places, then concatenate to get the raw integer string.
+    const [whole, frac = ""] = amount.toString().split(".");
+    const fracPadded = frac + "0".repeat(Math.max(0, digits - frac.length));
+    const rawInt = (whole + fracPadded).replace(/^0+(?=\d)/, "");
+    return rawInt === "" ? "0" : rawInt;
 }

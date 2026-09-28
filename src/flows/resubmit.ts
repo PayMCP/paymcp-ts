@@ -8,6 +8,7 @@ import { AbortWatcher } from "../utils/abortWatcher.js";
 import { callOriginal } from "../utils/tool.js";
 import {
     RESULT_NS_PAYMENT,
+    discardSpentState,
     peekCompletedResult,
     saveCompletedResult,
 } from "./state_utils.js";
@@ -178,8 +179,9 @@ export const makePaidWrapper: PaidWrapperFactory = (
                     log?.info?.(`[PayMCP:Resubmit] Returning cached result for payment_id=${existedPaymentId}`);
                     // The payment is spent, so its state goes - but the result is kept
                     // until the store expires it: this hand-off can itself fail to reach
-                    // the caller, and they have already paid for it.
-                    await stateStore.delete(existedPaymentId);
+                    // the caller, and they have already paid for it. Which is also why a
+                    // store that cannot delete must not take the result away again.
+                    await discardSpentState(stateStore, existedPaymentId, log);
                     return cached.result;
                 }
 
@@ -231,8 +233,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
                     };
                 }
 
-                // Tool succeeded - now delete state to enforce single-use
-                await stateStore.delete(existedPaymentId);
+                // Tool succeeded - now delete state to enforce single-use. The tool
+                // has already run, so a store that cannot delete must not cost the
+                // caller the result they paid for.
+                await discardSpentState(stateStore, existedPaymentId, log);
                 log?.info?.(`[PayMCP:Resubmit] Tool executed successfully, state deleted (single-use enforced)`);
 
                 // Return original tool result without modification

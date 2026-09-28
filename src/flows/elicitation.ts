@@ -12,6 +12,7 @@ import { callOriginal } from "../utils/tool.js";
 import {
   RESULT_NS_SESSION,
   callFingerprint,
+  discardSpentState,
   clearCompletedResult,
   peekCompletedResult,
   saveCompletedResult,
@@ -90,14 +91,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
           // identical call would be served from cache instead of being paid for.
           await clearCompletedResult(stateStore, sessionKey, RESULT_NS_SESSION, cached.token, log);
           // The spent payment record has to go, or the next call would reuse a
-          // payment that has already been consumed. But failing to remove it
-          // must not cost the caller the result they paid for, so the hand-off
-          // wins and the failure is only logged.
-          try {
-            await stateStore.delete(sessionKey);
-          } catch (err) {
-            log.warn?.(`[PayMCP:Elicitation] Failed to clear spent payment state for ${sessionKey}: ${String(err)}`);
-          }
+          // payment that has already been consumed - and here that means a free
+          // run of the paid tool. But failing to remove it must not cost the
+          // caller the result they paid for, so the hand-off wins and the
+          // failure is only logged.
+          await discardSpentState(stateStore, sessionKey, log);
           return cached.result;
         }
       }
@@ -258,7 +256,9 @@ export const makePaidWrapper: PaidWrapperFactory = (
             message: "Connection aborted. Call the tool again to retrieve the result.",
           };
         }
-        await stateStore.delete(`${toolName}_${extra.sessionId}`);
+        // The tool has already run; a store that cannot delete must not cost the
+        // caller the result they paid for.
+        await discardSpentState(stateStore, `${toolName}_${extra.sessionId}`, log);
 
         return response;
       }

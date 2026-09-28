@@ -72,6 +72,20 @@ function storeRefusingDeletes(): StateStore {
   };
 }
 
+/** A store that drops result keys but cannot delete the payment record. */
+function storeKeepingPaymentState(): StateStore {
+  const inner = new InMemoryStateStore();
+  return {
+    set: (key, args, options) => inner.set(key, args, options),
+    get: (key) => inner.get(key),
+    delete: async (key) => {
+      if (!key.startsWith('paymcp:result:')) throw new Error('redis down');
+      return inner.delete(key);
+    },
+    lock: (key, fn) => inner.lock(key, fn),
+  };
+}
+
 const text = (r: any) => r?.content?.[0]?.text;
 
 // ---------------------------------------------------------------------------
@@ -182,6 +196,42 @@ describe('RESUBMIT: disconnect after a paid execution', () => {
     expect(runs).toHaveLength(0);
   });
 
+  // The very failure the guarded delete fixes elsewhere: resubmit never clears
+  // its cached result, so an unguarded delete here made the paid result
+  // unreachable for as long as the store could not delete.
+  it('still hands over the result when the store cannot delete', async () => {
+    const store = storeRefusingDeletes();
+    const ctl = new AbortController();
+    const { fn, runs } = droppingTool(ctl);
+    const log = silent();
+    const wrapper = resubmitWrapper(
+      fn, {} as any, { mock: provider() }, priceInfo, 'testTool', store, {}, clientInfo, log
+    );
+
+    const pid = await initiate(wrapper);
+    expect(text(await wrapper({ payment_id: pid }, { signal: ctl.signal }))).toBe(ABORT_TEXT);
+    expect(text(await wrapper({ payment_id: pid }, {}))).toBe('run #1');
+    // And again, rather than throwing the same store error forever.
+    expect(text(await wrapper({ payment_id: pid }, {}))).toBe('run #1');
+    expect(runs).toHaveLength(1);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to clear spent payment state'));
+  });
+
+  // The ordinary path: nothing disconnected, the tool ran, and the single-use
+  // delete failed. The caller is still owed what they paid for.
+  it('returns the result of an undisturbed call when the store cannot delete', async () => {
+    const store = storeRefusingDeletes();
+    const fn = vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] }));
+    const log = silent();
+    const wrapper = resubmitWrapper(
+      fn, {} as any, { mock: provider() }, priceInfo, 'testTool', store, {}, clientInfo, log
+    );
+
+    const pid = await initiate(wrapper);
+    expect(text(await wrapper({ payment_id: pid }, {}))).toBe('done');
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
   it('falls back to the old behaviour when the store will not hold the result', async () => {
     const store = storeRefusingResults();
     const ctl = new AbortController();
@@ -277,6 +327,31 @@ describe('TWO_STEP: disconnect after a paid execution', () => {
     // And the first tool's result survives for the caller who paid.
     expect(text(await confirm({ payment_id: pid }))).toBe('run #1');
     expect(runs).toHaveLength(1);
+  });
+
+  // `lock` is part of the StateStore contract, but a hand-written store from a
+  // JavaScript consumer may not have one. Throwing would abandon a payment the
+  // user may already have made.
+  it('still runs the tool when the store has no lock()', async () => {
+    const inner = new InMemoryStateStore();
+    const lockless: any = {
+      set: (k: string, a: any, o: any) => inner.set(k, a, o),
+      get: (k: string) => inner.get(k),
+      delete: (k: string) => inner.delete(k),
+    };
+    const fn = vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] }));
+    let confirm: any;
+    const server = { tools: new Map(), registerTool: (_n: string, _c: any, h: any) => { confirm = h; } } as any;
+    const log = silent();
+    const wrapper = twoStepWrapper(
+      fn, server, { mock: provider() }, priceInfo, 'testTool', lockless, {}, clientInfo, log
+    );
+
+    const init: any = await wrapper({ q: 1 }, {});
+    const served = await confirm({ payment_id: init.structured_content.payment_id }, {});
+    expect(text(served)).toBe('done');
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('no lock()'));
   });
 
   // Without the per-payment lock both confirms read the stored args, both see
@@ -448,6 +523,57 @@ describe('PROGRESS: disconnect after a paid execution', () => {
     expect(text(await wrapper({ q: 1 }, extra()))).toBe('run #1');
     expect(runs).toHaveLength(1);
     expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to clear spent payment state'));
+  });
+
+  it('returns the result of an undisturbed call when the store cannot delete', async () => {
+    const store = storeRefusingDeletes();
+    const fn = vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] }));
+    const wrapper = progressWrapper(
+      fn, {} as any, { mock: provider() }, priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+    await seedPaid(store);
+    expect(text(await wrapper({ q: 1 }, extra()))).toBe('done');
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  // Known limitation, pinned so a change of behaviour is noticed: when the
+  // spent payment record cannot be removed, it survives and the next call
+  // reuses it - a free run of the paid tool. See the issue linked from the
+  // pull request; the alternative is taking the result away from someone who
+  // has paid for it, which is worse.
+  it('leaves a reusable payment behind when only that delete fails', async () => {
+    const store = storeKeepingPaymentState();
+    const ctl = new AbortController();
+    const { fn, runs } = droppingTool(ctl);
+    const createPayment = vi.fn().mockResolvedValue({ paymentId: 'pay_1', paymentUrl: 'https://pay/1' });
+    const wrapper = progressWrapper(
+      fn, {} as any, { mock: { createPayment, getPaymentStatus: vi.fn().mockResolvedValue('paid') } as any },
+      priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+    await seedPaid(store);
+
+    await wrapper({ q: 1 }, extra(ctl.signal));            // paid, ran, dropped
+    expect(text(await wrapper({ q: 1 }, extra()))).toBe('run #1');  // served
+    expect(text(await wrapper({ q: 1 }, extra()))).toBe('run #2');  // free run
+    expect(runs).toHaveLength(2);
+    expect(createPayment).not.toHaveBeenCalled();
+  });
+
+  it('serves the same result again when no delete lands at all', async () => {
+    const store = storeRefusingDeletes();
+    const ctl = new AbortController();
+    const { fn, runs } = droppingTool(ctl);
+    const wrapper = progressWrapper(
+      fn, {} as any, { mock: provider() }, priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+    await seedPaid(store);
+
+    await wrapper({ q: 1 }, extra(ctl.signal));
+    expect(text(await wrapper({ q: 1 }, extra()))).toBe('run #1');
+    // Nothing could be cleared, so the entry is still there - the caller gets
+    // their result again rather than the tool running a second time.
+    expect(text(await wrapper({ q: 1 }, extra()))).toBe('run #1');
+    expect(runs).toHaveLength(1);
   });
 
   it('falls back to the old behaviour when the store will not hold the result', async () => {

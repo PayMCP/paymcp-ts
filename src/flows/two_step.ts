@@ -36,6 +36,7 @@ import {
   RESULT_NS_PAYMENT,
   peekCompletedResult,
   saveCompletedResult,
+  withPaymentLock,
 } from "./state_utils.js";
 
 
@@ -105,7 +106,7 @@ function ensureConfirmTool(
       // both see the payment as paid and both run the tool: one payment, two
       // executions. The result cache below cannot close that window on its
       // own, since neither call has cached anything yet when the other looks.
-      return await stateStore.lock(String(paymentId), async () => {
+      return await withPaymentLock(stateStore, String(paymentId), async () => {
         // A previous confirm already ran the tool but the client dropped before
         // receiving the result: return the stored one rather than running again.
         // This is checked before the stored args, which a completed call has
@@ -216,7 +217,7 @@ function ensureConfirmTool(
         }
 
         return response;
-      }); // End of lock
+      }, log); // End of lock
     } finally {
       abortWatcher.dispose();
     }

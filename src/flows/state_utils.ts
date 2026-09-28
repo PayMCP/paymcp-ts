@@ -279,3 +279,51 @@ export async function clearCompletedResult(
         log?.warn?.(`[PayMCP] Failed to clear cached tool result for ${key}: ${describeError(err)}`);
     }
 }
+
+/**
+ * Remove state that has been spent, without letting the failure reach the caller.
+ *
+ * Every call site is past the point where the paid tool has already run, so the
+ * caller is owed its result. The record still has to go - otherwise a later
+ * call can reuse a payment that has already been consumed, and in the
+ * session-keyed flows that means a free run of the paid tool - but a store that
+ * cannot delete must not turn a completed, paid execution into an error.
+ */
+export async function discardSpentState(
+    stateStore: StateStore | undefined,
+    key: string | undefined,
+    log?: Logger
+): Promise<void> {
+    if (!stateStore || key === undefined || key === null) return;
+    try {
+        await stateStore.delete(key);
+    } catch (err) {
+        log?.warn?.(
+            `[PayMCP] Failed to clear spent payment state for ${key}; a later call may reuse it: ${describeError(err)}`
+        );
+    }
+}
+
+/**
+ * Run `fn` under the store's per-payment lock, or without one if the store has
+ * none.
+ *
+ * `lock` is part of the StateStore contract and both shipped stores implement
+ * it, but a hand-written store from a JavaScript consumer may not. Throwing
+ * here would abandon a payment the user may already have made, so an absent
+ * lock costs exclusivity rather than the call.
+ */
+export async function withPaymentLock<T>(
+    stateStore: StateStore,
+    key: string,
+    fn: () => Promise<T>,
+    log?: Logger
+): Promise<T> {
+    if (typeof stateStore?.lock !== "function") {
+        log?.warn?.(
+            `[PayMCP] State store has no lock(); running without one, so concurrent calls for ${key} are not serialised.`
+        );
+        return fn();
+    }
+    return stateStore.lock(key, fn);
+}

@@ -24,7 +24,9 @@ class AsyncLock {
 
 export class InMemoryStateStore implements StateStore {
   private store = new Map<string, { args: any; ts: number; expiresAt?: number }>();
-  private paymentLocks = new Map<string, AsyncLock>();
+  // Per-key lock plus a count of everyone holding or waiting for it, so the
+  // entry is only discarded once nobody is left on it.
+  private paymentLocks = new Map<string, { lock: AsyncLock; users: number }>();
   private locksLock = new AsyncLock();
   private sweepInterval: NodeJS.Timeout;
 
@@ -77,33 +79,41 @@ export class InMemoryStateStore implements StateStore {
    * @returns The result of the function
    */
   async lock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    // Get or create lock for this payment_id
+    // Get or create the lock for this payment_id, and register as a user of it
+    // before releasing the registry lock - otherwise the current holder could
+    // finish and discard the entry while this caller is still queueing on it,
+    // and the next arrival would build a second lock for the same key and run
+    // concurrently with whoever is queued on the first.
     const locksLockRelease = await this.locksLock.acquire();
+    let entry: { lock: AsyncLock; users: number };
     try {
-      if (!this.paymentLocks.has(key)) {
-        this.paymentLocks.set(key, new AsyncLock());
-      }
-      const paymentLock = this.paymentLocks.get(key)!;
+      const existing = this.paymentLocks.get(key);
+      entry = existing ?? { lock: new AsyncLock(), users: 0 };
+      if (!existing) this.paymentLocks.set(key, entry);
+      entry.users++;
+    } finally {
+      // Exactly once: releasing this twice would let a second caller past the
+      // registry lock while the first still believes it holds it.
       locksLockRelease();
+    }
 
-      // Acquire the payment-specific lock
-      const paymentLockRelease = await paymentLock.acquire();
+    const paymentLockRelease = await entry.lock.acquire();
+    try {
+      return await fn();
+    } finally {
+      paymentLockRelease();
+
+      const cleanupRelease = await this.locksLock.acquire();
       try {
-        return await fn();
-      } finally {
-        paymentLockRelease();
-
-        // Cleanup lock after use
-        const cleanupRelease = await this.locksLock.acquire();
-        try {
+        entry.users--;
+        // Only drop the entry when no one else is on it, and only if it is
+        // still the entry this call was using.
+        if (entry.users === 0 && this.paymentLocks.get(key) === entry) {
           this.paymentLocks.delete(key);
-        } finally {
-          cleanupRelease();
         }
+      } finally {
+        cleanupRelease();
       }
-    } catch (error) {
-      locksLockRelease();
-      throw error;
     }
   }
 }

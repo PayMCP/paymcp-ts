@@ -31,6 +31,17 @@ export interface CachedResult {
 /** The shape we write into the store under a result key. */
 interface ResultPayload {
     result: unknown;
+    /**
+     * Marks the entry as holding a result, rather than relying on the `result`
+     * key being present.
+     *
+     * A durable store serialises to JSON, and `JSON.stringify` drops a key whose
+     * value is `undefined` - so a tool that returned nothing would be written
+     * without its `result` key, read back as an entry that holds no result, and
+     * silently re-executed on the retry. This flag survives the round trip, so
+     * `undefined` is cached and served as the value it is.
+     */
+    hasResult: true;
     tool: string;
     token: string;
     fingerprint?: string;
@@ -163,7 +174,7 @@ export async function saveCompletedResult(
 ): Promise<boolean> {
     if (!stateStore || key === undefined || key === null) return false;
 
-    const payload: ResultPayload = { result, tool, token: randomUUID() };
+    const payload: ResultPayload = { result, hasResult: true, tool, token: randomUUID() };
     if (fingerprint !== undefined) payload.fingerprint = fingerprint;
 
     try {
@@ -212,7 +223,7 @@ export async function peekCompletedResult(
     // Only a well-formed entry counts as a cached result: anything else means
     // there is nothing to hand back and the tool still has to run.
     const payload = entry?.args;
-    if (!payload || typeof payload !== "object" || !("result" in payload)) return miss;
+    if (!payload || typeof payload !== "object" || payload.hasResult !== true) return miss;
 
     if (payload.tool !== tool) {
         log?.debug?.(`[PayMCP] Cached result for ${key} belongs to another tool; ignoring it.`);

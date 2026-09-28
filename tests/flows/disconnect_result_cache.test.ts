@@ -61,6 +61,17 @@ function storeRefusingResults(): StateStore {
   };
 }
 
+/** A store that cannot delete: the flow must still hand over the paid result. */
+function storeRefusingDeletes(): StateStore {
+  const inner = new InMemoryStateStore();
+  return {
+    set: (key, args, options) => inner.set(key, args, options),
+    get: (key) => inner.get(key),
+    delete: async () => { throw new Error('redis down'); },
+    lock: (key, fn) => inner.lock(key, fn),
+  };
+}
+
 const text = (r: any) => r?.content?.[0]?.text;
 
 // ---------------------------------------------------------------------------
@@ -268,6 +279,32 @@ describe('TWO_STEP: disconnect after a paid execution', () => {
     expect(runs).toHaveLength(1);
   });
 
+  // Without the per-payment lock both confirms read the stored args, both see
+  // the payment as paid, and both run the tool.
+  it('runs the tool once when two confirms race on one payment', async () => {
+    const store = new InMemoryStateStore();
+    const runs: number[] = [];
+    const fn = vi.fn(async () => {
+      runs.push(runs.length + 1);
+      // Yield, so a second confirm can interleave if nothing serialises them.
+      await new Promise((r) => setTimeout(r, 5));
+      return { content: [{ type: 'text', text: `run #${runs.length}` }] };
+    });
+    const { wrapper, confirm } = build(store, fn);
+
+    const init: any = await wrapper({ q: 1 }, {});
+    const pid = init.structured_content.payment_id;
+
+    const [a, b] = await Promise.all([
+      confirm({ payment_id: pid }),
+      confirm({ payment_id: pid }),
+    ]);
+    expect(runs).toHaveLength(1);
+    // One call gets the result; the other is told the payment is spent.
+    const served = [a, b].filter((r) => text(r) === 'run #1');
+    expect(served).toHaveLength(1);
+  });
+
   it('falls back to the old behaviour when the store will not hold the result', async () => {
     const store = storeRefusingResults();
     const ctl = new AbortController();
@@ -393,6 +430,24 @@ describe('PROGRESS: disconnect after a paid execution', () => {
     // And the first tool's result is still there for the call that paid.
     expect(text(await wrapper({ q: 1 }, extra()))).toBe('run #1');
     expect(runs).toHaveLength(1);
+  });
+
+  // Failing to clear the spent payment record must not cost the caller the
+  // result they paid for, and must not buy a second execution.
+  it('still hands over the result when the store cannot delete', async () => {
+    const store = storeRefusingDeletes();
+    const ctl = new AbortController();
+    const { fn, runs } = droppingTool(ctl);
+    const log = silent();
+    const wrapper = progressWrapper(
+      fn, {} as any, { mock: provider() }, priceInfo, 'testTool', store, {}, clientInfo, log
+    );
+    await seedPaid(store);
+
+    expect(text(await wrapper({ q: 1 }, extra(ctl.signal)))).toBe(ABORT_TEXT);
+    expect(text(await wrapper({ q: 1 }, extra()))).toBe('run #1');
+    expect(runs).toHaveLength(1);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to clear spent payment state'));
   });
 
   it('falls back to the old behaviour when the store will not hold the result', async () => {
@@ -532,6 +587,22 @@ describe('ELICITATION: disconnect after a paid execution', () => {
     for (const ns of keys) {
       expect((await peekCompletedResult(store, 'testTool_undefined', ns as any, 'testTool')).hasResult).toBe(false);
     }
+  });
+
+  it('still hands over the result when the store cannot delete', async () => {
+    const store = storeRefusingDeletes();
+    const ctl = new AbortController();
+    const { fn, runs } = droppingTool(ctl);
+    const log = silent();
+    const wrapper = elicitationWrapper(
+      fn, {} as any, { mock: provider() }, priceInfo, 'testTool', store, {}, clientInfo, log
+    );
+    await seedPaid(store);
+
+    expect(text(await wrapper({ q: 1 }, extra(ctl.signal)))).toBe(ABORT_TEXT);
+    expect(text(await wrapper({ q: 1 }, extra()))).toBe('run #1');
+    expect(runs).toHaveLength(1);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to clear spent payment state'));
   });
 
   it('falls back to the old behaviour when the store will not hold the result', async () => {

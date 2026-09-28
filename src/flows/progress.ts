@@ -90,7 +90,15 @@ export const makePaidWrapper: PaidWrapperFactory = (
                     // so the result is dropped once delivered - otherwise the next
                     // identical call would be served from cache instead of being paid for.
                     await clearCompletedResult(stateStore, sessionKey, RESULT_NS_SESSION, cached.token, log);
-                    await stateStore.delete(sessionKey);
+                    // The spent payment record has to go, or the next call would
+                    // reuse a payment that has already been consumed. But failing
+                    // to remove it must not cost the caller the result they paid
+                    // for, so the hand-off wins and the failure is only logged.
+                    try {
+                        await stateStore.delete(sessionKey);
+                    } catch (err) {
+                        log?.warn?.(`[PayMCP:Progress] Failed to clear spent payment state for ${sessionKey}: ${String(err)}`);
+                    }
                     return cached.result;
                 }
             }

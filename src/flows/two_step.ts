@@ -100,16 +100,112 @@ function ensureConfirmTool(
         };
       }
 
-      // A previous confirm already ran the tool but the client dropped before
-      // receiving the result: return the stored one rather than running again.
-      // This is checked before the stored args, which a completed call has
-      // already consumed.
-      const cached = await peekCompletedResult(
-        stateStore, String(paymentId), RESULT_NS_PAYMENT, toolName, undefined, log
-      );
-      if (cached.hasResult) {
+      // Hold the per-payment lock for the whole confirm, the way RESUBMIT
+      // does. Without it two concurrent confirms both read the stored args,
+      // both see the payment as paid and both run the tool: one payment, two
+      // executions. The result cache below cannot close that window on its
+      // own, since neither call has cached anything yet when the other looks.
+      return await stateStore.lock(String(paymentId), async () => {
+        // A previous confirm already ran the tool but the client dropped before
+        // receiving the result: return the stored one rather than running again.
+        // This is checked before the stored args, which a completed call has
+        // already consumed.
+        const cached = await peekCompletedResult(
+          stateStore, String(paymentId), RESULT_NS_PAYMENT, toolName, undefined, log
+        );
+        if (cached.hasResult) {
+          if (abortWatcher.aborted) {
+            log?.warn?.(`[PayMCP:TwoStep] Still disconnected; keeping cached result for the next retry`);
+            return {
+              content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
+              annotations: { payment: { status: "paid", payment_id: paymentId } },
+              payment_id: paymentId,
+              status: "pending",
+              message: "Connection aborted. Call the tool again to retrieve the result.",
+            };
+          }
+          log?.info?.(`[PayMCP:TwoStep] Returning cached result for payment_id=${paymentId}`);
+          // The result is kept until the store expires it: this hand-off can
+          // itself fail to reach the caller, and they have already paid for it.
+          return cached.result;
+        }
+
+        const stored = await stateStore.get(String(paymentId));
+
+        log?.debug?.(`[PayMCP:TwoStep] restoring args=${JSON.stringify(stored?.args)}`);
+
+        if (!stored) {
+          return {
+            content: [{ type: "text", text: "Unknown or expired payment_id." }],
+            status: "error",
+            message: "Unknown or expired payment_id",
+            payment_id: paymentId,
+          };
+        }
+
+        // Check provider status.
+        let status: string;
+        try {
+          status = await provider.getPaymentStatus(paymentId);
+          log?.debug?.(`[PayMCP:TwoStep] provider.getPaymentStatus(${paymentId}) -> ${status}`);
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Failed to check payment status: ${(err as Error).message}`,
+              },
+            ],
+            status: "error",
+            message: "Failed to check payment status",
+            payment_id: paymentId,
+          };
+        }
+
+        const statusLc = String(status).toLowerCase();
+        if (statusLc !== "paid") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Payment status is ${status}, expected 'paid'.`,
+              },
+            ],
+            status: "error",
+            message: `Payment status is ${status}, expected 'paid'`,
+            payment_id: paymentId,
+          };
+        }
+
+        // We're good—consume stored args and call original.
+        await stateStore.delete(String(paymentId));
+        log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
+        const toolResult = await callOriginal(
+          originalHandler,
+          stored.args,
+          extra /* pass confirm extra */
+        );
+
+        // Build the response before looking at the connection, so the value we
+        // may cache is exactly the value the caller would have received.
+        // If toolResult missing content, synthesize one.
+        const response =
+          !toolResult || !Array.isArray((toolResult as any).content)
+            ? {
+                content: [
+                  { type: "text", text: "Tool completed after confirmed payment." },
+                ],
+                raw: toolResult,
+              }
+            : toolResult;
+
         if (abortWatcher.aborted) {
-          log?.warn?.(`[PayMCP:TwoStep] Still disconnected; keeping cached result for the next retry`);
+          log?.warn?.(`[PayMCP:TwoStep] aborted after payment confirmation but before returning tool result.`);
+          // The stored args are already consumed, so without this the paid-for
+          // result would be lost and the retry would find nothing.
+          await saveCompletedResult(
+            stateStore, String(paymentId), response, RESULT_NS_PAYMENT, toolName, undefined, log
+          );
           return {
             content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
             annotations: { payment: { status: "paid", payment_id: paymentId } },
@@ -118,98 +214,9 @@ function ensureConfirmTool(
             message: "Connection aborted. Call the tool again to retrieve the result.",
           };
         }
-        log?.info?.(`[PayMCP:TwoStep] Returning cached result for payment_id=${paymentId}`);
-        // The result is kept until the store expires it: this hand-off can
-        // itself fail to reach the caller, and they have already paid for it.
-        return cached.result;
-      }
 
-      const stored = await stateStore.get(String(paymentId));
-
-      log?.debug?.(`[PayMCP:TwoStep] restoring args=${JSON.stringify(stored?.args)}`);
-
-      if (!stored) {
-        return {
-          content: [{ type: "text", text: "Unknown or expired payment_id." }],
-          status: "error",
-          message: "Unknown or expired payment_id",
-          payment_id: paymentId,
-        };
-      }
-
-      // Check provider status.
-      let status: string;
-      try {
-        status = await provider.getPaymentStatus(paymentId);
-        log?.debug?.(`[PayMCP:TwoStep] provider.getPaymentStatus(${paymentId}) -> ${status}`);
-      } catch (err) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to check payment status: ${(err as Error).message}`,
-            },
-          ],
-          status: "error",
-          message: "Failed to check payment status",
-          payment_id: paymentId,
-        };
-      }
-
-      const statusLc = String(status).toLowerCase();
-      if (statusLc !== "paid") {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Payment status is ${status}, expected 'paid'.`,
-            },
-          ],
-          status: "error",
-          message: `Payment status is ${status}, expected 'paid'`,
-          payment_id: paymentId,
-        };
-      }
-
-      // We're good—consume stored args and call original.
-      await stateStore.delete(String(paymentId));
-      log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
-      const toolResult = await callOriginal(
-        originalHandler,
-        stored.args,
-        extra /* pass confirm extra */
-      );
-
-      // Build the response before looking at the connection, so the value we
-      // may cache is exactly the value the caller would have received.
-      // If toolResult missing content, synthesize one.
-      const response =
-        !toolResult || !Array.isArray((toolResult as any).content)
-          ? {
-              content: [
-                { type: "text", text: "Tool completed after confirmed payment." },
-              ],
-              raw: toolResult,
-            }
-          : toolResult;
-
-      if (abortWatcher.aborted) {
-        log?.warn?.(`[PayMCP:TwoStep] aborted after payment confirmation but before returning tool result.`);
-        // The stored args are already consumed, so without this the paid-for
-        // result would be lost and the retry would find nothing.
-        await saveCompletedResult(
-          stateStore, String(paymentId), response, RESULT_NS_PAYMENT, toolName, undefined, log
-        );
-        return {
-          content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
-          annotations: { payment: { status: "paid", payment_id: paymentId } },
-          payment_id: paymentId,
-          status: "pending",
-          message: "Connection aborted. Call the tool again to retrieve the result.",
-        };
-      }
-
-      return response;
+        return response;
+      }); // End of lock
     } finally {
       abortWatcher.dispose();
     }

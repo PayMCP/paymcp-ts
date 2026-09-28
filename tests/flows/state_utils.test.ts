@@ -169,6 +169,48 @@ describe('state_utils: save / peek', () => {
   });
 });
 
+// A durable store persists as JSON, and JSON drops a key whose value is
+// undefined. Every test above uses the in-memory store, which keeps the object
+// as it is, so nothing here would notice a payload that cannot survive the
+// round trip.
+function jsonRoundTripStore(): StateStore {
+  const inner = new Map<string, string>();
+  return {
+    set: async (key, args) => { inner.set(key, JSON.stringify({ args, ts: Date.now() })); },
+    get: async (key) => { const raw = inner.get(key); return raw ? JSON.parse(raw) : undefined; },
+    delete: async (key) => { inner.delete(key); },
+    lock: async (_k, fn) => fn(),
+  };
+}
+
+describe('state_utils: through a store that persists as JSON', () => {
+  it('serves a result that JSON cannot represent as the value it is', async () => {
+    const s = jsonRoundTripStore();
+    expect(await saveCompletedResult(s, 'k', undefined, RESULT_NS_PAYMENT, 'toolA')).toBe(true);
+
+    // The `result` key does not survive JSON.stringify, so the entry has to say
+    // it holds a result some other way - or the retry re-executes a paid tool.
+    const found = await peekCompletedResult(s, 'k', RESULT_NS_PAYMENT, 'toolA');
+    expect(found.hasResult).toBe(true);
+    expect(found.result).toBeUndefined();
+  });
+
+  it('round-trips an ordinary result, its tool and its token', async () => {
+    const s = jsonRoundTripStore();
+    await saveCompletedResult(s, 'k', { content: [{ type: 'text', text: 'ok' }] }, RESULT_NS_SESSION, 'toolA', 'fp');
+
+    const found = await peekCompletedResult(s, 'k', RESULT_NS_SESSION, 'toolA', 'fp');
+    expect(found.hasResult).toBe(true);
+    expect(found.result).toEqual({ content: [{ type: 'text', text: 'ok' }] });
+
+    expect((await peekCompletedResult(s, 'k', RESULT_NS_SESSION, 'toolB', 'fp')).hasResult).toBe(false);
+    expect((await peekCompletedResult(s, 'k', RESULT_NS_SESSION, 'toolA', 'other')).hasResult).toBe(false);
+
+    await clearCompletedResult(s, 'k', RESULT_NS_SESSION, found.token);
+    expect((await peekCompletedResult(s, 'k', RESULT_NS_SESSION, 'toolA', 'fp')).hasResult).toBe(false);
+  });
+});
+
 describe('state_utils: a store that refuses', () => {
   // Nothing is validated up front: the value goes to the store, and a durable
   // store that serialises to JSON is what refuses it.

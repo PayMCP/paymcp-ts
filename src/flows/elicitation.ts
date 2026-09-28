@@ -9,6 +9,13 @@ import { StateStore } from "../types/state.js";
 import { runElicitationLoop } from "../utils/elicitation.js";
 import { AbortWatcher } from "../utils/abortWatcher.js";
 import { callOriginal } from "../utils/tool.js";
+import {
+  RESULT_NS_SESSION,
+  callFingerprint,
+  clearCompletedResult,
+  peekCompletedResult,
+  saveCompletedResult,
+} from "./state_utils.js";
 
 /**
  * Wrap a tool handler with an *elicitation-based* payment flow:
@@ -50,7 +57,43 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
     //const clientInfo = await getClientInfo(extra.sessionId);
 
+    // The key a cached result lives under. Only set when the client gave us a
+    // session: without one every caller would share a single key, and a paid
+    // result could be handed to someone who did not pay for it.
+    const sessionKey = extra?.sessionId ? `${toolName}_${extra.sessionId}` : undefined;
+    // Identify this call, so a result cached under the session key is only ever
+    // served back to the call that produced it. Computed for every call,
+    // disconnecting or not, and never throws.
+    const fingerprint = callFingerprint(toolArgs);
+
     try {
+      // The tool already ran and was paid for, but the client dropped before
+      // receiving the result: return the stored one instead of asking for
+      // payment again or re-running the tool. Checked before anything else,
+      // including client capabilities - the caller has already been charged.
+      if (sessionKey) {
+        const cached = await peekCompletedResult(
+          stateStore, sessionKey, RESULT_NS_SESSION, toolName, fingerprint, log
+        );
+        if (cached.hasResult) {
+          if (abortWatcher.aborted) {
+            log.warn?.(`[PayMCP:Elicitation] Still disconnected; keeping cached result for the next retry`);
+            return {
+              content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
+              status: "pending",
+              message: "Connection aborted. Call the tool again to retrieve the result.",
+            };
+          }
+          log.info?.(`[PayMCP:Elicitation] Returning cached result for sessionKey=${sessionKey}`);
+          // Unlike the payment-keyed flows, this key is reused by later calls,
+          // so the result is dropped once delivered - otherwise the next
+          // identical call would be served from cache instead of being paid for.
+          await clearCompletedResult(stateStore, sessionKey, RESULT_NS_SESSION, cached.token, log);
+          await stateStore.delete(sessionKey);
+          return cached.result;
+        }
+      }
+
       const elicitSupported = typeof (extra as any)?.sendRequest === "function";
       if (!elicitSupported) {
         log.warn?.(`[PayMCP:Elicitation] client lacks sendRequest(); falling back to error result.`);
@@ -169,23 +212,35 @@ export const makePaidWrapper: PaidWrapperFactory = (
       if (normalizeStatus(paymentStatus) === "paid") {
         log.info?.(`[PayMCP:Elicitation] payment confirmed; invoking original tool ${toolName}`);
         const toolResult = await callOriginal(func, toolArgs, extra);
-        // Ensure toolResult has required MCP 'content' field; if not, synthesize text.
+
+        // Build the response before looking at the connection, so the value we
+        // may cache is exactly the value the caller would have received - and so
+        // a tool whose result needs synthesizing is still covered by the
+        // disconnect check below rather than returning early past it.
+        let response: any;
         if (!toolResult || !Array.isArray((toolResult as any).content)) {
-          return {
+          // Ensure the required MCP 'content' field is present; if not, synthesize text.
+          response = {
             content: [{ type: "text", text: "Tool completed after payment." }],
             annotations: { payment: { status: "paid", payment_id: paymentId } },
             raw: toolResult,
           };
+        } else {
+          // augment annotation
+          try {
+            (toolResult as any).annotations = {
+              ...(toolResult as any).annotations,
+              payment: { status: "paid", payment_id: paymentId },
+            };
+          } catch { /* ignore */ }
+          response = toolResult;
         }
-        // augment annotation
-        try {
-          (toolResult as any).annotations = {
-            ...(toolResult as any).annotations,
-            payment: { status: "paid", payment_id: paymentId },
-          };
-        } catch { /* ignore */ }
+
         if (abortWatcher.aborted) {
           log.warn?.(`[PayMCP:Elicitation] aborted after payment confirmation but before returning tool result.`);
+          await saveCompletedResult(
+            stateStore, sessionKey, response, RESULT_NS_SESSION, toolName, fingerprint, log
+          );
           return {
             content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
             annotations: { payment: { status: "paid", payment_id: paymentId } },
@@ -197,7 +252,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
         }
         await stateStore.delete(`${toolName}_${extra.sessionId}`);
 
-        return toolResult;
+        return response;
       }
 
 

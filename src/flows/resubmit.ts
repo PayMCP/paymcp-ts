@@ -6,6 +6,11 @@ import { ToolExtraLike } from "../types/config.js";
 import { normalizeStatus } from "../utils/payment.js";
 import { AbortWatcher } from "../utils/abortWatcher.js";
 import { callOriginal } from "../utils/tool.js";
+import {
+    RESULT_NS_PAYMENT,
+    peekCompletedResult,
+    saveCompletedResult,
+} from "./state_utils.js";
 
 // ---------------------------------------------------------------------------
 // Helper: Create payment error with consistent structure
@@ -153,6 +158,31 @@ export const makePaidWrapper: PaidWrapperFactory = (
             return await stateStore.lock(existedPaymentId, async () => {
                 log?.debug?.(`[PayMCP:Resubmit] Lock acquired for payment_id=${existedPaymentId}`);
 
+                // The tool already ran for this payment but the client dropped before
+                // receiving the result: hand back the stored one instead of charging
+                // the server a second execution.
+                const cached = await peekCompletedResult(
+                    stateStore, existedPaymentId, RESULT_NS_PAYMENT, toolName, undefined, log
+                );
+                if (cached.hasResult) {
+                    if (abortWatcher.aborted) {
+                        log?.warn?.(`[PayMCP:Resubmit] Still disconnected; keeping cached result for the next retry`);
+                        return {
+                            content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
+                            annotations: { payment: { status: "paid", payment_id: existedPaymentId } },
+                            payment_id: existedPaymentId,
+                            status: "pending",
+                            message: "Connection aborted. Call the tool again to retrieve the result.",
+                        };
+                    }
+                    log?.info?.(`[PayMCP:Resubmit] Returning cached result for payment_id=${existedPaymentId}`);
+                    // The payment is spent, so its state goes - but the result is kept
+                    // until the store expires it: this hand-off can itself fail to reach
+                    // the caller, and they have already paid for it.
+                    await stateStore.delete(existedPaymentId);
+                    return cached.result;
+                }
+
                 // Get state (don't delete yet)
                 const storedData = await stateStore.get(existedPaymentId);
                 log?.info?.(`[PayMCP:Resubmit] State retrieved: ${storedData !== undefined}`);
@@ -187,6 +217,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
                 if (abortWatcher.aborted) {
                     log?.warn?.(`[PayMCP:Resubmit] aborted after payment confirmation but before returning tool result.`);
+                    // Keep the result as well as the payment state, so the retry can
+                    // fetch it without running the tool again.
+                    await saveCompletedResult(
+                        stateStore, existedPaymentId, toolResult, RESULT_NS_PAYMENT, toolName, undefined, log
+                    );
                     return {
                         content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
                         annotations: { payment: { status: "paid", payment_id: existedPaymentId } },

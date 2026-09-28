@@ -1,0 +1,68 @@
+name: "Tests"
+
+# package.json declares engines.node ">=18", but the quality gate runs the suite
+# on one version only, and the release workflow builds the published artifact on
+# Node 22 - a version nothing else tests. Run the suite on every major the
+# package claims, on pull requests and on the merge result.
+on:
+  pull_request:
+    branches: [ "main", "develop" ]
+  push:
+    branches: [ "main", "develop" ]
+
+# Cancel previous runs if a new one is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: "test (node ${{ matrix.node-version }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Least-privilege permissions
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 18 is the floor engines.node promises. Note that the locked toolchain
+        # no longer supports it - vite, via vitest, declares
+        # "^20.19.0 || >=22.12.0" - and engine checks are not strict here, so
+        # this leg passes on a toolchain that formally refuses it. A vite bump
+        # can turn it red for a toolchain reason rather than a library one; that
+        # is the signal to decide whether the ">=18" promise still holds.
+        node-version: ['18', '20', '22', '24']
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Setup pnpm
+      run: npm install -g pnpm@10.12.4
+
+    - name: Setup Node.js with automatic package manager caching
+      uses: actions/setup-node@v7
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    # Both of these produce the same answer on every leg: tsc's output does not
+    # depend on the Node that hosts it, and the bundlers emit host-independent
+    # output. They are here because nothing else on a pull request runs them at
+    # all, and because they prove the toolchain itself executes on this major -
+    # not because they say anything version-specific about `src`.
+    - name: Typecheck
+      run: pnpm run typecheck
+
+    # Ahead of the tests, so a failing test cannot mask a broken build.
+    - name: Build
+      run: pnpm run build
+
+    - name: Run tests
+      run: pnpm run test

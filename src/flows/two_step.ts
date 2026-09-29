@@ -198,10 +198,6 @@ function ensureConfirmTool(
         extra /* pass confirm extra */
       );
 
-      // The money moved before the tool ran, so this must not cost the caller
-      // their result; and the lock held across the whole confirm is what keeps
-      // one payment to one execution in the meantime.
-      await discardSpentState(stateStore, String(paymentId), log);
 
         // Build the response before looking at the connection, so the value we
         // may cache is exactly the value the caller would have received.
@@ -231,6 +227,14 @@ function ensureConfirmTool(
             message: "Connection aborted. Call the tool again to retrieve the result.",
           };
         }
+
+        // Retired only now, on the way out with the result in the caller's hands.
+        // Doing it before the connection check meant that if caching the result
+        // then failed, the payment was gone and the paid-for result with it -
+        // the retry could only report an expired payment id. The lock held
+        // across the whole confirm is what keeps one payment to one execution
+        // in the meantime.
+        await discardSpentState(stateStore, String(paymentId), log);
 
         return response;
       }, log); // End of lock

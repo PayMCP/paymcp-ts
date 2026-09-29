@@ -67,7 +67,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
         // Identify this call, so a result cached under the session key is only
         // ever served back to the call that produced it. Computed for every
         // call, disconnecting or not, and never throws.
-        const fingerprint = callFingerprint(toolArgs);
+        const fingerprint = callFingerprint(toolArgs, log);
 
         try {
             // The tool already ran and was paid for, but the client dropped before

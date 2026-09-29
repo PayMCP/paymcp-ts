@@ -101,9 +101,23 @@ describe('state_utils: callFingerprint', () => {
       .toBe(callFingerprint({ a: new Set([2, 1]) }));
   });
 
+  // Anything that is not a plain object has the same problem Map and Set do:
+  // nothing Object.keys can see, so they would all read as "{}" and calls
+  // holding different ones would be served each other's results.
+  it('distinguishes objects that carry no enumerable keys', () => {
+    const values: unknown[] = [
+      {}, /a/g, /a/i, /b/g, new Error('x'), new Error('y'), new TypeError('x'),
+      new URL('https://a.test/'), new URL('https://b.test/'),
+      Promise.resolve(1), new WeakMap(), new Uint8Array([1, 2]), new Uint8Array([2, 1]),
+    ];
+    const seen = new Set(values.map((v) => callFingerprint({ a: v })));
+    expect(seen.size).toBe(values.length);
+  });
+
   // A value appearing twice is described twice - that is what distinguishes it
-  // - so a structure sharing one child at every level costs 2^depth to walk.
-  // This runs synchronously on every call, on arguments the caller chooses.
+  // - so a structure sharing one child at every level produces 2^depth of
+  // output. This runs synchronously on every call, on arguments the caller
+  // chooses, so the walk must not repeat work and the output must be bounded.
   it('gives up rather than blocking on a structure that shares references', () => {
     let node: any = { leaf: 1 };
     for (let i = 0; i < 40; i++) node = { l: node, r: node };
@@ -117,6 +131,38 @@ describe('state_utils: callFingerprint', () => {
     // stalled server and not a false match with another such call.
     expect(first.startsWith('unfingerprintable:')).toBe(true);
     expect(callFingerprint(node)).not.toBe(first);
+  });
+
+  // Cheap to walk - a dozen distinct objects - but its description is the
+  // shared child repeated once per path, so only bounding the output catches it.
+  it('gives up on a structure whose description is huge but whose walk is small', () => {
+    const shared = { blob: 'x'.repeat(10_000) };
+    let node: any = shared;
+    for (let i = 0; i < 12; i++) node = { l: node, r: node };
+
+    const started = Date.now();
+    const fp = callFingerprint(node);
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(fp.startsWith('unfingerprintable:')).toBe(true);
+  });
+
+  it('says so when it abandons a call, since the retry will not match', () => {
+    const log = logger();
+    let node: any = { leaf: 1 };
+    for (let i = 0; i < 40; i++) node = { l: node, r: node };
+    callFingerprint(node, log);
+    expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('will not match'));
+  });
+
+  // Abandoning a fingerprint costs a paid tool a second execution, so ordinary
+  // payloads must not reach the budget.
+  it('fingerprints a payload of a few thousand rows', () => {
+    const rows = Array.from({ length: 5000 }, (_, i) => ({ id: i, name: 'x', n: 1, ok: true }));
+    const started = Date.now();
+    const fp = callFingerprint({ rows });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(fp.startsWith('unfingerprintable:')).toBe(false);
+    expect(fp).toBe(callFingerprint({ rows }));
   });
 
   it('still fingerprints an ordinary nested structure', () => {

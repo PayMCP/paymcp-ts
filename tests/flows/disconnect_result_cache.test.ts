@@ -865,3 +865,66 @@ describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
     expect((await confirm({})).status).toBe('error');
   });
 });
+
+// ---------------------------------------------------------------------------
+// The strict half: deletes that run before any money has moved
+// ---------------------------------------------------------------------------
+// `discardSpentState` is deliberately lenient, and just as deliberately not
+// used for state dropped before the caller has paid for anything. A failure
+// there has to reach them, so the flow does not carry on as if the record were
+// gone. These assert the store's own error by its type - a test that only
+// checks "it threw" passes on a loosened delete too, because the code just
+// past these deletes throws its own error anyway.
+describe('deletes before any payment must not be swallowed', () => {
+  class StoreUnavailable extends Error {}
+
+  /** Fails only on the keys named, so one delete can be singled out. */
+  function storeFailingDeleteOf(match: (key: string) => boolean): StateStore {
+    const inner = new InMemoryStateStore();
+    return {
+      set: (key, args, options) => inner.set(key, args, options),
+      get: (key) => inner.get(key),
+      delete: async (key) => {
+        if (match(key)) throw new StoreUnavailable('redis unavailable');
+        return inner.delete(key);
+      },
+      lock: (key, fn) => inner.lock(key, fn),
+    };
+  }
+
+  const sessionExtra = () => ({
+    sessionId: 'sess1',
+    sendRequest: vi.fn().mockResolvedValue({ action: 'cancel' }),
+  }) as any;
+
+  it('ELICITATION surfaces it when dropping a canceled payment', async () => {
+    const store = storeFailingDeleteOf((k) => k === 'testTool_sess1');
+    const fn = vi.fn();
+    const wrapper = elicitationWrapper(
+      fn, {} as any,
+      { mock: { createPayment: vi.fn().mockResolvedValue({ paymentId: 'pay_1', paymentUrl: 'u' }), getPaymentStatus: vi.fn().mockResolvedValue('canceled') } as any },
+      priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+
+    // The user cancels, so the payment record is dropped before anyone pays.
+    await expect(wrapper({ q: 1 }, sessionExtra())).rejects.toBeInstanceOf(StoreUnavailable);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('PROGRESS surfaces it when dropping a stale payment it cannot reuse', async () => {
+    const store = storeFailingDeleteOf((k) => k === 'testTool_sess1');
+    // A record whose payment the provider no longer recognises, so the flow
+    // drops it and starts over - again, before anyone has paid.
+    await store.set('testTool_sess1', { paymentId: 'pay_old', paymentUrl: 'u' });
+    const fn = vi.fn();
+    const wrapper = progressWrapper(
+      fn, {} as any,
+      { mock: { createPayment: vi.fn().mockResolvedValue({ paymentId: 'pay_1', paymentUrl: 'u' }), getPaymentStatus: vi.fn().mockRejectedValue(new Error('unknown payment')) } as any },
+      priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+
+    await expect(wrapper({ q: 1 }, { sessionId: 'sess1' } as any)).rejects.toBeInstanceOf(StoreUnavailable);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+});

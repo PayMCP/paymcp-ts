@@ -81,17 +81,20 @@ function unfingerprintable(): string {
 }
 
 /**
- * How many values one fingerprint may describe.
+ * Limits on one fingerprint.
  *
  * A value that merely appears twice is described twice, which is what
- * distinguishes it from a value that appears once - but that makes a structure
- * sharing one child at every level cost 2^depth to walk. This runs on every
- * call, on arguments the caller chooses, and it is synchronous, so an
- * unbounded walk is an unbounded block of the event loop. Exceeding the budget
- * gives the call a value unique to it, which costs a cache miss and a
- * re-execution rather than a stalled server.
+ * distinguishes it from a value that appears once - so a structure sharing one
+ * child at every level produces 2^depth of output. This runs synchronously on
+ * every call, over arguments the caller chooses, so both the walk and the
+ * result are bounded - the output too, because a shared child contributes its
+ * whole description every time it appears, however cheap it was to walk. The
+ * node budget is generous enough for ordinary payloads
+ * - a few thousand rows of a few fields each - because abandoning a
+ * fingerprint costs a cache miss and a re-execution of a paid tool.
  */
-const FINGERPRINT_NODE_BUDGET = 10_000;
+const FINGERPRINT_NODE_BUDGET = 2_000_000;
+const FINGERPRINT_LENGTH_BUDGET = 4_000_000;
 
 /** Thrown to abandon a fingerprint that is too large to be worth computing. */
 class FingerprintTooLarge extends Error {}
@@ -103,8 +106,12 @@ class FingerprintTooLarge extends Error {}
  * `{a:1,b:2}` and `{b:2,a:1}` - the same call - would not match, and it throws
  * on cycles and BigInt.
  */
-function canonicalize(value: unknown, seen: WeakSet<object>, budget: { left: number }): string {
-    if (--budget.left < 0) throw new FingerprintTooLarge();
+function canonicalize(
+    value: unknown,
+    seen: WeakSet<object>,
+    budget: { nodes: number; chars: number }
+): string {
+    if (--budget.nodes < 0) throw new FingerprintTooLarge();
 
     if (value === null) return "null";
 
@@ -127,41 +134,75 @@ function canonicalize(value: unknown, seen: WeakSet<object>, budget: { left: num
     }
 
     const obj = value as object;
+
+    /** Charge the result against the output budget and hand it back. */
+    const spend = (out: string): string => {
+        budget.chars -= out.length;
+        if (budget.chars < 0) throw new FingerprintTooLarge();
+        return out;
+    };
+
     // Only a cycle back through the current branch is collapsed; a value that
     // merely appears twice is described twice, which is what distinguishes it.
     if (seen.has(obj)) return "[Circular]";
     seen.add(obj);
+
     try {
-        if (Array.isArray(obj)) {
-            return `[${obj.map((item) => canonicalize(item, seen, budget)).join(",")}]`;
-        }
-        if (obj instanceof Date) {
-            return `date:${obj.getTime()}`;
-        }
-        // Map and Set have no own enumerable keys, so the generic branch below
-        // would describe every one of them - and every plain object - as "{}",
-        // and calls holding different containers would share a fingerprint. A
-        // tool whose schema uses z.map()/z.set() receives exactly these.
-        if (obj instanceof Map) {
-            const entries = Array.from(obj.entries())
-                .map(([k, v]) => `${canonicalize(k, seen, budget)}=>${canonicalize(v, seen, budget)}`)
-                .sort();
-            return `map{${entries.join(",")}}`;
-        }
-        if (obj instanceof Set) {
-            const items = Array.from(obj.values())
-                .map((v) => canonicalize(v, seen, budget))
-                .sort();
-            return `set{${items.join(",")}}`;
-        }
-        const keys = Object.keys(obj).sort();
-        const entries = keys.map(
-            (k) => `${JSON.stringify(k)}:${canonicalize((obj as Record<string, unknown>)[k], seen, budget)}`
-        );
-        return `{${entries.join(",")}}`;
+        return spend(describe(obj, seen, budget));
     } finally {
         seen.delete(obj);
     }
+}
+
+/** The shape-specific part of `canonicalize`. */
+function describe(
+    obj: object,
+    seen: WeakSet<object>,
+    budget: { nodes: number; chars: number }
+): string {
+    const nested = (v: unknown) => canonicalize(v, seen, budget);
+
+    if (Array.isArray(obj)) {
+        return `[${obj.map(nested).join(",")}]`;
+    }
+    if (obj instanceof Date) {
+        return `date:${obj.getTime()}`;
+    }
+    // Map and Set have no own enumerable keys, so the generic branch below
+    // would describe every one of them - and every plain object - as "{}", and
+    // calls holding different containers would share a fingerprint. A tool
+    // whose schema uses z.map()/z.set() receives exactly these.
+    if (obj instanceof Map) {
+        const entries = Array.from(obj.entries())
+            .map(([k, v]) => `${nested(k)}=>${nested(v)}`)
+            .sort();
+        return `map{${entries.join(",")}}`;
+    }
+    if (obj instanceof Set) {
+        const items = Array.from(obj.values()).map(nested).sort();
+        return `set{${items.join(",")}}`;
+    }
+
+    const keys = Object.keys(obj).sort();
+    const entries = keys.map((k) => `${JSON.stringify(k)}:${nested((obj as Record<string, unknown>)[k])}`);
+    const body = `{${entries.join(",")}}`;
+
+    // Anything that is not a plain object has the same problem Map and Set do:
+    // RegExp, Error, URL, Promise, WeakMap and the like carry nothing Object.keys
+    // can see, so they would all read as "{}". The type tag separates them from
+    // each other, and their own string form - where they have one - separates
+    // two values of the same type.
+    const tag = Object.prototype.toString.call(obj);
+    if (tag === "[object Object]") return body;
+
+    let described = "";
+    try {
+        const asString = String(obj);
+        if (asString !== tag) described = `:${asString}`;
+    } catch {
+        // A type that cannot describe itself is identified by its tag alone.
+    }
+    return `${tag}${described}${body}`;
 }
 
 /**
@@ -179,11 +220,19 @@ function canonicalize(value: unknown, seen: WeakSet<object>, budget: { left: num
  * signal and the session plumbing, which differ on every request, so including
  * it would stop a genuine retry from ever matching.
  */
-export function callFingerprint(toolArgs?: unknown): string {
+export function callFingerprint(toolArgs?: unknown, log?: Logger): string {
     try {
-        const canonical = canonicalize(toolArgs, new WeakSet(), { left: FINGERPRINT_NODE_BUDGET });
+        const canonical = canonicalize(toolArgs, new WeakSet(), {
+            nodes: FINGERPRINT_NODE_BUDGET,
+            chars: FINGERPRINT_LENGTH_BUDGET,
+        });
         return createHash("sha256").update(canonical).digest("hex");
-    } catch {
+    } catch (err) {
+        // Worth a line: from here on this call cannot be matched by a retry, so
+        // a disconnect costs it a second execution of the paid tool.
+        log?.debug?.(
+            `[PayMCP] Could not fingerprint this call's arguments, so a retry will not match it: ${describeError(err)}`
+        );
         return unfingerprintable();
     }
 }
@@ -317,11 +366,17 @@ export async function clearCompletedResult(
 /**
  * Remove state that has been spent, without letting the failure reach the caller.
  *
- * Every call site is past the point where the paid tool has already run, so the
- * caller is owed its result. The record still has to go - otherwise a later
+ * Every call site is past the point where the caller's money has moved, so they
+ * are owed something for it. The record still has to go - otherwise a later
  * call can reuse a payment that has already been consumed, and in the
  * session-keyed flows that means a free run of the paid tool - but a store that
- * cannot delete must not turn a completed, paid execution into an error.
+ * cannot delete must not turn a paid call into an error.
+ *
+ * "After the money moved" is not the same as "after the tool ran": the x402
+ * provider settles inside getPaymentStatus, so in that flow the state is
+ * consumed after payment but before execution, and it belongs here too.
+ * Deletes that run before any money moves stay strict - a failure there cannot
+ * cost the caller anything they have paid for.
  */
 export async function discardSpentState(
     stateStore: StateStore | undefined,

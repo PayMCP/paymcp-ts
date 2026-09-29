@@ -157,9 +157,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
               };
             }
             logger?.info?.(`[PayMCP:DynamicTools] Returning cached result for payment_id=${pidStr}`);
-            // Take the result out before the session it lives on is discarded:
-            // this is the only copy, and anything that throws between dropping
-            // the session and returning would take it with it.
+            // `payment` still references the session object after it leaves the
+            // map, so this local is only for clarity - what actually protects
+            // the result is the guard around the announcement below, since a
+            // throw there would leave the caller with nothing and no session to
+            // retry against.
             const cachedResult = payment.result;
             cleanupPayment(server, payment.sessionId, pidStr, toolName, confirmName);
             try {

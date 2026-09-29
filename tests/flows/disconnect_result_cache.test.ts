@@ -597,9 +597,8 @@ describe('PROGRESS: disconnect after a paid execution', () => {
 
   // Known limitation, pinned so a change of behaviour is noticed: when the
   // spent payment record cannot be removed, it survives and the next call
-  // reuses it - a free run of the paid tool. See the issue linked from the
-  // pull request; the alternative is taking the result away from someone who
-  // has paid for it, which is worse.
+  // reuses it - a free run of the paid tool. The alternative is taking the
+  // result away from someone who has paid for it, which is worse.
   it('leaves a reusable payment behind when only that delete fails', async () => {
     const store = storeKeepingPaymentState();
     const ctl = new AbortController();

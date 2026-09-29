@@ -34,6 +34,7 @@ import { StateStore } from "../types/state.js";
 import { callOriginal } from "../utils/tool.js";
 import {
   RESULT_NS_PAYMENT,
+  discardSpentState,
   peekCompletedResult,
   saveCompletedResult,
   withPaymentLock,
@@ -75,10 +76,15 @@ function ensureConfirmTool(
   };
 
   // Confirmation handler: verify payment, retrieve saved args, invoke original tool.
-  const confirmHandler: ToolHandler = async (
+  // Declared as a function rather than an arrow so `arguments` is its own: an
+  // arrow function has none, so this read the enclosing factory's argument
+  // count instead - always 7, never 2. `hasArgs` was therefore always false,
+  // the request's own `extra` was discarded in favour of the params object, and
+  // nothing that needs it (the abort signal, the session) was ever reachable.
+  const confirmHandler: ToolHandler = async function (
     paramsOrExtra: any,
     maybeExtra?: any
-  ) => {
+  ) {
     const hasArgs = arguments.length === 2;
     const params = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : paramsOrExtra;
@@ -178,14 +184,24 @@ function ensureConfirmTool(
           };
         }
 
-        // We're good—consume stored args and call original.
-        await stateStore.delete(String(paymentId));
-        log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
-        const toolResult = await callOriginal(
-          originalHandler,
-          stored.args,
-          extra /* pass confirm extra */
-        );
+        // Call the original with the stored args. The state is consumed only
+      // once it has succeeded: the paid tool now sees a live abort signal, so a
+      // tool that honours it throws on cancellation, and any tool can fail for
+      // its own reasons. Deleting first left the caller charged with an expired
+      // payment id and no way back to it - and restoring the state afterwards
+      // just moves the problem to a store that cannot take the write.
+      // RESUBMIT has always run the tool before consuming its state.
+      log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
+      const toolResult = await callOriginal(
+        originalHandler,
+        stored.args,
+        extra /* pass confirm extra */
+      );
+
+      // The money moved before the tool ran, so this must not cost the caller
+      // their result; and the lock held across the whole confirm is what keeps
+      // one payment to one execution in the meantime.
+      await discardSpentState(stateStore, String(paymentId), log);
 
         // Build the response before looking at the connection, so the value we
         // may cache is exactly the value the caller would have received.

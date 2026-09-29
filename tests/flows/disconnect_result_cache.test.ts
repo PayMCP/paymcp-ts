@@ -86,6 +86,24 @@ function storeKeepingPaymentState(): StateStore {
   };
 }
 
+/**
+ * A tool that honours its abort signal: it cancels the request and then throws,
+ * which is what a well-behaved tool does once the signal actually reaches it.
+ */
+function cancellationAwareTool(controller: AbortController) {
+  const runs: string[] = [];
+  const fn = vi.fn(async (...args: any[]) => {
+    runs.push(`run #${runs.length + 1}`);
+    const requestExtra = args[args.length - 1];
+    if (runs.length === 1) {
+      controller.abort('client cancelled');
+      if (requestExtra?.signal?.aborted) throw new Error('aborted by caller');
+    }
+    return { content: [{ type: 'text', text: runs[runs.length - 1] }] };
+  });
+  return { fn, runs };
+}
+
 const text = (r: any) => r?.content?.[0]?.text;
 
 // ---------------------------------------------------------------------------
@@ -258,18 +276,17 @@ describe('RESUBMIT: disconnect after a paid execution', () => {
 // TWO_STEP - keyed by payment id, executed from the confirm tool
 // ---------------------------------------------------------------------------
 describe('TWO_STEP: disconnect after a paid execution', () => {
-  // NOTE: the confirm handler reads `arguments` from its enclosing factory, so
-  // on the SDK's real `(params, extra)` call it never sees the request's abort
-  // signal and this branch cannot be reached. These tests drive it through the
-  // shape that does reach it; making the production shape reach it is a
-  // separate change.
+  // The confirm tool has an inputSchema, so the SDK calls it as (params, extra).
   function build(store: StateStore, fn: any, tool = 'testTool') {
     let confirm: any;
     const server = { tools: new Map(), registerTool: (_n: string, _c: any, h: any) => { confirm = h; } } as any;
     const wrapper = twoStepWrapper(
       fn, server, { mock: provider() }, priceInfo, tool, store, {}, clientInfo, silent()
     );
-    return { wrapper, confirm: (args: any) => confirm(args) };
+    return {
+      wrapper,
+      confirm: ({ signal, ...params }: any) => confirm(params, { signal }),
+    };
   }
 
   it('serves the retry from the stored result and runs the tool once', async () => {
@@ -306,6 +323,31 @@ describe('TWO_STEP: disconnect after a paid execution', () => {
     expect(runs).toHaveLength(1);
   });
 
+  // The confirm handler used to hand the params object on in place of the
+  // request's extra, so the paid tool got no session and no abort signal.
+  it('gives the paid tool the confirm request\'s own extra', async () => {
+    const store = new InMemoryStateStore();
+    const seen: any[] = [];
+    const fn = vi.fn(async (...args: any[]) => {
+      seen.push(args);
+      return { content: [{ type: 'text', text: 'ok' }] };
+    });
+    let confirm: any;
+    const server = { tools: new Map(), registerTool: (_n: string, _c: any, h: any) => { confirm = h; } } as any;
+    const wrapper = twoStepWrapper(
+      fn, server, { mock: provider() }, priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+
+    const init: any = await wrapper({ q: 1 }, {});
+    const confirmExtra = { sessionId: 'sess1', signal: undefined, sendRequest: vi.fn() };
+    await confirm({ payment_id: init.structured_content.payment_id }, confirmExtra);
+
+    const [toolArgs, toolExtra] = seen[0];
+    expect(toolArgs).toEqual({ q: 1 });
+    expect(toolExtra).toBe(confirmExtra);
+    expect(toolExtra).not.toHaveProperty('payment_id');
+  });
+
   it('does not answer one tool with another tool\'s result', async () => {
     const store = new InMemoryStateStore();
     const ctl = new AbortController();
@@ -327,6 +369,23 @@ describe('TWO_STEP: disconnect after a paid execution', () => {
     // And the first tool's result survives for the caller who paid.
     expect(text(await confirm({ payment_id: pid }))).toBe('run #1');
     expect(runs).toHaveLength(1);
+  });
+
+  // Giving the paid tool a live signal means a tool that honours it throws on
+  // cancellation - and the stored args are consumed before it runs.
+  it('keeps the payment usable when the paid tool throws on cancellation', async () => {
+    const store = new InMemoryStateStore();
+    const ctl = new AbortController();
+    const { fn, runs } = cancellationAwareTool(ctl);
+    const { wrapper, confirm } = build(store, fn);
+
+    const init: any = await wrapper({ q: 1 }, {});
+    const pid = init.structured_content.payment_id;
+
+    await expect(confirm({ payment_id: pid, signal: ctl.signal })).rejects.toThrow('aborted by caller');
+    // The caller paid and received nothing, so the payment is still theirs.
+    expect(text(await confirm({ payment_id: pid }))).toBe('run #2');
+    expect(runs).toHaveLength(2);
   });
 
   // `lock` is part of the StateStore contract, but a hand-written store from a
@@ -538,9 +597,8 @@ describe('PROGRESS: disconnect after a paid execution', () => {
 
   // Known limitation, pinned so a change of behaviour is noticed: when the
   // spent payment record cannot be removed, it survives and the next call
-  // reuses it - a free run of the paid tool. See the issue linked from the
-  // pull request; the alternative is taking the result away from someone who
-  // has paid for it, which is worse.
+  // reuses it - a free run of the paid tool. The alternative is taking the
+  // result away from someone who has paid for it, which is worse.
   it('leaves a reusable payment behind when only that delete fails', async () => {
     const store = storeKeepingPaymentState();
     const ctl = new AbortController();
@@ -754,11 +812,8 @@ describe('ELICITATION: disconnect after a paid execution', () => {
 describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
   beforeEach(() => PAYMENTS.clear());
 
-  // NOTE: the confirm tool is registered without an inputSchema, so the SDK
-  // calls it as `(extra)` and its handler's second parameter - the only place
-  // it looks for the abort signal - is undefined. These tests drive it through
-  // the `(params, extra)` shape that does reach the branch; making the
-  // production shape reach it is a separate change.
+  // Registered without an inputSchema, so the SDK calls it with the request
+  // extra as its only argument.
   function build(fn: any) {
     let confirm: any;
     const server = {
@@ -774,7 +829,7 @@ describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
       fn, server, { mock: provider() }, priceInfo, 'testTool',
       new InMemoryStateStore(), {}, clientInfo, silent()
     );
-    return { wrapper, server, confirm: (extra: any) => confirm({}, extra) };
+    return { wrapper, server, confirm: (extra: any) => confirm(extra) };
   }
 
   it('serves the retry from the stored result and runs the tool once', async () => {
@@ -802,6 +857,101 @@ describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
     expect(runs).toHaveLength(1);
   });
 
+  // The watcher used to be built outside the try, so the returns above it -
+  // unknown payment, still-aborted, and the cached hand-off - never reached
+  // `finally { dispose() }`. Harmless while the signal was always undefined.
+  it('releases the abort listener on the cached-result paths', async () => {
+    const ctl = new AbortController();
+    const { fn } = droppingTool(ctl);
+    const { wrapper, confirm } = build(fn);
+    await wrapper({ q: 1 }, {});
+    await confirm({ signal: ctl.signal });
+
+    /** A signal that records whether its listener was taken off again. */
+    const watched = () => {
+      const listeners: any = { add: 0, remove: 0 };
+      return {
+        listeners,
+        signal: {
+          aborted: false,
+          addEventListener: () => { listeners.add++; },
+          removeEventListener: () => { listeners.remove++; },
+        },
+      };
+    };
+
+    const served = watched();
+    expect(text(await confirm({ signal: served.signal }))).toBe('run #1');
+    expect(served.listeners.add).toBe(1);
+    expect(served.listeners.remove).toBe(1);
+
+    // And on the path where the payment session is already gone.
+    const unknown = watched();
+    expect((await confirm({ signal: unknown.signal })).status).toBe('error');
+    expect(unknown.listeners.add).toBe(1);
+    expect(unknown.listeners.remove).toBe(1);
+  });
+
+  // A host that is not the official SDK may call the confirm tool with no
+  // arguments. Handing `undefined` to the paid tool makes any tool that touches
+  // its extra throw - after the payment session has been consumed, so the paid
+  // result would be lost outright.
+  it('never hands the paid tool a non-object as its extra', async () => {
+    for (const call of [
+      (c: any) => c(),
+      (c: any) => c(undefined),
+      (c: any) => c('nonsense'),
+      (c: any) => c(7),
+    ]) {
+      const seen: any[] = [];
+      const fn = vi.fn(async (...args: any[]) => {
+        seen.push(args);
+        // A tool that reads its extra, the way a real one does.
+        const e = args[args.length - 1];
+        return { content: [{ type: 'text', text: String(e?.sessionId ?? 'no-session') }] };
+      });
+      let confirm: any;
+      const server = {
+        tools: new Map(),
+        _registeredTools: {} as any,
+        registerTool: (_n: string, _c: any, h: any) => { confirm = h; },
+        sendNotification: vi.fn().mockResolvedValue(undefined),
+      } as any;
+      const wrapper = dynamicWrapper(
+        fn, server, { mock: provider() }, priceInfo, 'testTool',
+        new InMemoryStateStore(), {}, clientInfo, silent()
+      );
+      await wrapper({ q: 1 }, { sessionId: 'sess1' });
+
+      const served = await call(confirm);
+      // The call completes and the tool ran, rather than erroring out with the
+      // payment already spent.
+      expect(served.status).not.toBe('error');
+      expect(fn).toHaveBeenCalledTimes(1);
+      const passedExtra = seen[0][seen[0].length - 1];
+      expect(passedExtra === null || typeof passedExtra !== 'object').toBe(false);
+      PAYMENTS.clear();
+    }
+  });
+
+  it('releases the abort listener on the hasResult-and-still-aborted path', async () => {
+    const ctl = new AbortController();
+    const { fn } = droppingTool(ctl);
+    const { wrapper, confirm } = build(fn);
+    await wrapper({ q: 1 }, {});
+    await confirm({ signal: ctl.signal });
+
+    const listeners = { add: 0, remove: 0 };
+    const signal: any = {
+      aborted: true,
+      addEventListener: () => { listeners.add++; },
+      removeEventListener: () => { listeners.remove++; },
+    };
+    expect(text(await confirm({ signal }))).toBe(ABORT_TEXT);
+    expect(listeners.add).toBe(1);
+    expect(listeners.remove).toBe(1);
+  });
+
   // The cached result is the only copy: anything that throws between dropping
   // the session and returning would take it with it.
   it('hands over the result even if announcing the tool list throws', async () => {
@@ -826,6 +976,7 @@ describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
     expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('announce the tool list change'));
   });
 
+
   it('hands over an undisturbed result even if announcing the tool list throws', async () => {
     const fn = vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] }));
     let confirm: any;
@@ -844,6 +995,129 @@ describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
     await wrapper({ q: 1 }, {});
     expect(text(await confirm({}, {}))).toBe('done');
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  // Falling back to the initiating request's extra must not inherit its signal:
+  // that request has already ended, and an aborted one would make every confirm
+  // look cancelled, so the result is cached and never handed over.
+  it('does not inherit a spent signal when falling back to the initiating extra', async () => {
+    let runs = 0;
+    const fn = vi.fn(async () => { runs++; return { content: [{ type: 'text', text: `run #${runs}` }] }; });
+    let confirm: any;
+    const server = {
+      tools: new Map(),
+      _registeredTools: {} as any,
+      registerTool: (name: string, _c: any, h: any) => { server._registeredTools[name] = { enabled: true }; confirm = h; },
+      sendNotification: vi.fn().mockResolvedValue(undefined),
+    } as any;
+    const wrapper = dynamicWrapper(
+      fn, server, { mock: provider() }, priceInfo, 'testTool',
+      new InMemoryStateStore(), {}, clientInfo, silent()
+    );
+
+    // The initiating request carried a signal that is already spent, and the
+    // host calls the confirm tool with no arguments at all.
+    await wrapper({ q: 1 }, { sessionId: 'sess1', signal: AbortSignal.abort() });
+    expect(text(await confirm())).toBe('run #1');
+    expect(runs).toBe(1);
+  });
+
+  /** A tool slow enough that a second confirm lands while it is still inside. */
+  function slowTool(ms = 40) {
+    const runs: string[] = [];
+    const fn = vi.fn(async () => {
+      const label = `run #${runs.length + 1}`;
+      runs.push(label);
+      await new Promise((r) => setTimeout(r, ms));
+      return { content: [{ type: 'text', text: label }] };
+    });
+    return { fn, runs };
+  }
+
+  // This flow takes no store lock, and the payment is consumed only once the
+  // tool has returned, so nothing but an in-process guard stops a second
+  // confirm arriving mid-execution from running the tool again. RESUBMIT and
+  // TWO_STEP are covered by the per-payment lock instead.
+  it('runs the tool once when a second confirm arrives mid-execution', async () => {
+    const { fn, runs } = slowTool();
+    const { wrapper, confirm } = build(fn);
+    await wrapper({ q: 1 }, {});
+
+    const [first, second] = await Promise.all([confirm({}), confirm({})]);
+    expect(runs).toHaveLength(1);
+
+    // One caller gets the result; the other is told it is already running, and
+    // is not handed an error it cannot retry out of.
+    const served = [first, second].filter((r: any) => text(r) === 'run #1');
+    expect(served).toHaveLength(1);
+    const waited: any = [first, second].find((r: any) => text(r) !== 'run #1');
+    expect(waited.status).toBe('pending');
+    expect(waited.message).toContain('already running');
+
+    // And the payment is spent exactly once: it was consumed by the call that
+    // delivered the result.
+    expect(PAYMENTS.has('pay_1')).toBe(false);
+  });
+
+  // The claim has to be released on the paths that leave the session in place,
+  // or one attempt against an unpaid payment locks the caller out of it for
+  // good. The paths that consume the session take the object with them.
+  it('releases the claim when the payment was not yet paid', async () => {
+    const { fn, runs } = slowTool(5);
+    const getPaymentStatus = vi.fn()
+      .mockResolvedValueOnce('pending')
+      .mockResolvedValue('paid');
+    let confirm: any;
+    const server = {
+      tools: new Map(),
+      _registeredTools: {} as any,
+      registerTool: (name: string, _c: any, h: any) => { server._registeredTools[name] = { enabled: true }; confirm = h; },
+      sendNotification: vi.fn().mockResolvedValue(undefined),
+    } as any;
+    const wrapper = dynamicWrapper(
+      fn, server,
+      { mock: { createPayment: vi.fn().mockResolvedValue({ paymentId: 'pay_1', paymentUrl: 'u' }), getPaymentStatus } as any },
+      priceInfo, 'testTool', new InMemoryStateStore(), {}, clientInfo, silent()
+    );
+    await wrapper({ q: 1 }, {});
+
+    const tooEarly: any = await confirm({});
+    expect(tooEarly.status).toBe('error');
+    expect(runs).toHaveLength(0);
+
+    // Now that it is paid, the same session must still be usable.
+    expect(text(await confirm({}))).toBe('run #1');
+    expect(runs).toHaveLength(1);
+  });
+
+  it('releases the claim when the paid tool throws', async () => {
+    let calls = 0;
+    const fn = vi.fn(async () => {
+      calls++;
+      if (calls === 1) throw new Error('tool blew up');
+      return { content: [{ type: 'text', text: 'second attempt' }] };
+    });
+    const { wrapper, confirm } = build(fn);
+    await wrapper({ q: 1 }, {});
+
+    expect((await confirm({})).status).toBe('error');
+    // The payment was not consumed by a failed attempt, and the claim is gone.
+    expect(text(await confirm({}))).toBe('second attempt');
+    expect(calls).toBe(2);
+  });
+
+  it('keeps the payment session when the paid tool throws on cancellation', async () => {
+    const ctl = new AbortController();
+    const { fn, runs } = cancellationAwareTool(ctl);
+    const { wrapper, confirm } = build(fn);
+
+    await wrapper({ q: 1 }, {});
+    const failed = await confirm({ signal: ctl.signal });
+    expect(failed.status).toBe('error');
+    // The session is back, so the retry is not told the payment is unknown.
+    expect(PAYMENTS.has('pay_1')).toBe(true);
+    expect(text(await confirm({}))).toBe('run #2');
+    expect(runs).toHaveLength(2);
   });
 
   it('cleans up the payment session and the confirm tool once delivered', async () => {

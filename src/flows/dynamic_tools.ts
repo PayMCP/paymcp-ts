@@ -22,6 +22,11 @@ interface PaymentSession {
   sessionId: string;
   args: any;
   ts: number;
+  // Set while a confirm is inside the paid tool. This flow keeps its sessions
+  // in this process and takes no store lock, and the payment is consumed only
+  // once the tool has returned - so without this a second confirm arriving
+  // mid-execution would find the session still there and run the tool again.
+  inFlight?: boolean;
   // Set once the paid tool has run but the client dropped before receiving the
   // result, so a retry is answered from here instead of running the tool again.
   // This flow keeps its sessions in this process, so the result rides along on
@@ -126,8 +131,34 @@ export const makePaidWrapper: PaidWrapperFactory = (
           description: `Confirm payment ${pidStr} and execute ${toolName}()`,
           ...config?._meta ? {_meta:{...config._meta,price:undefined}}: {}
         },
-        async (_params: any, confirmExtra?: any) => {
+        async (paramsOrExtra?: any, maybeExtra?: any) => {
+          // This tool is registered without an inputSchema, so the SDK calls it
+          // with the request extra as its only argument. Reading the second
+          // parameter alone left the abort signal - the only thing this handler
+          // needs from the request - permanently undefined, and with it the
+          // disconnect branch below unreachable. Accept either shape.
+          //
+          // Not the `arguments.length === 2` idiom the wrappers use: this is an
+          // arrow nested inside dynamicToolsWrapper, so `arguments` would be
+          // that function's - the very mistake this change removes from
+          // two_step.
+          const offered = maybeExtra !== undefined ? maybeExtra : paramsOrExtra;
+          // The official SDK always passes an extra object, but this module
+          // supports other server implementations too, and a host that calls
+          // the tool with no arguments - or with something that is not an extra
+          // - would otherwise hand `undefined` to the paid tool. Any tool that
+          // touches `extra` then throws, after the payment session has been
+          // consumed, so the paid result is lost outright. The initiating
+          // request's extra is stale, so its signal is dropped: keeping it
+          // would make the confirm look permanently cancelled.
+          const confirmExtra =
+            offered && typeof offered === "object"
+              ? offered
+              : (extra && typeof extra === "object" ? { ...extra, signal: undefined } : extra);
           const abortWatcher = new AbortWatcher((confirmExtra as any)?.signal, logger);
+          // Opened here, not below, so the early returns for an unknown payment
+          // session and for a cached result also reach `dispose()`.
+          try {
           const payment = PAYMENTS.get(pidStr);
           if (!payment) {
             return {
@@ -174,6 +205,22 @@ export const makePaidWrapper: PaidWrapperFactory = (
             return cachedResult;
           }
 
+            // Claimed synchronously, between finding the session and the first
+            // await, so two confirms cannot both get past here.
+            if (payment.inFlight) {
+              logger?.warn?.(`[PayMCP:DynamicTools] a confirm is already running for payment_id=${pidStr}`);
+              return {
+                content: [{
+                  type: "text",
+                  text: `Inform user: Payment ${pidStr} is already being processed. Ask them to wait a moment and try again.`
+                }],
+                status: "pending",
+                message: "A confirm for this payment is already running",
+                payment_id: pidStr
+              };
+            }
+            payment.inFlight = true;
+
             try {
               const status = await provider.getPaymentStatus(paymentId);
               if (status !== "paid") {
@@ -189,17 +236,27 @@ export const makePaidWrapper: PaidWrapperFactory = (
             }
 
               // Execute original, cleanup state
-              PAYMENTS.delete(pidStr);
+              // Run first, consume after. The paid tool now sees a live abort
+              // signal, so a tool that honours it throws on cancellation, and
+              // any tool can fail for its own reasons; consuming the session
+              // first left the caller charged with an unknown payment id and no
+              // way back to it. RESUBMIT has always worked this way.
               const result = hasArgs
-                ? await func(payment.args, confirmExtra || extra)
-                : await func(confirmExtra || extra);
+                ? await func(payment.args, confirmExtra)
+                : await func(confirmExtra);
 
               if (abortWatcher.aborted) {
                 logger?.warn?.(`[PayMCP:DynamicTools] aborted after payment confirmation but before returning tool result.`);
-                // Put the session back, now carrying the result the caller paid
-                // for. The timestamp is refreshed so the sweeper gives them the
-                // full window from here to come back for it.
-                PAYMENTS.set(pidStr, { ...payment, ts: Date.now(), hasResult: true, result });
+                // Keep the session, now carrying the result the caller paid for.
+                // The timestamp is refreshed so the sweeper gives them the full
+                // window from here to come back for it; it happens once, because
+                // the retry either takes the result or returns this same stub
+                // without touching the session again.
+                // `inFlight` is transient, so it is not carried into the stored copy.
+                // Nothing reads it there today - the cached-result branch runs
+                // before the claim is checked - but storing a claim that no one
+                // holds would be a lie waiting to be believed.
+                PAYMENTS.set(pidStr, { ...payment, ts: Date.now(), inFlight: false, hasResult: true, result });
                 return {
                   content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
                   annotations: { payment: { status: "paid", payment_id: pidStr } },
@@ -210,6 +267,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
                 };
               }
 
+              // Consumed only now, with a result in hand: a tool that threw
+              // leaves the payment where it was, the way RESUBMIT does.
               cleanupPayment(server, payment.sessionId, pidStr, toolName, confirmName);
 
             // Emit tools/list_changed notification (fire-and-forget). The tool
@@ -238,6 +297,12 @@ export const makePaidWrapper: PaidWrapperFactory = (
               message: "Technical error confirming payment - inform user to retry",
               payment_id: pidStr
             };
+            } finally {
+              // Released however this attempt ended. On the paths that consume
+              // the session the object is already out of the map, so this only
+              // matters for the ones that leave it there.
+              payment.inFlight = false;
+            }
           } finally {
             abortWatcher.dispose();
           }

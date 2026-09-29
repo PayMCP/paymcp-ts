@@ -10,6 +10,8 @@
 ### Changed
 - In `RESUBMIT` and `TWO_STEP` a delivered result stays retrievable under the same `payment_id` until the state store expires it — one hour by default. The tool is not run again, but anyone holding that id can fetch the result a second time. Handing a result back can fail the same way the first attempt did, and the caller has already paid, so it is kept rather than dropped on delivery. The session-keyed flows (`ELICITATION`, `PROGRESS`) drop theirs once delivered, because their key is reused by every later call to the same tool.
 - In `ELICITATION`, a tool whose result is not MCP-shaped now consumes the payment. It previously returned before the state was deleted, leaving the payment reusable.
+- The confirm tools of `TWO_STEP` and `DYNAMIC_TOOLS` now pass their own request's `extra` to the paid tool. `TWO_STEP` passed the params object, which carries no `sendRequest`, progress token or session, so a paid tool that reported progress or elicited under that flow would have thrown; `DYNAMIC_TOOLS` passed the extra of the initiating request, whose closures target a request the client has already closed. A paid tool under either flow now also receives a live abort signal for the first time.
+- `TWO_STEP` and `DYNAMIC_TOOLS` consume the payment only once the paid tool has returned, as `RESUBMIT` always has. A tool that fails — including one that throws because the request was cancelled — leaves the payment where it was instead of leaving the caller charged with an unusable payment id. A failed execution therefore does not consume the payment and can be retried.
 
 # 0.9.0
 ### Breaking Changes

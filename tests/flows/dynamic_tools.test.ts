@@ -200,14 +200,16 @@ describe('DYNAMIC_TOOLS Flow', () => {
       const confirmTool = registeredTools.get(initResult.next_tool);
       expect(confirmTool).toBeDefined();
 
-      // Execute confirmation tool
-      const confirmResult = await confirmTool.handler({});
+      // Execute confirmation tool. Registered without an inputSchema, so the
+      // SDK calls it with the request extra as its only argument.
+      const confirmResult = await confirmTool.handler({ requestId: 'confirm_req' });
 
       // Verify payment status was checked
       expect(mockProvider.getPaymentStatus).toHaveBeenCalledWith('test_payment_id_123456');
 
-      // Verify original tool was called with correct args (extra is not passed if undefined)
-      expect(mockTool).toHaveBeenCalledWith({ data: 'test_input' });
+      // The initiating call passed no args, so the tool receives just the extra -
+      // the confirm request's own, not the one from the request that has ended.
+      expect(mockTool).toHaveBeenCalledWith({ requestId: 'confirm_req' });
 
       // Check result
       expect(confirmResult).toEqual({
@@ -384,10 +386,10 @@ describe('DYNAMIC_TOOLS Flow', () => {
 
       // Execute confirmation
       const confirmTool = registeredTools.get(initResult.next_tool);
-      const confirmResult = await confirmTool.handler({});
+      const confirmResult = await confirmTool.handler({ extra: 'confirm_data' });
 
-      // Original tool should be called with extra only
-      expect(mockTool).toHaveBeenCalledWith({ extra: 'data' });
+      // Original tool should be called with the confirm request's extra only
+      expect(mockTool).toHaveBeenCalledWith({ extra: 'confirm_data' });
     });
 
     it('should handle tools with both args and extra', async () => {

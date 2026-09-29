@@ -581,7 +581,7 @@ describe('PROGRESS: disconnect after a paid execution', () => {
     expect(text(await wrapper({ q: 1 }, extra(ctl.signal)))).toBe(ABORT_TEXT);
     expect(text(await wrapper({ q: 1 }, extra()))).toBe('run #1');
     expect(runs).toHaveLength(1);
-    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to clear spent payment state'));
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to clear spent payment record'));
   });
 
   it('returns the result of an undisturbed call when the store cannot delete', async () => {
@@ -786,7 +786,7 @@ describe('ELICITATION: disconnect after a paid execution', () => {
     expect(text(await wrapper({ q: 1 }, extra(ctl.signal)))).toBe(ABORT_TEXT);
     expect(text(await wrapper({ q: 1 }, extra()))).toBe('run #1');
     expect(runs).toHaveLength(1);
-    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to clear spent payment state'));
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to clear spent payment record'));
   });
 
   it('falls back to the old behaviour when the store will not hold the result', async () => {
@@ -1201,4 +1201,110 @@ describe('deletes before any payment must not be swallowed', () => {
     expect(fn).not.toHaveBeenCalled();
   });
 
+});
+
+// ---------------------------------------------------------------------------
+// The session payment record belongs to whoever wrote it
+// ---------------------------------------------------------------------------
+// ELICITATION and PROGRESS key their payment record on tool and session, which
+// every call that session makes to that tool shares, and they hold no lock. A
+// record read a moment ago may already have been replaced by a concurrent
+// call's payment, so deleting by key alone throws away a payment the user has
+// since made - and they are asked to pay a second time.
+describe('a session payment record is only retired by the call that owns it', () => {
+  const KEY = 'testTool_sess1';
+  const extra = (signal?: AbortSignal) => ({
+    sessionId: 'sess1',
+    signal,
+    sendRequest: vi.fn().mockResolvedValue({ action: 'accept' }),
+  }) as any;
+
+  /** The record a concurrent call left behind while ours was in flight. */
+  const otherCallsPayment = { paymentId: 'pay_someone_else', paymentUrl: 'https://pay/other' };
+
+  it('ELICITATION keeps a record written by another call while serving a cached result', async () => {
+    const store = new InMemoryStateStore();
+    const ctl = new AbortController();
+    const { fn, runs } = droppingTool(ctl);
+    const wrapper = elicitationWrapper(
+      fn, {} as any, { mock: provider() }, priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+    await store.set(KEY, { paymentId: 'pay_1', paymentUrl: 'https://pay/1' });
+
+    // Our call is paid for, runs, and the client drops.
+    expect(text(await wrapper({ q: 1 }, extra(ctl.signal)))).toBe(ABORT_TEXT);
+
+    // Meanwhile another call in this session creates its own payment.
+    await store.set(KEY, otherCallsPayment);
+
+    // Our retry takes its result and must leave that payment alone.
+    expect(text(await wrapper({ q: 1 }, extra()))).toBe('run #1');
+    expect((await store.get(KEY))?.args).toEqual(otherCallsPayment);
+    expect(runs).toHaveLength(1);
+  });
+
+  it('PROGRESS keeps a record written by another call while serving a cached result', async () => {
+    const store = new InMemoryStateStore();
+    const ctl = new AbortController();
+    const { fn, runs } = droppingTool(ctl);
+    const wrapper = progressWrapper(
+      fn, {} as any, { mock: provider() }, priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+    await store.set(KEY, { paymentId: 'pay_1', paymentUrl: 'https://pay/1' });
+
+    expect(text(await wrapper({ q: 1 }, { sessionId: 'sess1', signal: ctl.signal } as any))).toBe(ABORT_TEXT);
+    await store.set(KEY, otherCallsPayment);
+
+    expect(text(await wrapper({ q: 1 }, { sessionId: 'sess1' } as any))).toBe('run #1');
+    expect((await store.get(KEY))?.args).toEqual(otherCallsPayment);
+    expect(runs).toHaveLength(1);
+  });
+
+  // The protection the blind delete was there for must survive: once the
+  // caller has been handed their result, their own spent record has to go, or
+  // the next call reuses a consumed payment and runs the tool for free.
+  it('still retires its own record, so a spent payment is not reused', async () => {
+    const store = new InMemoryStateStore();
+    const ctl = new AbortController();
+    const { fn, runs } = droppingTool(ctl);
+    const createPayment = vi.fn().mockResolvedValue({ paymentId: 'pay_2', paymentUrl: 'https://pay/2' });
+    const wrapper = progressWrapper(
+      fn, {} as any,
+      { mock: { createPayment, getPaymentStatus: vi.fn().mockResolvedValue('paid') } as any },
+      priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+    await store.set(KEY, { paymentId: 'pay_1', paymentUrl: 'https://pay/1' });
+
+    expect(text(await wrapper({ q: 1 }, { sessionId: 'sess1', signal: ctl.signal } as any))).toBe(ABORT_TEXT);
+    expect(text(await wrapper({ q: 1 }, { sessionId: 'sess1' } as any))).toBe('run #1');
+
+    // Spent and gone: the next call has to pay rather than inheriting pay_1.
+    expect(await store.get(KEY)).toBeUndefined();
+    expect(runs).toHaveLength(1);
+  });
+
+  // A path that runs before any money has moved still has to surface a store
+  // failure, rather than carrying on as though the record were gone.
+  it('surfaces a store failure on a path before any payment', async () => {
+    class StoreUnavailable extends Error {}
+    const inner = new InMemoryStateStore();
+    const store: StateStore = {
+      set: (k, a, o) => inner.set(k, a, o),
+      get: (k) => inner.get(k),
+      delete: async () => { throw new StoreUnavailable('redis unavailable'); },
+      lock: (k, f) => inner.lock(k, f),
+    };
+    const fn = vi.fn();
+    const wrapper = elicitationWrapper(
+      fn, {} as any,
+      { mock: { createPayment: vi.fn().mockResolvedValue({ paymentId: 'pay_1', paymentUrl: 'u' }), getPaymentStatus: vi.fn().mockResolvedValue('canceled') } as any },
+      priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+
+    await expect(wrapper({ q: 1 }, {
+      sessionId: 'sess1',
+      sendRequest: vi.fn().mockResolvedValue({ action: 'cancel' }),
+    } as any)).rejects.toBeInstanceOf(StoreUnavailable);
+    expect(fn).not.toHaveBeenCalled();
+  });
 });

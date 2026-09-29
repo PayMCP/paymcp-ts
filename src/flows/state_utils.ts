@@ -24,6 +24,8 @@ export interface CachedResult {
     hasResult: boolean;
     /** The value the caller should be handed back. */
     result?: unknown;
+    /** The payment this result was produced for, when it was recorded. */
+    paymentId?: string;
     /** Identifies the stored entry, so whoever serves it can clear exactly that one. */
     token?: string;
 }
@@ -43,6 +45,9 @@ interface ResultPayload {
      */
     hasResult: true;
     tool: string;
+    /** The payment this result was produced for, so the session-keyed flows can
+     *  retire that record and no one else's. */
+    paymentId?: string;
     token: string;
     fingerprint?: string;
 }
@@ -253,12 +258,14 @@ export async function saveCompletedResult(
     namespace: ResultNamespace,
     tool: string,
     fingerprint?: string,
-    log?: Logger
+    log?: Logger,
+    paymentId?: string
 ): Promise<boolean> {
     if (!stateStore || key === undefined || key === null) return false;
 
     const payload: ResultPayload = { result, hasResult: true, tool, token: randomUUID() };
     if (fingerprint !== undefined) payload.fingerprint = fingerprint;
+    if (paymentId !== undefined) payload.paymentId = paymentId;
 
     try {
         // The value is handed over as it is rather than checked first: an
@@ -318,7 +325,12 @@ export async function peekCompletedResult(
         return miss;
     }
 
-    return { hasResult: true, result: payload.result, token: payload.token };
+    return {
+        hasResult: true,
+        result: payload.result,
+        token: payload.token,
+        paymentId: payload.paymentId,
+    };
 }
 
 /**
@@ -415,4 +427,70 @@ export async function withPaymentLock<T>(
         return fn();
     }
     return stateStore.lock(key, fn);
+}
+
+/**
+ * Read the payment id a session's record currently holds.
+ *
+ * The session-keyed flows key their payment record on tool and session, which
+ * every call that session makes to that tool shares, and they hold no lock. So
+ * a record read a moment ago may already have been replaced by a concurrent
+ * call's payment, and deleting by key alone would throw away a payment the user
+ * has since made - they would be asked to pay a second time.
+ */
+async function currentPaymentId(
+    stateStore: StateStore,
+    key: string
+): Promise<string | undefined> {
+    const stored = await stateStore.get(key);
+    const record = stored?.args;
+    if (!record || typeof record !== "object") return undefined;
+    return (record as { paymentId?: unknown }).paymentId as string | undefined;
+}
+
+/**
+ * Delete a session's payment record, but only while it is still the record this
+ * call was working with. Store failures reach the caller.
+ *
+ * For the paths that run before any money has moved: a failure there has to be
+ * seen, or the flow carries on as though the record were gone.
+ */
+export async function deletePaymentRecordIfCurrent(
+    stateStore: StateStore | undefined,
+    key: string | undefined,
+    paymentId: string | undefined,
+    log?: Logger
+): Promise<void> {
+    if (!stateStore || !key) return;
+    if (paymentId !== undefined && (await currentPaymentId(stateStore, key)) !== paymentId) {
+        log?.debug?.(
+            `[PayMCP] Payment record for ${key} is no longer the one this call held; keeping it.`
+        );
+        return;
+    }
+    await stateStore.delete(key);
+}
+
+/**
+ * The same compare-then-delete, for the paths past the point where the caller's
+ * money has moved, where a store failure must not cost them their result.
+ *
+ * The check is read-then-delete, which these stores cannot do atomically: a
+ * record written between the two calls is still deleted. That window is one
+ * round trip, against one that previously stayed open across the caller's own
+ * awaits.
+ */
+export async function discardSpentPaymentRecord(
+    stateStore: StateStore | undefined,
+    key: string | undefined,
+    paymentId: string | undefined,
+    log?: Logger
+): Promise<void> {
+    try {
+        await deletePaymentRecordIfCurrent(stateStore, key, paymentId, log);
+    } catch (err) {
+        log?.warn?.(
+            `[PayMCP] Failed to clear spent payment record for ${key}; a later call may reuse it: ${describeError(err)}`
+        );
+    }
 }

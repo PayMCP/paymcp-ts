@@ -347,12 +347,18 @@ export const makePaidWrapper: PaidWrapperFactory = (
 };
 
 // Cleanup old payments periodically
-setInterval(() => {
+const sweepInterval = setInterval(() => {
   const now = Date.now();
   for (const [key, data] of PAYMENTS.entries()) {
     if (now - data.ts > CLEANUP_INTERVAL) PAYMENTS.delete(key);
   }
 }, CLEANUP_INTERVAL);
+
+// Importing this module should not be enough to keep a process alive; a pending
+// interval holds the event loop open. InMemoryStateStore's sweeper already does
+// this, and now that the interval is an hour rather than ten minutes it would
+// hold it that much longer.
+sweepInterval.unref?.();
 
 /**
  * Setup: patches server for per-session tool filtering.

@@ -12,7 +12,8 @@ import { callOriginal } from "../utils/tool.js";
 import {
   RESULT_NS_SESSION,
   callFingerprint,
-  discardSpentState,
+  deletePaymentRecordIfCurrent,
+  discardSpentPaymentRecord,
   clearCompletedResult,
   peekCompletedResult,
   saveCompletedResult,
@@ -95,7 +96,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
           // run of the paid tool. But failing to remove it must not cost the
           // caller the result they paid for, so the hand-off wins and the
           // failure is only logged.
-          await discardSpentState(stateStore, sessionKey, log);
+          // Only this call's own payment record goes: the key is shared with
+          // every call this session makes to this tool, and a concurrent one
+          // may already have written its own payment there. The payment id was
+          // recorded with the result, so there is something to compare against.
+          await discardSpentPaymentRecord(stateStore, sessionKey, cached.paymentId, log);
           return cached.result;
         }
       }
@@ -126,7 +131,9 @@ export const makePaidWrapper: PaidWrapperFactory = (
           nonfinishedpayment = nonfinishedpaymentrecord.args;//reuse payment details
         } catch (err) {
           log.warn?.(`[PayMCP:Elicitation] failed to get status for existing payment: ${String(err)}`);
-          await stateStore.delete(`${toolName}_${extra.sessionId}`);
+          await deletePaymentRecordIfCurrent(
+            stateStore, `${toolName}_${extra.sessionId}`, (nonfinishedpaymentrecord as any).args?.paymentId, log
+          );
           return {
             content: [{ type: "text", text: "Unable to contact payment provider. Please try again later." }],
             annotations: { payment: { status: "error", reason: "provider_unreachable" } },
@@ -141,7 +148,9 @@ export const makePaidWrapper: PaidWrapperFactory = (
           paymentUrl = nonfinishedpayment?.paymentUrl;
           log.debug(`[PayMCP:Elicitation] reused payment id=${paymentId} url=${paymentUrl}`);
         } else {
-          await stateStore.delete(`${toolName}_${extra.sessionId}`); //delete old payment info
+          await deletePaymentRecordIfCurrent(
+            stateStore, `${toolName}_${extra.sessionId}`, (nonfinishedpaymentrecord as any).args?.paymentId, log
+          ); //delete old payment info, if it is still the one we read
         }
       }
 
@@ -193,7 +202,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
           }
         }
         if (paymentStatus === "unsupported" /* or loopResult.status === "unsupported" */) {
-          await stateStore.delete(`${toolName}_${extra.sessionId}`);
+          await deletePaymentRecordIfCurrent(stateStore, `${toolName}_${extra.sessionId}`, paymentId, log);
           return {
             content: [{ type: "text", text: "Client does not support the selected payment flow." }],
             annotations: { payment: { status: "error", reason: "elicitation_not_supported" } },
@@ -202,7 +211,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
           };
         }
         if (normalizeStatus(paymentStatus) === "canceled" || userAction === "cancel") {
-          await stateStore.delete(`${toolName}_${extra.sessionId}`);
+          await deletePaymentRecordIfCurrent(stateStore, `${toolName}_${extra.sessionId}`, paymentId, log);
           log.info?.(`[PayMCP:Elicitation] payment canceled by user or provider (status=${paymentStatus}, action=${userAction})`);
           return {
             content: [{ type: "text", text: "Payment canceled by user." }],
@@ -245,7 +254,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
         if (abortWatcher.aborted) {
           log.warn?.(`[PayMCP:Elicitation] aborted after payment confirmation but before returning tool result.`);
           await saveCompletedResult(
-            stateStore, sessionKey, response, RESULT_NS_SESSION, toolName, fingerprint, log
+            stateStore, sessionKey, response, RESULT_NS_SESSION, toolName, fingerprint, log, paymentId
           );
           return {
             content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
@@ -257,8 +266,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
           };
         }
         // The tool has already run; a store that cannot delete must not cost the
-        // caller the result they paid for.
-        await discardSpentState(stateStore, `${toolName}_${extra.sessionId}`, log);
+        // caller the result they paid for, and only this call's own record goes.
+        await discardSpentPaymentRecord(stateStore, `${toolName}_${extra.sessionId}`, paymentId, log);
 
         return response;
       }

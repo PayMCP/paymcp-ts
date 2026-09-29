@@ -86,6 +86,24 @@ function storeKeepingPaymentState(): StateStore {
   };
 }
 
+/**
+ * A tool that honours its abort signal: it cancels the request and then throws,
+ * which is what a well-behaved tool does once the signal actually reaches it.
+ */
+function cancellationAwareTool(controller: AbortController) {
+  const runs: string[] = [];
+  const fn = vi.fn(async (...args: any[]) => {
+    runs.push(`run #${runs.length + 1}`);
+    const requestExtra = args[args.length - 1];
+    if (runs.length === 1) {
+      controller.abort('client cancelled');
+      if (requestExtra?.signal?.aborted) throw new Error('aborted by caller');
+    }
+    return { content: [{ type: 'text', text: runs[runs.length - 1] }] };
+  });
+  return { fn, runs };
+}
+
 const text = (r: any) => r?.content?.[0]?.text;
 
 // ---------------------------------------------------------------------------
@@ -351,6 +369,23 @@ describe('TWO_STEP: disconnect after a paid execution', () => {
     // And the first tool's result survives for the caller who paid.
     expect(text(await confirm({ payment_id: pid }))).toBe('run #1');
     expect(runs).toHaveLength(1);
+  });
+
+  // Giving the paid tool a live signal means a tool that honours it throws on
+  // cancellation - and the stored args are consumed before it runs.
+  it('keeps the payment usable when the paid tool throws on cancellation', async () => {
+    const store = new InMemoryStateStore();
+    const ctl = new AbortController();
+    const { fn, runs } = cancellationAwareTool(ctl);
+    const { wrapper, confirm } = build(store, fn);
+
+    const init: any = await wrapper({ q: 1 }, {});
+    const pid = init.structured_content.payment_id;
+
+    await expect(confirm({ payment_id: pid, signal: ctl.signal })).rejects.toThrow('aborted by caller');
+    // The caller paid and received nothing, so the payment is still theirs.
+    expect(text(await confirm({ payment_id: pid }))).toBe('run #2');
+    expect(runs).toHaveLength(2);
   });
 
   // `lock` is part of the StateStore contract, but a hand-written store from a
@@ -961,6 +996,45 @@ describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
     await wrapper({ q: 1 }, {});
     expect(text(await confirm({}, {}))).toBe('done');
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  // Falling back to the initiating request's extra must not inherit its signal:
+  // that request has already ended, and an aborted one would make every confirm
+  // look cancelled, so the result is cached and never handed over.
+  it('does not inherit a spent signal when falling back to the initiating extra', async () => {
+    let runs = 0;
+    const fn = vi.fn(async () => { runs++; return { content: [{ type: 'text', text: `run #${runs}` }] }; });
+    let confirm: any;
+    const server = {
+      tools: new Map(),
+      _registeredTools: {} as any,
+      registerTool: (name: string, _c: any, h: any) => { server._registeredTools[name] = { enabled: true }; confirm = h; },
+      sendNotification: vi.fn().mockResolvedValue(undefined),
+    } as any;
+    const wrapper = dynamicWrapper(
+      fn, server, { mock: provider() }, priceInfo, 'testTool',
+      new InMemoryStateStore(), {}, clientInfo, silent()
+    );
+
+    // The initiating request carried a signal that is already spent, and the
+    // host calls the confirm tool with no arguments at all.
+    await wrapper({ q: 1 }, { sessionId: 'sess1', signal: AbortSignal.abort() });
+    expect(text(await confirm())).toBe('run #1');
+    expect(runs).toBe(1);
+  });
+
+  it('keeps the payment session when the paid tool throws on cancellation', async () => {
+    const ctl = new AbortController();
+    const { fn, runs } = cancellationAwareTool(ctl);
+    const { wrapper, confirm } = build(fn);
+
+    await wrapper({ q: 1 }, {});
+    const failed = await confirm({ signal: ctl.signal });
+    expect(failed.status).toBe('error');
+    // The session is back, so the retry is not told the payment is unknown.
+    expect(PAYMENTS.has('pay_1')).toBe(true);
+    expect(text(await confirm({}))).toBe('run #2');
+    expect(runs).toHaveLength(2);
   });
 
   it('cleans up the payment session and the confirm tool once delivered', async () => {

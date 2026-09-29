@@ -216,9 +216,21 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
               // Execute original, cleanup state
               PAYMENTS.delete(pidStr);
-              const result = hasArgs
-                ? await func(payment.args, confirmExtra)
-                : await func(confirmExtra);
+              let result;
+              try {
+                result = hasArgs
+                  ? await func(payment.args, confirmExtra)
+                  : await func(confirmExtra);
+              } catch (err) {
+                // The session is consumed before the tool runs, to keep one
+                // payment to one execution. But the paid tool now sees a live
+                // abort signal, so a tool that honours it throws on
+                // cancellation - and any tool can fail for its own reasons. The
+                // caller has paid and received nothing, so put the session back
+                // rather than leaving them with an unknown payment id.
+                PAYMENTS.set(pidStr, { ...payment, ts: Date.now() });
+                throw err;
+              }
 
               if (abortWatcher.aborted) {
                 logger?.warn?.(`[PayMCP:DynamicTools] aborted after payment confirmation but before returning tool result.`);

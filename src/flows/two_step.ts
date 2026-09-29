@@ -186,11 +186,28 @@ function ensureConfirmTool(
         // We're good—consume stored args and call original.
         await stateStore.delete(String(paymentId));
         log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
-        const toolResult = await callOriginal(
-          originalHandler,
-          stored.args,
-          extra /* pass confirm extra */
-        );
+        let toolResult;
+        try {
+          toolResult = await callOriginal(
+            originalHandler,
+            stored.args,
+            extra /* pass confirm extra */
+          );
+        } catch (err) {
+          // The stored args are consumed before the tool runs, to keep one
+          // payment to one execution. But the paid tool now sees a live abort
+          // signal, so a tool that honours it throws on cancellation - and any
+          // tool can fail for its own reasons. The caller has paid and received
+          // nothing, so put the args back rather than leaving them with an
+          // expired payment id. RESUBMIT runs the tool before consuming its
+          // state for the same reason.
+          try {
+            await stateStore.set(String(paymentId), stored.args);
+          } catch (restoreErr) {
+            log?.warn?.(`[PayMCP:TwoStep] Could not restore state for ${paymentId} after a failed call: ${String(restoreErr)}`);
+          }
+          throw err;
+        }
 
         // Build the response before looking at the connection, so the value we
         // may cache is exactly the value the caller would have received.

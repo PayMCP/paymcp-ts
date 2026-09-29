@@ -24,6 +24,7 @@
   "scripts": {
     "build": "tsup src/index.ts src/providers/index.ts --format cjs,esm --dts --clean --sourcemap --external zod",
     "watch": "npm run build -- --watch",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"

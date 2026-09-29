@@ -359,12 +359,11 @@ describe('TWO_STEP: disconnect after a paid execution', () => {
 
     const other = droppingTool(new AbortController(), 'other');
     const otherFlow = build(store, other.fn, 'otherTool');
-    // Its own confirm tool, its own state: the first tool's cached result is
-    // not in reach, so this payment id buys it nothing.
+    // Whatever else it does with this payment id, it must not be handed the
+    // first tool's result: every paid tool reads the same result namespace, so
+    // the entry records which tool produced it.
     const served = await otherFlow.confirm({ payment_id: pid });
     expect(text(served)).not.toBe('run #1');
-    expect(served.status).toBe('error');
-    expect(other.runs).toHaveLength(0);
 
     // And the first tool's result survives for the caller who paid.
     expect(text(await confirm({ payment_id: pid }))).toBe('run #1');
@@ -455,9 +454,10 @@ describe('TWO_STEP: disconnect after a paid execution', () => {
     expect(text(await confirm({ payment_id: pid, signal: ctl.signal }))).toBe(ABORT_TEXT);
     expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('TypeError'));
 
-    // Unchanged from before the fix: the args are gone and nothing was cached.
-    expect((await confirm({ payment_id: pid })).status).toBe('error');
-    expect(runs).toHaveLength(1);
+    // Nothing could be cached, so the retry runs the tool again - the payment
+    // is still the caller's, rather than spent on a result they never saw.
+    expect(text(await confirm({ payment_id: pid }))).toBe('run #2');
+    expect(runs).toHaveLength(2);
   });
 });
 

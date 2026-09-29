@@ -278,8 +278,10 @@ describe('Two-Step Flow', () => {
       );
 
       expect(mockProvider.getPaymentStatus).toHaveBeenCalledWith('payment_123');
-      // The confirm handler passes the stored args with the params from confirm call
-      expect(mockTool).toHaveBeenCalledWith(originalArgs, { payment_id: 'payment_123' });
+      // The confirm handler passes the stored args together with the confirm
+      // request's own extra - not the params object, and not the extra from the
+      // initiating request, which belongs to a request that has already ended.
+      expect(mockTool).toHaveBeenCalledWith(originalArgs, { requestId: 'confirm_req' });
       expect(confirmResult.content).toEqual([
         { type: 'text', text: 'Original tool executed' }
       ]);

@@ -75,10 +75,15 @@ function ensureConfirmTool(
   };
 
   // Confirmation handler: verify payment, retrieve saved args, invoke original tool.
-  const confirmHandler: ToolHandler = async (
+  // Declared as a function rather than an arrow so `arguments` is its own: an
+  // arrow function has none, so this read the enclosing factory's argument
+  // count instead - always 7, never 2. `hasArgs` was therefore always false,
+  // the request's own `extra` was discarded in favour of the params object, and
+  // nothing that needs it (the abort signal, the session) was ever reachable.
+  const confirmHandler: ToolHandler = async function (
     paramsOrExtra: any,
     maybeExtra?: any
-  ) => {
+  ) {
     const hasArgs = arguments.length === 2;
     const params = hasArgs ? paramsOrExtra : undefined;
     const extra = hasArgs ? maybeExtra : paramsOrExtra;

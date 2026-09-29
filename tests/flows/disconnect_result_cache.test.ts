@@ -258,18 +258,17 @@ describe('RESUBMIT: disconnect after a paid execution', () => {
 // TWO_STEP - keyed by payment id, executed from the confirm tool
 // ---------------------------------------------------------------------------
 describe('TWO_STEP: disconnect after a paid execution', () => {
-  // NOTE: the confirm handler reads `arguments` from its enclosing factory, so
-  // on the SDK's real `(params, extra)` call it never sees the request's abort
-  // signal and this branch cannot be reached. These tests drive it through the
-  // shape that does reach it; making the production shape reach it is a
-  // separate change.
+  // The confirm tool has an inputSchema, so the SDK calls it as (params, extra).
   function build(store: StateStore, fn: any, tool = 'testTool') {
     let confirm: any;
     const server = { tools: new Map(), registerTool: (_n: string, _c: any, h: any) => { confirm = h; } } as any;
     const wrapper = twoStepWrapper(
       fn, server, { mock: provider() }, priceInfo, tool, store, {}, clientInfo, silent()
     );
-    return { wrapper, confirm: (args: any) => confirm(args) };
+    return {
+      wrapper,
+      confirm: ({ signal, ...params }: any) => confirm(params, { signal }),
+    };
   }
 
   it('serves the retry from the stored result and runs the tool once', async () => {
@@ -304,6 +303,31 @@ describe('TWO_STEP: disconnect after a paid execution', () => {
     expect(text(await confirm({ payment_id: pid, signal: AbortSignal.abort() }))).toBe(ABORT_TEXT);
     expect(text(await confirm({ payment_id: pid }))).toBe('run #1');
     expect(runs).toHaveLength(1);
+  });
+
+  // The confirm handler used to hand the params object on in place of the
+  // request's extra, so the paid tool got no session and no abort signal.
+  it('gives the paid tool the confirm request\'s own extra', async () => {
+    const store = new InMemoryStateStore();
+    const seen: any[] = [];
+    const fn = vi.fn(async (...args: any[]) => {
+      seen.push(args);
+      return { content: [{ type: 'text', text: 'ok' }] };
+    });
+    let confirm: any;
+    const server = { tools: new Map(), registerTool: (_n: string, _c: any, h: any) => { confirm = h; } } as any;
+    const wrapper = twoStepWrapper(
+      fn, server, { mock: provider() }, priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+
+    const init: any = await wrapper({ q: 1 }, {});
+    const confirmExtra = { sessionId: 'sess1', signal: undefined, sendRequest: vi.fn() };
+    await confirm({ payment_id: init.structured_content.payment_id }, confirmExtra);
+
+    const [toolArgs, toolExtra] = seen[0];
+    expect(toolArgs).toEqual({ q: 1 });
+    expect(toolExtra).toBe(confirmExtra);
+    expect(toolExtra).not.toHaveProperty('payment_id');
   });
 
   it('does not answer one tool with another tool\'s result', async () => {
@@ -754,11 +778,8 @@ describe('ELICITATION: disconnect after a paid execution', () => {
 describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
   beforeEach(() => PAYMENTS.clear());
 
-  // NOTE: the confirm tool is registered without an inputSchema, so the SDK
-  // calls it as `(extra)` and its handler's second parameter - the only place
-  // it looks for the abort signal - is undefined. These tests drive it through
-  // the `(params, extra)` shape that does reach the branch; making the
-  // production shape reach it is a separate change.
+  // Registered without an inputSchema, so the SDK calls it with the request
+  // extra as its only argument.
   function build(fn: any) {
     let confirm: any;
     const server = {
@@ -774,7 +795,7 @@ describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
       fn, server, { mock: provider() }, priceInfo, 'testTool',
       new InMemoryStateStore(), {}, clientInfo, silent()
     );
-    return { wrapper, server, confirm: (extra: any) => confirm({}, extra) };
+    return { wrapper, server, confirm: (extra: any) => confirm(extra) };
   }
 
   it('serves the retry from the stored result and runs the tool once', async () => {
@@ -802,6 +823,101 @@ describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
     expect(runs).toHaveLength(1);
   });
 
+  // The watcher used to be built outside the try, so the returns above it -
+  // unknown payment, still-aborted, and the cached hand-off - never reached
+  // `finally { dispose() }`. Harmless while the signal was always undefined.
+  it('releases the abort listener on the cached-result paths', async () => {
+    const ctl = new AbortController();
+    const { fn } = droppingTool(ctl);
+    const { wrapper, confirm } = build(fn);
+    await wrapper({ q: 1 }, {});
+    await confirm({ signal: ctl.signal });
+
+    /** A signal that records whether its listener was taken off again. */
+    const watched = () => {
+      const listeners: any = { add: 0, remove: 0 };
+      return {
+        listeners,
+        signal: {
+          aborted: false,
+          addEventListener: () => { listeners.add++; },
+          removeEventListener: () => { listeners.remove++; },
+        },
+      };
+    };
+
+    const served = watched();
+    expect(text(await confirm({ signal: served.signal }))).toBe('run #1');
+    expect(served.listeners.add).toBe(1);
+    expect(served.listeners.remove).toBe(1);
+
+    // And on the path where the payment session is already gone.
+    const unknown = watched();
+    expect((await confirm({ signal: unknown.signal })).status).toBe('error');
+    expect(unknown.listeners.add).toBe(1);
+    expect(unknown.listeners.remove).toBe(1);
+  });
+
+  // A host that is not the official SDK may call the confirm tool with no
+  // arguments. Handing `undefined` to the paid tool makes any tool that touches
+  // its extra throw - after the payment session has been consumed, so the paid
+  // result would be lost outright.
+  it('never hands the paid tool a non-object as its extra', async () => {
+    for (const call of [
+      (c: any) => c(),
+      (c: any) => c(undefined),
+      (c: any) => c('nonsense'),
+      (c: any) => c(7),
+    ]) {
+      const seen: any[] = [];
+      const fn = vi.fn(async (...args: any[]) => {
+        seen.push(args);
+        // A tool that reads its extra, the way a real one does.
+        const e = args[args.length - 1];
+        return { content: [{ type: 'text', text: String(e?.sessionId ?? 'no-session') }] };
+      });
+      let confirm: any;
+      const server = {
+        tools: new Map(),
+        _registeredTools: {} as any,
+        registerTool: (_n: string, _c: any, h: any) => { confirm = h; },
+        sendNotification: vi.fn().mockResolvedValue(undefined),
+      } as any;
+      const wrapper = dynamicWrapper(
+        fn, server, { mock: provider() }, priceInfo, 'testTool',
+        new InMemoryStateStore(), {}, clientInfo, silent()
+      );
+      await wrapper({ q: 1 }, { sessionId: 'sess1' });
+
+      const served = await call(confirm);
+      // The call completes and the tool ran, rather than erroring out with the
+      // payment already spent.
+      expect(served.status).not.toBe('error');
+      expect(fn).toHaveBeenCalledTimes(1);
+      const passedExtra = seen[0][seen[0].length - 1];
+      expect(passedExtra === null || typeof passedExtra !== 'object').toBe(false);
+      PAYMENTS.clear();
+    }
+  });
+
+  it('releases the abort listener on the hasResult-and-still-aborted path', async () => {
+    const ctl = new AbortController();
+    const { fn } = droppingTool(ctl);
+    const { wrapper, confirm } = build(fn);
+    await wrapper({ q: 1 }, {});
+    await confirm({ signal: ctl.signal });
+
+    const listeners = { add: 0, remove: 0 };
+    const signal: any = {
+      aborted: true,
+      addEventListener: () => { listeners.add++; },
+      removeEventListener: () => { listeners.remove++; },
+    };
+    expect(text(await confirm({ signal }))).toBe(ABORT_TEXT);
+    expect(listeners.add).toBe(1);
+    expect(listeners.remove).toBe(1);
+  });
+
   // The cached result is the only copy: anything that throws between dropping
   // the session and returning would take it with it.
   it('hands over the result even if announcing the tool list throws', async () => {
@@ -825,6 +941,7 @@ describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
     expect(text(await confirm({}, {}))).toBe('run #1');
     expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('announce the tool list change'));
   });
+
 
   it('hands over an undisturbed result even if announcing the tool list throws', async () => {
     const fn = vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] }));

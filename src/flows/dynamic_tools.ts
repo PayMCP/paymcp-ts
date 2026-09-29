@@ -126,8 +126,34 @@ export const makePaidWrapper: PaidWrapperFactory = (
           description: `Confirm payment ${pidStr} and execute ${toolName}()`,
           ...config?._meta ? {_meta:{...config._meta,price:undefined}}: {}
         },
-        async (_params: any, confirmExtra?: any) => {
+        async (paramsOrExtra?: any, maybeExtra?: any) => {
+          // This tool is registered without an inputSchema, so the SDK calls it
+          // with the request extra as its only argument. Reading the second
+          // parameter alone left the abort signal - the only thing this handler
+          // needs from the request - permanently undefined, and with it the
+          // disconnect branch below unreachable. Accept either shape.
+          //
+          // Not the `arguments.length === 2` idiom the wrappers use: this is an
+          // arrow nested inside dynamicToolsWrapper, so `arguments` would be
+          // that function's - the very mistake this change removes from
+          // two_step.
+          const offered = maybeExtra !== undefined ? maybeExtra : paramsOrExtra;
+          // The official SDK always passes an extra object, but this module
+          // supports other server implementations too, and a host that calls
+          // the tool with no arguments - or with something that is not an extra
+          // - would otherwise hand `undefined` to the paid tool. Any tool that
+          // touches `extra` then throws, after the payment session has been
+          // consumed, so the paid result is lost outright. The initiating
+          // request's extra is stale, so its signal is dropped: keeping it
+          // would make the confirm look permanently cancelled.
+          const confirmExtra =
+            offered && typeof offered === "object"
+              ? offered
+              : (extra && typeof extra === "object" ? { ...extra, signal: undefined } : extra);
           const abortWatcher = new AbortWatcher((confirmExtra as any)?.signal, logger);
+          // Opened here, not below, so the early returns for an unknown payment
+          // session and for a cached result also reach `dispose()`.
+          try {
           const payment = PAYMENTS.get(pidStr);
           if (!payment) {
             return {
@@ -191,8 +217,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
               // Execute original, cleanup state
               PAYMENTS.delete(pidStr);
               const result = hasArgs
-                ? await func(payment.args, confirmExtra || extra)
-                : await func(confirmExtra || extra);
+                ? await func(payment.args, confirmExtra)
+                : await func(confirmExtra);
 
               if (abortWatcher.aborted) {
                 logger?.warn?.(`[PayMCP:DynamicTools] aborted after payment confirmation but before returning tool result.`);
@@ -238,6 +264,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
               message: "Technical error confirming payment - inform user to retry",
               payment_id: pidStr
             };
+            }
           } finally {
             abortWatcher.dispose();
           }

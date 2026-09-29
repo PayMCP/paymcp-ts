@@ -215,28 +215,22 @@ export const makePaidWrapper: PaidWrapperFactory = (
             }
 
               // Execute original, cleanup state
-              PAYMENTS.delete(pidStr);
-              let result;
-              try {
-                result = hasArgs
-                  ? await func(payment.args, confirmExtra)
-                  : await func(confirmExtra);
-              } catch (err) {
-                // The session is consumed before the tool runs, to keep one
-                // payment to one execution. But the paid tool now sees a live
-                // abort signal, so a tool that honours it throws on
-                // cancellation - and any tool can fail for its own reasons. The
-                // caller has paid and received nothing, so put the session back
-                // rather than leaving them with an unknown payment id.
-                PAYMENTS.set(pidStr, { ...payment, ts: Date.now() });
-                throw err;
-              }
+              // Run first, consume after. The paid tool now sees a live abort
+              // signal, so a tool that honours it throws on cancellation, and
+              // any tool can fail for its own reasons; consuming the session
+              // first left the caller charged with an unknown payment id and no
+              // way back to it. RESUBMIT has always worked this way.
+              const result = hasArgs
+                ? await func(payment.args, confirmExtra)
+                : await func(confirmExtra);
 
               if (abortWatcher.aborted) {
                 logger?.warn?.(`[PayMCP:DynamicTools] aborted after payment confirmation but before returning tool result.`);
-                // Put the session back, now carrying the result the caller paid
-                // for. The timestamp is refreshed so the sweeper gives them the
-                // full window from here to come back for it.
+                // Keep the session, now carrying the result the caller paid for.
+                // The timestamp is refreshed so the sweeper gives them the full
+                // window from here to come back for it; it happens once, because
+                // the retry either takes the result or returns this same stub
+                // without touching the session again.
                 PAYMENTS.set(pidStr, { ...payment, ts: Date.now(), hasResult: true, result });
                 return {
                   content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
@@ -248,6 +242,8 @@ export const makePaidWrapper: PaidWrapperFactory = (
                 };
               }
 
+              // Consumed only now, with a result in hand: a tool that threw
+              // leaves the payment where it was, the way RESUBMIT does.
               cleanupPayment(server, payment.sessionId, pidStr, toolName, confirmName);
 
             // Emit tools/list_changed notification (fire-and-forget). The tool

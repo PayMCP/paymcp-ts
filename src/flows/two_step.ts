@@ -34,6 +34,7 @@ import { StateStore } from "../types/state.js";
 import { callOriginal } from "../utils/tool.js";
 import {
   RESULT_NS_PAYMENT,
+  discardSpentState,
   peekCompletedResult,
   saveCompletedResult,
   withPaymentLock,
@@ -183,31 +184,24 @@ function ensureConfirmTool(
           };
         }
 
-        // We're good—consume stored args and call original.
-        await stateStore.delete(String(paymentId));
-        log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
-        let toolResult;
-        try {
-          toolResult = await callOriginal(
-            originalHandler,
-            stored.args,
-            extra /* pass confirm extra */
-          );
-        } catch (err) {
-          // The stored args are consumed before the tool runs, to keep one
-          // payment to one execution. But the paid tool now sees a live abort
-          // signal, so a tool that honours it throws on cancellation - and any
-          // tool can fail for its own reasons. The caller has paid and received
-          // nothing, so put the args back rather than leaving them with an
-          // expired payment id. RESUBMIT runs the tool before consuming its
-          // state for the same reason.
-          try {
-            await stateStore.set(String(paymentId), stored.args);
-          } catch (restoreErr) {
-            log?.warn?.(`[PayMCP:TwoStep] Could not restore state for ${paymentId} after a failed call: ${String(restoreErr)}`);
-          }
-          throw err;
-        }
+        // Call the original with the stored args. The state is consumed only
+      // once it has succeeded: the paid tool now sees a live abort signal, so a
+      // tool that honours it throws on cancellation, and any tool can fail for
+      // its own reasons. Deleting first left the caller charged with an expired
+      // payment id and no way back to it - and restoring the state afterwards
+      // just moves the problem to a store that cannot take the write.
+      // RESUBMIT has always run the tool before consuming its state.
+      log?.info?.(`[PayMCP:TwoStep] payment confirmed; calling original tool ${toolName}`);
+      const toolResult = await callOriginal(
+        originalHandler,
+        stored.args,
+        extra /* pass confirm extra */
+      );
+
+      // The money moved before the tool ran, so this must not cost the caller
+      // their result; and the lock held across the whole confirm is what keeps
+      // one payment to one execution in the meantime.
+      await discardSpentState(stateStore, String(paymentId), log);
 
         // Build the response before looking at the connection, so the value we
         // may cache is exactly the value the caller would have received.

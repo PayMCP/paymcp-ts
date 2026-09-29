@@ -1,5 +1,16 @@
 # Changelog
 
+# 0.9.1
+### Fixed
+- The in-memory state store's per-payment lock was not exclusive: it discarded a key's lock as soon as its holder released it, so a caller arriving while others were still queued built a second lock for the same key and ran alongside them. `RESUBMIT` and `TWO_STEP` could therefore run the paid tool twice on one payment. The Redis store was unaffected.
+- A client that goes away after a paid tool has run no longer costs it a second execution. Every flow returned "Connection aborted. Call the tool again to retrieve the result." while storing nothing, so the retry ran the tool again on one payment and the first result was discarded. The result is now kept and served on the retry. Note this covers a client that *cancels* its request: the SDK aborts a handler's signal only on an explicit `notifications/cancelled`, not on a dropped connection.
+- `ELICITATION` checked the connection only after the branch that synthesizes a missing `content` field, so a tool whose result is not MCP-shaped skipped the check entirely.
+- The `X402` flow consumed its state strictly after settlement but before running the tool. Its provider settles inside `getPaymentStatus`, so a store that could not delete failed the call with the caller already charged, and the retry settled a second time.
+
+### Changed
+- In `RESUBMIT` and `TWO_STEP` a delivered result stays retrievable under the same `payment_id` until the state store expires it — one hour by default. The tool is not run again, but anyone holding that id can fetch the result a second time. Handing a result back can fail the same way the first attempt did, and the caller has already paid, so it is kept rather than dropped on delivery. The session-keyed flows (`ELICITATION`, `PROGRESS`) drop theirs once delivered, because their key is reused by every later call to the same tool.
+- In `ELICITATION`, a tool whose result is not MCP-shaped now consumes the payment. It previously returned before the state was deleted, leaving the payment reusable.
+
 # 0.9.0
 ### Breaking Changes
 - x402 v2 challenges now carry the resource description under `resource`, the field name the v2 `PaymentRequired` schema defines. It was previously emitted as `resourceInfo`, which is not an x402 field, so v2 clients never found it. Anyone reading the old key must switch. The `resourceInfo` constructor option keeps its name.

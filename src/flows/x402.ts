@@ -4,6 +4,7 @@ import type { PaidWrapperFactory, ToolHandler } from "../types/flows.js";
 import { Logger } from "../types/logger.js";
 import { ToolExtraLike } from "../types/config.js";
 import { callOriginal } from "../utils/tool.js";
+import { discardSpentState } from "./state_utils.js";
 import { withDefaultUrl } from "../utils/x402.js";
 
 
@@ -145,7 +146,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
         }
 
         if (payment_status === 'paid') {
-            await stateStore.delete(String(challengeId));
+            // The money has already moved: the x402 provider settles inside
+            // getPaymentStatus, which only reports "paid" once the transfer went
+            // through. So a store that cannot delete must not fail the call here
+            // - the caller would have paid and the retry would settle again.
+            await discardSpentState(stateStore, String(challengeId), log);
             const toolResult = await callOriginal(func, toolArgs, extra);
             return toolResult;
         }

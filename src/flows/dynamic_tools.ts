@@ -22,6 +22,12 @@ interface PaymentSession {
   sessionId: string;
   args: any;
   ts: number;
+  // Set once the paid tool has run but the client dropped before receiving the
+  // result, so a retry is answered from here instead of running the tool again.
+  // This flow keeps its sessions in this process, so the result rides along on
+  // the session object rather than going to the state store.
+  hasResult?: boolean;
+  result?: any;
 }
 
 const PAYMENTS = new Map<string, PaymentSession>();  // paymentId -> PaymentSession
@@ -38,6 +44,25 @@ function cleanupSessionTool(sessionId: string, toolName: string) {
     sessionHidden.delete(toolName);
     if (sessionHidden.size === 0) HIDDEN_TOOLS.delete(sessionId);
   }
+}
+
+// Helper: drop the payment session, unhide the paid tool and remove its confirm tool.
+function cleanupPayment(
+  server: any,
+  sessionId: string,
+  pidStr: string,
+  toolName: string,
+  confirmName: string
+) {
+  PAYMENTS.delete(pidStr);
+  cleanupSessionTool(sessionId, toolName);
+
+  if (server?._registeredTools?.[confirmName]) {
+    delete server._registeredTools[confirmName];
+  } else if (server?.tools?.has(confirmName)) {
+    server.tools.delete(confirmName);
+  }
+  CONFIRMATION_TOOLS.delete(confirmName);
 }
 
 export const makePaidWrapper: PaidWrapperFactory = (
@@ -116,6 +141,39 @@ export const makePaidWrapper: PaidWrapperFactory = (
             };
           }
 
+          // The tool already ran for this payment but the client dropped before
+          // receiving the result: hand back the stored one instead of charging
+          // the server a second execution.
+          if (payment.hasResult) {
+            if (abortWatcher.aborted) {
+              logger?.warn?.(`[PayMCP:DynamicTools] Still disconnected; keeping cached result for the next retry`);
+              return {
+                content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
+                annotations: { payment: { status: "paid", payment_id: pidStr } },
+                payment_id: pidStr,
+                payment_url: paymentUrl,
+                status: "pending",
+                message: "Connection aborted. Call the tool again to retrieve the result.",
+              };
+            }
+            logger?.info?.(`[PayMCP:DynamicTools] Returning cached result for payment_id=${pidStr}`);
+            // `payment` still references the session object after it leaves the
+            // map, so this local is only for clarity - what actually protects
+            // the result is the guard around the announcement below, since a
+            // throw there would leave the caller with nothing and no session to
+            // retry against.
+            const cachedResult = payment.result;
+            cleanupPayment(server, payment.sessionId, pidStr, toolName, confirmName);
+            try {
+              (server as any).sendNotification?.({
+                method: "notifications/tools/list_changed"
+              })?.catch?.(() => {});
+            } catch (err) {
+              logger?.warn?.(`[PayMCP:DynamicTools] Failed to announce the tool list change: ${String(err)}`);
+            }
+            return cachedResult;
+          }
+
             try {
               const status = await provider.getPaymentStatus(paymentId);
               if (status !== "paid") {
@@ -138,6 +196,10 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
               if (abortWatcher.aborted) {
                 logger?.warn?.(`[PayMCP:DynamicTools] aborted after payment confirmation but before returning tool result.`);
+                // Put the session back, now carrying the result the caller paid
+                // for. The timestamp is refreshed so the sweeper gives them the
+                // full window from here to come back for it.
+                PAYMENTS.set(pidStr, { ...payment, ts: Date.now(), hasResult: true, result });
                 return {
                   content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
                   annotations: { payment: { status: "paid", payment_id: pidStr } },
@@ -148,20 +210,20 @@ export const makePaidWrapper: PaidWrapperFactory = (
                 };
               }
 
-              cleanupSessionTool(payment.sessionId, toolName);
+              cleanupPayment(server, payment.sessionId, pidStr, toolName, confirmName);
 
-              // Remove confirmation tool
-              if ((server as any)._registeredTools?.[confirmName]) {
-              delete (server as any)._registeredTools[confirmName];
-            } else if ((server as any).tools?.has(confirmName)) {
-              (server as any).tools.delete(confirmName);
+            // Emit tools/list_changed notification (fire-and-forget). The tool
+            // has run and its session is gone, so a transport that cannot take
+            // the notification must not cost the caller the result: without
+            // this the throw reaches the catch below and answers with an error
+            // the caller can no longer retry out of.
+            try {
+              (server as any).sendNotification?.({
+                method: "notifications/tools/list_changed"
+              })?.catch?.(() => {});
+            } catch (err) {
+              logger?.warn?.(`[PayMCP:DynamicTools] Failed to announce the tool list change: ${String(err)}`);
             }
-            CONFIRMATION_TOOLS.delete(confirmName);
-
-            // Emit tools/list_changed notification (fire-and-forget)
-            (server as any).sendNotification?.({
-              method: "notifications/tools/list_changed"
-            }).catch(() => {});
 
               return result;
 

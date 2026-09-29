@@ -11,6 +11,14 @@ import { safeReportProgress } from "../utils/progress.js";
 import { AbortWatcher } from "../utils/abortWatcher.js";
 import { StateStore } from "../types/state.js";
 import { callOriginal } from "../utils/tool.js";
+import {
+    RESULT_NS_SESSION,
+    callFingerprint,
+    discardSpentState,
+    clearCompletedResult,
+    peekCompletedResult,
+    saveCompletedResult,
+} from "./state_utils.js";
 
 
 export const DEFAULT_POLL_MS = 3_000; // poll provider every 3s
@@ -56,7 +64,43 @@ export const makePaidWrapper: PaidWrapperFactory = (
         let paymentUrl: string | undefined;
         let status = "pending";
 
+        // Identify this call, so a result cached under the session key is only
+        // ever served back to the call that produced it. Computed for every
+        // call, disconnecting or not, and never throws.
+        const fingerprint = callFingerprint(toolArgs, log);
+
         try {
+            // The tool already ran and was paid for, but the client dropped before
+            // receiving the result: return the stored one instead of polling for a
+            // new payment and running the tool again.
+            if (stateStore && sessionKey) {
+                const cached = await peekCompletedResult(
+                    stateStore, sessionKey, RESULT_NS_SESSION, toolName, fingerprint, log
+                );
+                if (cached.hasResult) {
+                    if (abortWatcher.aborted) {
+                        log?.warn?.(`[PayMCP:Progress] Still disconnected; keeping cached result for the next retry`);
+                        return {
+                            content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
+                            status: "pending",
+                            message: "Connection aborted. Call the tool again to retrieve the result.",
+                        };
+                    }
+                    log?.info?.(`[PayMCP:Progress] Returning cached result for sessionKey=${sessionKey}`);
+                    // Unlike the payment-keyed flows, this key is reused by later calls,
+                    // so the result is dropped once delivered - otherwise the next
+                    // identical call would be served from cache instead of being paid for.
+                    await clearCompletedResult(stateStore, sessionKey, RESULT_NS_SESSION, cached.token, log);
+                    // The spent payment record has to go, or the next call would
+                    // reuse a payment that has already been consumed - and here
+                    // that means a free run of the paid tool. But failing to
+                    // remove it must not cost the caller the result they paid
+                    // for, so the hand-off wins and the failure is only logged.
+                    await discardSpentState(stateStore, sessionKey, log);
+                    return cached.result;
+                }
+            }
+
             // Reuse existing payment if pending and not too old
             if (stateStore && sessionKey) {
                 const existing = await stateStore.get(sessionKey);
@@ -209,8 +253,23 @@ export const makePaidWrapper: PaidWrapperFactory = (
             // -----------------------------------------------------------------------
             log.info?.(`[PayMCP:Progress] payment confirmed; invoking original tool ${toolName}`);
             const toolResult = await callOriginal(func, toolArgs, extra);
+
+            // Annotate before looking at the connection, so the value we may
+            // cache is exactly the value the caller would have received.
+            if (toolResult && typeof toolResult === "object") {
+                try {
+                    (toolResult as any).annotations = {
+                        ...(toolResult as any).annotations,
+                        payment: { status: "paid", payment_id: paymentId },
+                    };
+                } catch { /* ignore */ }
+            }
+
             if (abortWatcher.aborted) {
                 log?.warn?.(`[PayMCP:Progress] aborted after payment confirmation but before returning tool result.`);
+                await saveCompletedResult(
+                    stateStore, sessionKey, toolResult, RESULT_NS_SESSION, toolName, fingerprint, log
+                );
                 return {
                     content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
                     annotations: { payment: { status: "paid", payment_id: paymentId } },
@@ -220,16 +279,9 @@ export const makePaidWrapper: PaidWrapperFactory = (
                     message: "Connection aborted. Call the tool again to retrieve the result.",
                 };
             }
-            // augment annotation
-            if (toolResult && typeof toolResult === "object") {
-                try {
-                    (toolResult as any).annotations = {
-                        ...(toolResult as any).annotations,
-                        payment: { status: "paid", payment_id: paymentId },
-                    };
-                } catch { /* ignore */ }
-            }
-            if (stateStore && sessionKey) await stateStore.delete(sessionKey);
+            // The tool has already run; a store that cannot delete must not cost
+            // the caller the result they paid for.
+            await discardSpentState(stateStore, sessionKey, log);
             return toolResult;
         } finally {
             abortWatcher.dispose();

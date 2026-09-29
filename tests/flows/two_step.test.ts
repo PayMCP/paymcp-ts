@@ -38,8 +38,11 @@ describe('Two-Step Flow', () => {
       error: vi.fn()
     };
 
-    // Mock state store with actual storage
+    // Mock state store with actual storage. `lock` is part of the StateStore
+    // contract and both shipped stores implement it, so the stand-in has to as
+    // well - the confirm handler holds the per-payment lock.
     const storage = new Map();
+    const locks = new Map<string, Promise<void>>();
     mockStateStore = {
       set: vi.fn().mockImplementation(async (key: string, args: any) => {
         storage.set(key, { args, ts: Date.now() });
@@ -49,6 +52,20 @@ describe('Two-Step Flow', () => {
       }),
       delete: vi.fn().mockImplementation(async (key: string) => {
         storage.delete(key);
+      }),
+      lock: vi.fn().mockImplementation(async (key: string, fn: () => Promise<any>) => {
+        while (locks.has(key)) {
+          await locks.get(key);
+        }
+        const promise = (async () => {
+          try {
+            return await fn();
+          } finally {
+            locks.delete(key);
+          }
+        })();
+        locks.set(key, promise.then(() => {}, () => {}));
+        return promise;
       })
     };
 

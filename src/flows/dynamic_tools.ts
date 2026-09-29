@@ -157,11 +157,19 @@ export const makePaidWrapper: PaidWrapperFactory = (
               };
             }
             logger?.info?.(`[PayMCP:DynamicTools] Returning cached result for payment_id=${pidStr}`);
+            // Take the result out before the session it lives on is discarded:
+            // this is the only copy, and anything that throws between dropping
+            // the session and returning would take it with it.
+            const cachedResult = payment.result;
             cleanupPayment(server, payment.sessionId, pidStr, toolName, confirmName);
-            (server as any).sendNotification?.({
-              method: "notifications/tools/list_changed"
-            }).catch(() => {});
-            return payment.result;
+            try {
+              (server as any).sendNotification?.({
+                method: "notifications/tools/list_changed"
+              })?.catch?.(() => {});
+            } catch (err) {
+              logger?.warn?.(`[PayMCP:DynamicTools] Failed to announce the tool list change: ${String(err)}`);
+            }
+            return cachedResult;
           }
 
             try {
@@ -202,10 +210,18 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
               cleanupPayment(server, payment.sessionId, pidStr, toolName, confirmName);
 
-            // Emit tools/list_changed notification (fire-and-forget)
-            (server as any).sendNotification?.({
-              method: "notifications/tools/list_changed"
-            }).catch(() => {});
+            // Emit tools/list_changed notification (fire-and-forget). The tool
+            // has run and its session is gone, so a transport that cannot take
+            // the notification must not cost the caller the result: without
+            // this the throw reaches the catch below and answers with an error
+            // the caller can no longer retry out of.
+            try {
+              (server as any).sendNotification?.({
+                method: "notifications/tools/list_changed"
+              })?.catch?.(() => {});
+            } catch (err) {
+              logger?.warn?.(`[PayMCP:DynamicTools] Failed to announce the tool list change: ${String(err)}`);
+            }
 
               return result;
 

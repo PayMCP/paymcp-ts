@@ -802,6 +802,50 @@ describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
     expect(runs).toHaveLength(1);
   });
 
+  // The cached result is the only copy: anything that throws between dropping
+  // the session and returning would take it with it.
+  it('hands over the result even if announcing the tool list throws', async () => {
+    const ctl = new AbortController();
+    const { fn } = droppingTool(ctl);
+    let confirm: any;
+    const server = {
+      tools: new Map(),
+      _registeredTools: {} as any,
+      registerTool: (name: string, _c: any, h: any) => { server._registeredTools[name] = { enabled: true }; confirm = h; },
+      sendNotification: vi.fn(() => { throw new Error('transport gone'); }),
+    } as any;
+    const log = silent();
+    const wrapper = dynamicWrapper(
+      fn, server, { mock: provider() }, priceInfo, 'testTool',
+      new InMemoryStateStore(), {}, clientInfo, log
+    );
+
+    await wrapper({ q: 1 }, {});
+    expect(text(await confirm({}, { signal: ctl.signal }))).toBe(ABORT_TEXT);
+    expect(text(await confirm({}, {}))).toBe('run #1');
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('announce the tool list change'));
+  });
+
+  it('hands over an undisturbed result even if announcing the tool list throws', async () => {
+    const fn = vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] }));
+    let confirm: any;
+    const server = {
+      tools: new Map(),
+      _registeredTools: {} as any,
+      registerTool: (name: string, _c: any, h: any) => { server._registeredTools[name] = { enabled: true }; confirm = h; },
+      sendNotification: vi.fn(() => { throw new Error('transport gone'); }),
+    } as any;
+    const log = silent();
+    const wrapper = dynamicWrapper(
+      fn, server, { mock: provider() }, priceInfo, 'testTool',
+      new InMemoryStateStore(), {}, clientInfo, log
+    );
+
+    await wrapper({ q: 1 }, {});
+    expect(text(await confirm({}, {}))).toBe('done');
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
   it('cleans up the payment session and the confirm tool once delivered', async () => {
     const ctl = new AbortController();
     const { fn } = droppingTool(ctl);

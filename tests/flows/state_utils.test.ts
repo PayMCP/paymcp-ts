@@ -77,6 +77,55 @@ describe('state_utils: callFingerprint', () => {
     expect(callFingerprint({ n: NaN })).not.toBe(callFingerprint({ n: Infinity }));
   });
 
+  // Map and Set have no own enumerable keys, so describing them generically
+  // makes every container - and every plain object - look identical, and calls
+  // holding different ones share a fingerprint. A tool whose schema uses
+  // z.map()/z.set() receives exactly these.
+  it('distinguishes Maps, Sets and plain objects', () => {
+    const seen = new Set([
+      callFingerprint({ a: new Map([['k', 1]]) }),
+      callFingerprint({ a: new Map([['k', 2]]) }),
+      callFingerprint({ a: new Map([['j', 1]]) }),
+      callFingerprint({ a: new Set([1]) }),
+      callFingerprint({ a: new Set([2]) }),
+      callFingerprint({ a: {} }),
+      callFingerprint({ a: [] }),
+    ]);
+    expect(seen.size).toBe(7);
+  });
+
+  it('matches equal Maps and Sets regardless of insertion order', () => {
+    expect(callFingerprint({ a: new Map([['x', 1], ['y', 2]]) }))
+      .toBe(callFingerprint({ a: new Map([['y', 2], ['x', 1]]) }));
+    expect(callFingerprint({ a: new Set([1, 2]) }))
+      .toBe(callFingerprint({ a: new Set([2, 1]) }));
+  });
+
+  // A value appearing twice is described twice - that is what distinguishes it
+  // - so a structure sharing one child at every level costs 2^depth to walk.
+  // This runs synchronously on every call, on arguments the caller chooses.
+  it('gives up rather than blocking on a structure that shares references', () => {
+    let node: any = { leaf: 1 };
+    for (let i = 0; i < 40; i++) node = { l: node, r: node };
+
+    const started = Date.now();
+    const first = callFingerprint(node);
+    const elapsed = Date.now() - started;
+
+    expect(elapsed).toBeLessThan(1000);
+    // Abandoned rather than matched: a cache miss and a re-execution, not a
+    // stalled server and not a false match with another such call.
+    expect(first.startsWith('unfingerprintable:')).toBe(true);
+    expect(callFingerprint(node)).not.toBe(first);
+  });
+
+  it('still fingerprints an ordinary nested structure', () => {
+    const modest = { a: [1, 2, 3], b: { c: { d: 'x' } }, e: new Date(0) };
+    const fp = callFingerprint(modest);
+    expect(fp.startsWith('unfingerprintable:')).toBe(false);
+    expect(fp).toBe(callFingerprint({ e: new Date(0), b: { c: { d: 'x' } }, a: [1, 2, 3] }));
+  });
+
   // A constant here would make every undescribable call match every other one,
   // and they would be served each other's results.
   it('gives an undescribable call a value unique to that call', () => {

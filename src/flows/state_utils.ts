@@ -81,13 +81,31 @@ function unfingerprintable(): string {
 }
 
 /**
+ * How many values one fingerprint may describe.
+ *
+ * A value that merely appears twice is described twice, which is what
+ * distinguishes it from a value that appears once - but that makes a structure
+ * sharing one child at every level cost 2^depth to walk. This runs on every
+ * call, on arguments the caller chooses, and it is synchronous, so an
+ * unbounded walk is an unbounded block of the event loop. Exceeding the budget
+ * gives the call a value unique to it, which costs a cache miss and a
+ * re-execution rather than a stalled server.
+ */
+const FINGERPRINT_NODE_BUDGET = 10_000;
+
+/** Thrown to abandon a fingerprint that is too large to be worth computing. */
+class FingerprintTooLarge extends Error {}
+
+/**
  * Render a value as a string that is stable across calls with equal arguments.
  *
  * `JSON.stringify` is not enough on its own: it does not order object keys, so
  * `{a:1,b:2}` and `{b:2,a:1}` - the same call - would not match, and it throws
  * on cycles and BigInt.
  */
-function canonicalize(value: unknown, seen: WeakSet<object>): string {
+function canonicalize(value: unknown, seen: WeakSet<object>, budget: { left: number }): string {
+    if (--budget.left < 0) throw new FingerprintTooLarge();
+
     if (value === null) return "null";
 
     switch (typeof value) {
@@ -115,14 +133,30 @@ function canonicalize(value: unknown, seen: WeakSet<object>): string {
     seen.add(obj);
     try {
         if (Array.isArray(obj)) {
-            return `[${obj.map((item) => canonicalize(item, seen)).join(",")}]`;
+            return `[${obj.map((item) => canonicalize(item, seen, budget)).join(",")}]`;
         }
         if (obj instanceof Date) {
             return `date:${obj.getTime()}`;
         }
+        // Map and Set have no own enumerable keys, so the generic branch below
+        // would describe every one of them - and every plain object - as "{}",
+        // and calls holding different containers would share a fingerprint. A
+        // tool whose schema uses z.map()/z.set() receives exactly these.
+        if (obj instanceof Map) {
+            const entries = Array.from(obj.entries())
+                .map(([k, v]) => `${canonicalize(k, seen, budget)}=>${canonicalize(v, seen, budget)}`)
+                .sort();
+            return `map{${entries.join(",")}}`;
+        }
+        if (obj instanceof Set) {
+            const items = Array.from(obj.values())
+                .map((v) => canonicalize(v, seen, budget))
+                .sort();
+            return `set{${items.join(",")}}`;
+        }
         const keys = Object.keys(obj).sort();
         const entries = keys.map(
-            (k) => `${JSON.stringify(k)}:${canonicalize((obj as Record<string, unknown>)[k], seen)}`
+            (k) => `${JSON.stringify(k)}:${canonicalize((obj as Record<string, unknown>)[k], seen, budget)}`
         );
         return `{${entries.join(",")}}`;
     } finally {
@@ -147,7 +181,7 @@ function canonicalize(value: unknown, seen: WeakSet<object>): string {
  */
 export function callFingerprint(toolArgs?: unknown): string {
     try {
-        const canonical = canonicalize(toolArgs, new WeakSet());
+        const canonical = canonicalize(toolArgs, new WeakSet(), { left: FINGERPRINT_NODE_BUDGET });
         return createHash("sha256").update(canonical).digest("hex");
     } catch {
         return unfingerprintable();

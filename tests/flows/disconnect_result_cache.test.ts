@@ -1023,6 +1023,90 @@ describe('DYNAMIC_TOOLS: disconnect after a paid execution', () => {
     expect(runs).toBe(1);
   });
 
+  /** A tool slow enough that a second confirm lands while it is still inside. */
+  function slowTool(ms = 40) {
+    const runs: string[] = [];
+    const fn = vi.fn(async () => {
+      const label = `run #${runs.length + 1}`;
+      runs.push(label);
+      await new Promise((r) => setTimeout(r, ms));
+      return { content: [{ type: 'text', text: label }] };
+    });
+    return { fn, runs };
+  }
+
+  // This flow takes no store lock, and the payment is consumed only once the
+  // tool has returned, so nothing but an in-process guard stops a second
+  // confirm arriving mid-execution from running the tool again. RESUBMIT and
+  // TWO_STEP are covered by the per-payment lock instead.
+  it('runs the tool once when a second confirm arrives mid-execution', async () => {
+    const { fn, runs } = slowTool();
+    const { wrapper, confirm } = build(fn);
+    await wrapper({ q: 1 }, {});
+
+    const [first, second] = await Promise.all([confirm({}), confirm({})]);
+    expect(runs).toHaveLength(1);
+
+    // One caller gets the result; the other is told it is already running, and
+    // is not handed an error it cannot retry out of.
+    const served = [first, second].filter((r: any) => text(r) === 'run #1');
+    expect(served).toHaveLength(1);
+    const waited: any = [first, second].find((r: any) => text(r) !== 'run #1');
+    expect(waited.status).toBe('pending');
+    expect(waited.message).toContain('already running');
+
+    // And the payment is spent exactly once: it was consumed by the call that
+    // delivered the result.
+    expect(PAYMENTS.has('pay_1')).toBe(false);
+  });
+
+  // The claim has to be released on the paths that leave the session in place,
+  // or one attempt against an unpaid payment locks the caller out of it for
+  // good. The paths that consume the session take the object with them.
+  it('releases the claim when the payment was not yet paid', async () => {
+    const { fn, runs } = slowTool(5);
+    const getPaymentStatus = vi.fn()
+      .mockResolvedValueOnce('pending')
+      .mockResolvedValue('paid');
+    let confirm: any;
+    const server = {
+      tools: new Map(),
+      _registeredTools: {} as any,
+      registerTool: (name: string, _c: any, h: any) => { server._registeredTools[name] = { enabled: true }; confirm = h; },
+      sendNotification: vi.fn().mockResolvedValue(undefined),
+    } as any;
+    const wrapper = dynamicWrapper(
+      fn, server,
+      { mock: { createPayment: vi.fn().mockResolvedValue({ paymentId: 'pay_1', paymentUrl: 'u' }), getPaymentStatus } as any },
+      priceInfo, 'testTool', new InMemoryStateStore(), {}, clientInfo, silent()
+    );
+    await wrapper({ q: 1 }, {});
+
+    const tooEarly: any = await confirm({});
+    expect(tooEarly.status).toBe('error');
+    expect(runs).toHaveLength(0);
+
+    // Now that it is paid, the same session must still be usable.
+    expect(text(await confirm({}))).toBe('run #1');
+    expect(runs).toHaveLength(1);
+  });
+
+  it('releases the claim when the paid tool throws', async () => {
+    let calls = 0;
+    const fn = vi.fn(async () => {
+      calls++;
+      if (calls === 1) throw new Error('tool blew up');
+      return { content: [{ type: 'text', text: 'second attempt' }] };
+    });
+    const { wrapper, confirm } = build(fn);
+    await wrapper({ q: 1 }, {});
+
+    expect((await confirm({})).status).toBe('error');
+    // The payment was not consumed by a failed attempt, and the claim is gone.
+    expect(text(await confirm({}))).toBe('second attempt');
+    expect(calls).toBe(2);
+  });
+
   it('keeps the payment session when the paid tool throws on cancellation', async () => {
     const ctl = new AbortController();
     const { fn, runs } = cancellationAwareTool(ctl);

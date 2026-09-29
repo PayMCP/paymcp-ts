@@ -22,6 +22,11 @@ interface PaymentSession {
   sessionId: string;
   args: any;
   ts: number;
+  // Set while a confirm is inside the paid tool. This flow keeps its sessions
+  // in this process and takes no store lock, and the payment is consumed only
+  // once the tool has returned - so without this a second confirm arriving
+  // mid-execution would find the session still there and run the tool again.
+  inFlight?: boolean;
   // Set once the paid tool has run but the client dropped before receiving the
   // result, so a retry is answered from here instead of running the tool again.
   // This flow keeps its sessions in this process, so the result rides along on
@@ -200,6 +205,22 @@ export const makePaidWrapper: PaidWrapperFactory = (
             return cachedResult;
           }
 
+            // Claimed synchronously, between finding the session and the first
+            // await, so two confirms cannot both get past here.
+            if (payment.inFlight) {
+              logger?.warn?.(`[PayMCP:DynamicTools] a confirm is already running for payment_id=${pidStr}`);
+              return {
+                content: [{
+                  type: "text",
+                  text: `Inform user: Payment ${pidStr} is already being processed. Ask them to wait a moment and try again.`
+                }],
+                status: "pending",
+                message: "A confirm for this payment is already running",
+                payment_id: pidStr
+              };
+            }
+            payment.inFlight = true;
+
             try {
               const status = await provider.getPaymentStatus(paymentId);
               if (status !== "paid") {
@@ -231,7 +252,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
                 // window from here to come back for it; it happens once, because
                 // the retry either takes the result or returns this same stub
                 // without touching the session again.
-                PAYMENTS.set(pidStr, { ...payment, ts: Date.now(), hasResult: true, result });
+                // `inFlight` is transient, so it is not carried into the stored copy.
+                // Nothing reads it there today - the cached-result branch runs
+                // before the claim is checked - but storing a claim that no one
+                // holds would be a lie waiting to be believed.
+                PAYMENTS.set(pidStr, { ...payment, ts: Date.now(), inFlight: false, hasResult: true, result });
                 return {
                   content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
                   annotations: { payment: { status: "paid", payment_id: pidStr } },
@@ -272,6 +297,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
               message: "Technical error confirming payment - inform user to retry",
               payment_id: pidStr
             };
+            } finally {
+              // Released however this attempt ended. On the paths that consume
+              // the session the object is already out of the map, so this only
+              // matters for the ones that leave it there.
+              payment.inFlight = false;
             }
           } finally {
             abortWatcher.dispose();

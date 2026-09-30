@@ -49,6 +49,11 @@ const CONFIRMATION_TOOLS = new Map<string, string>();  // confirmToolName -> ses
 // hour matches the default TTL of both state stores.
 export const CLEANUP_INTERVAL = 60 * 60 * 1000;
 
+// The sweep runs more often than the window it enforces. When one constant was
+// both, a session created just after a tick survived until the tick after next,
+// so "an hour" was really one to two hours.
+const SWEEP_EVERY = 10 * 60 * 1000;
+
 // Helper: cleanup session's hidden tools
 function cleanupSessionTool(sessionId: string, toolName: string) {
   const sessionHidden = HIDDEN_TOOLS.get(sessionId);
@@ -352,13 +357,17 @@ const sweepInterval = setInterval(() => {
   for (const [key, data] of PAYMENTS.entries()) {
     if (now - data.ts > CLEANUP_INTERVAL) PAYMENTS.delete(key);
   }
-}, CLEANUP_INTERVAL);
+}, SWEEP_EVERY);
 
 // Importing this module should not be enough to keep a process alive; a pending
 // interval holds the event loop open. InMemoryStateStore's sweeper already does
 // this, and now that the interval is an hour rather than ten minutes it would
 // hold it that much longer.
 sweepInterval.unref?.();
+
+// Exported so a test can assert the timer does not hold the loop open; nothing
+// else should touch it.
+export { sweepInterval as sweepIntervalForTests };
 
 /**
  * Setup: patches server for per-session tool filtering.

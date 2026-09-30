@@ -359,11 +359,15 @@ describe('TWO_STEP: disconnect after a paid execution', () => {
 
     const other = droppingTool(new AbortController(), 'other');
     const otherFlow = build(store, other.fn, 'otherTool');
-    // Whatever else it does with this payment id, it must not be handed the
-    // first tool's result: every paid tool reads the same result namespace, so
-    // the entry records which tool produced it.
+    // What is guaranteed: it is not handed the first tool's result. Every paid
+    // tool reads the same result namespace, so the entry records which tool
+    // produced it.
     const served = await otherFlow.confirm({ payment_id: pid });
     expect(text(served)).not.toBe('run #1');
+
+    // Pinned as it stands today, so a change here is noticed.
+    expect(text(served)).toBe('other #1');
+    expect(other.runs).toHaveLength(1);
 
     // And the first tool's result survives for the caller who paid.
     expect(text(await confirm({ payment_id: pid }))).toBe('run #1');
@@ -1306,5 +1310,189 @@ describe('a session payment record is only retired by the call that owns it', ()
       sendRequest: vi.fn().mockResolvedValue({ action: 'cancel' }),
     } as any)).rejects.toBeInstanceOf(StoreUnavailable);
     expect(fn).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Not being able to check must not leave the payment behind
+// ---------------------------------------------------------------------------
+// The comparison before deleting a session's payment record reads that record
+// first. Both ways of failing to read it used to end in "skip the delete",
+// which leaves a spent payment for whoever calls next. Harm needs a *transient*
+// failure: a store that can never be read fails the call long before anyone is
+// charged, so a permanently broken store tests the one shape where no harm is
+// possible.
+describe('a payment record is retired even when it cannot be checked', () => {
+  const KEY = 'testTool_sess1';
+
+  /** Fails the nth get and works on either side of it. */
+  function storeFailingRead(nth: number): StateStore & { gets: number } {
+    const inner = new InMemoryStateStore();
+    const store = {
+      gets: 0,
+      set: (k: string, a: any, o: any) => inner.set(k, a, o),
+      get: async (k: string) => {
+        store.gets += 1;
+        if (store.gets === nth) throw new Error('transient read failure');
+        return inner.get(k);
+      },
+      delete: (k: string) => inner.delete(k),
+      lock: (k: string, f: any) => inner.lock(k, f),
+    };
+    return store as any;
+  }
+
+  /** A store whose records do not come back in the { args } envelope. */
+  function unwrappingStore(): StateStore {
+    const raw = new Map<string, any>();
+    return {
+      set: async (k, a) => { raw.set(k, a); },
+      get: async (k) => raw.get(k),
+      delete: async (k) => { raw.delete(k); },
+      lock: async (_k, f) => f(),
+    };
+  }
+
+  const sessionExtra = () => ({ sessionId: 'sess1' }) as any;
+
+  /** PROGRESS resumes a payment found under the session key, so it reaches the
+   *  comparison with a payment id in hand. */
+  function progressOn(store: StateStore, log: any) {
+    const fn = vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] }));
+    const wrapper = progressWrapper(
+      fn, {} as any,
+      { mock: { createPayment: vi.fn().mockResolvedValue({ paymentId: 'pay_new', paymentUrl: 'u' }), getPaymentStatus: vi.fn().mockResolvedValue('paid') } as any },
+      priceInfo, 'testTool', store, {}, clientInfo, log
+    );
+    return { wrapper, fn };
+  }
+
+  it('removes it when the check cannot read the record', async () => {
+    // Reads: the cached-result peek, the payment record, then the check before
+    // deleting. Only the last one stumbles.
+    const store = storeFailingRead(3);
+    await store.set(KEY, { paymentId: 'pay_1', paymentUrl: 'u' });
+    const log = silent();
+    const { wrapper, fn } = progressOn(store, log);
+
+    expect(text(await wrapper({ q: 1 }, sessionExtra()))).toBe('done');
+    expect(fn).toHaveBeenCalledTimes(1);
+    // Spent and gone, rather than left for the next call to reuse.
+    expect(await store.get(KEY)).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Could not check whose payment record'));
+  });
+
+  it('removes it when the record is not in a shape it understands', async () => {
+    const store = unwrappingStore();
+    await store.set(KEY, { paymentId: 'pay_1', paymentUrl: 'u' });
+    const log = silent();
+    const { wrapper } = progressOn(store, log);
+
+    expect(text(await wrapper({ q: 1 }, sessionExtra()))).toBe('done');
+    expect(await store.get(KEY)).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('not in a shape'));
+  });
+
+  // The other direction: a call that cannot say which payment it is retiring has
+  // nothing to compare against, and deleting on that basis is how a concurrent
+  // call's payment gets thrown away.
+  it('leaves it alone when the call does not know which payment it holds', async () => {
+    const store = new InMemoryStateStore();
+    const { deletePaymentRecordIfCurrent } = await import('../../src/flows/state_utils.js');
+    await store.set(KEY, { paymentId: 'someone_elses', paymentUrl: 'u' });
+    const log = silent();
+
+    await deletePaymentRecordIfCurrent(store, KEY, undefined, log);
+    expect((await store.get(KEY))?.args).toEqual({ paymentId: 'someone_elses', paymentUrl: 'u' });
+    expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('does not know which payment'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Every comparator site, not just the cached-result one
+// ---------------------------------------------------------------------------
+// Each of these drives one path that retires a session's payment record, with a
+// concurrent call's record swapped in underneath at the moment between reading
+// ours and deleting it. Reverting the comparison at any one of them fails here.
+describe('each path retires only its own payment record', () => {
+  const KEY = 'testTool_sess1';
+  const intruder = { paymentId: 'pay_concurrent', paymentUrl: 'https://pay/concurrent' };
+
+  /**
+   * A provider that, the first time it is asked for a status, stands in for a
+   * concurrent call: it replaces the record under the shared session key. The
+   * flow has already read ours by then and has not yet deleted it.
+   */
+  function providerSwappingRecord(store: StateStore, status: string) {
+    return {
+      mock: {
+        createPayment: vi.fn().mockResolvedValue({ paymentId: 'pay_1', paymentUrl: 'u' }),
+        getPaymentStatus: vi.fn(async () => {
+          await store.set(KEY, intruder);
+          return status;
+        }),
+      },
+    } as any;
+  }
+
+  const survived = async (store: StateStore) =>
+    expect((await store.get(KEY))?.args).toEqual(intruder);
+
+  it('PROGRESS: the payment is canceled', async () => {
+    const store = new InMemoryStateStore();
+    await store.set(KEY, { paymentId: 'pay_1', paymentUrl: 'u' });
+    const fn = vi.fn();
+    const wrapper = progressWrapper(
+      fn, {} as any, providerSwappingRecord(store, 'canceled'),
+      priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+    const result: any = await wrapper({ q: 1 }, { sessionId: 'sess1' } as any);
+    expect(result.status).toBe('canceled');
+    await survived(store);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('PROGRESS: an undisturbed paid call', async () => {
+    const store = new InMemoryStateStore();
+    await store.set(KEY, { paymentId: 'pay_1', paymentUrl: 'u' });
+    const fn = vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] }));
+    const wrapper = progressWrapper(
+      fn, {} as any, providerSwappingRecord(store, 'paid'),
+      priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+    expect(text(await wrapper({ q: 1 }, { sessionId: 'sess1' } as any))).toBe('done');
+    await survived(store);
+  });
+
+  it('ELICITATION: the user cancels', async () => {
+    const store = new InMemoryStateStore();
+    await store.set(KEY, { paymentId: 'pay_1', paymentUrl: 'u' });
+    const fn = vi.fn();
+    const wrapper = elicitationWrapper(
+      fn, {} as any, providerSwappingRecord(store, 'canceled'),
+      priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+    const result: any = await wrapper({ q: 1 }, {
+      sessionId: 'sess1',
+      sendRequest: vi.fn().mockResolvedValue({ action: 'cancel' }),
+    } as any);
+    expect(result.status).toBe('canceled');
+    await survived(store);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('ELICITATION: an undisturbed paid call', async () => {
+    const store = new InMemoryStateStore();
+    await store.set(KEY, { paymentId: 'pay_1', paymentUrl: 'u' });
+    const fn = vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] }));
+    const wrapper = elicitationWrapper(
+      fn, {} as any, providerSwappingRecord(store, 'paid'),
+      priceInfo, 'testTool', store, {}, clientInfo, silent()
+    );
+    expect(text(await wrapper({ q: 1 }, {
+      sessionId: 'sess1',
+      sendRequest: vi.fn().mockResolvedValue({ action: 'accept' }),
+    } as any))).toBe('done');
+    await survived(store);
   });
 });

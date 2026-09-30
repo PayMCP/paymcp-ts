@@ -948,3 +948,12 @@ describe('DYNAMIC_TOOLS cleanup window', () => {
     expect(entry.expiresAt - entry.ts).toBe(CLEANUP_INTERVAL);
   });
 });
+
+describe('DYNAMIC_TOOLS sweeper timer', () => {
+  // Importing the module should not be enough to keep a process alive.
+  it('does not hold the event loop open', async () => {
+    const { sweepIntervalForTests } = await import('../../src/flows/dynamic_tools.js');
+    expect(typeof (sweepIntervalForTests as any).hasRef).toBe('function');
+    expect((sweepIntervalForTests as any).hasRef()).toBe(false);
+  });
+});

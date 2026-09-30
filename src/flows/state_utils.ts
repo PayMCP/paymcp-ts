@@ -346,6 +346,14 @@ export async function peekCompletedResult(
  * entry written between the two calls is still deleted. That window is one
  * round trip, where clearing by key alone left it open across the caller's own
  * awaits, but it is narrowed rather than closed.
+ *
+ * A read that fails here leaves the entry in place, which is the opposite of
+ * what `deletePaymentRecordIfCurrent` does with the payment record, and
+ * deliberately so. A payment left behind is spendable by any later call to that
+ * tool with any arguments; a result left behind is only servable to a call whose
+ * arguments fingerprint matches exactly. So removing a result blindly risks
+ * destroying someone else's paid and undelivered answer - they pay again and the
+ * tool runs again - while removing a payment blindly usually costs nothing.
  */
 export async function clearCompletedResult(
     stateStore: StateStore | undefined,
@@ -429,6 +437,9 @@ export async function withPaymentLock<T>(
     return stateStore.lock(key, fn);
 }
 
+/** What a record's payment id is, or that it could not be determined. */
+type RecordOwner = { known: true; paymentId: string | undefined } | { known: false };
+
 /**
  * Read the payment id a session's record currently holds.
  *
@@ -437,15 +448,17 @@ export async function withPaymentLock<T>(
  * a record read a moment ago may already have been replaced by a concurrent
  * call's payment, and deleting by key alone would throw away a payment the user
  * has since made - they would be asked to pay a second time.
+ *
+ * Reports `known: false` for a record it cannot make sense of, which is not the
+ * same as a record that holds no payment id: the caller treats the two
+ * differently.
  */
-async function currentPaymentId(
-    stateStore: StateStore,
-    key: string
-): Promise<string | undefined> {
+async function recordOwner(stateStore: StateStore, key: string): Promise<RecordOwner> {
     const stored = await stateStore.get(key);
-    const record = stored?.args;
-    if (!record || typeof record !== "object") return undefined;
-    return (record as { paymentId?: unknown }).paymentId as string | undefined;
+    if (stored === undefined) return { known: true, paymentId: undefined };
+    const record = stored.args;
+    if (!record || typeof record !== "object") return { known: false };
+    return { known: true, paymentId: (record as { paymentId?: string }).paymentId };
 }
 
 /**
@@ -454,6 +467,16 @@ async function currentPaymentId(
  *
  * For the paths that run before any money has moved: a failure there has to be
  * seen, or the flow carries on as though the record were gone.
+ *
+ * Not being able to check must not become "leave the paid payment for whoever
+ * calls next", so the two ways of not knowing pull in opposite directions:
+ *
+ * - the record cannot be read, or is not in a shape this understands: remove it
+ *   anyway and say so. Losing a concurrent call's record usually costs nothing,
+ *   because that call holds its own payment id locally and finishes on it;
+ * - this call does not know which payment it is retiring: leave the record
+ *   alone. There is nothing to compare against, and deleting on that basis is
+ *   how a concurrent call's payment gets thrown away.
  */
 export async function deletePaymentRecordIfCurrent(
     stateStore: StateStore | undefined,
@@ -462,12 +485,40 @@ export async function deletePaymentRecordIfCurrent(
     log?: Logger
 ): Promise<void> {
     if (!stateStore || !key) return;
-    if (paymentId !== undefined && (await currentPaymentId(stateStore, key)) !== paymentId) {
+
+    if (paymentId === undefined) {
+        log?.debug?.(
+            `[PayMCP] Not retiring the payment record for ${key}: this call does not know which payment it holds.`
+        );
+        return;
+    }
+
+    let owner: RecordOwner;
+    try {
+        owner = await recordOwner(stateStore, key);
+    } catch (err) {
+        log?.warn?.(
+            `[PayMCP] Could not check whose payment record ${key} is, so removing it: ${describeError(err)}`
+        );
+        await stateStore.delete(key);
+        return;
+    }
+
+    if (!owner.known) {
+        log?.warn?.(
+            `[PayMCP] Payment record for ${key} is not in a shape PayMCP can read, so removing it.`
+        );
+        await stateStore.delete(key);
+        return;
+    }
+
+    if (owner.paymentId !== paymentId) {
         log?.debug?.(
             `[PayMCP] Payment record for ${key} is no longer the one this call held; keeping it.`
         );
         return;
     }
+
     await stateStore.delete(key);
 }
 

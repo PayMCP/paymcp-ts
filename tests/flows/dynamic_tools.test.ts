@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { makePaidWrapper, PAYMENTS, HIDDEN_TOOLS } from '../../src/flows/dynamic_tools.js';
+import { makePaidWrapper, PAYMENTS, HIDDEN_TOOLS, CLEANUP_INTERVAL } from '../../src/flows/dynamic_tools.js';
 import type { BasePaymentProvider } from '../../src/providers/base.js';
 import type { ProviderInstances } from '../../src/providers/index.js';
 import type { PriceConfig } from '../../src/types/config.js';
@@ -924,5 +924,36 @@ describe('DYNAMIC_TOOLS Flow', () => {
       hiddenTools.clear();
       confirmTools.clear();
     });
+  });
+});
+
+describe('DYNAMIC_TOOLS cleanup window', () => {
+  // The sweep drops unconfirmed payment sessions, and also any result a client
+  // paid for but dropped before receiving. If it fires sooner than the library
+  // is willing to wait for a payment, a slow payer loses the purchase mid-flow.
+  it('outlasts the longest wait anywhere in the library', async () => {
+    const { MAX_WAIT_MS } = await import('../../src/flows/progress.js');
+    const PENDING_REUSE_MS = 60 * 60 * 1000; // progress.ts and elicitation.ts
+
+    expect(CLEANUP_INTERVAL).toBeGreaterThan(MAX_WAIT_MS);
+    expect(CLEANUP_INTERVAL).toBeGreaterThanOrEqual(PENDING_REUSE_MS);
+  });
+
+  it('matches the default TTL of both state stores', async () => {
+    const { InMemoryStateStore } = await import('../../src/state/inMemory.js');
+    const store = new InMemoryStateStore();
+    await store.set('k', { v: 1 });
+    const entry: any = await store.get('k');
+    // The in-memory store's default TTL, read off a stored entry.
+    expect(entry.expiresAt - entry.ts).toBe(CLEANUP_INTERVAL);
+  });
+});
+
+describe('DYNAMIC_TOOLS sweeper timer', () => {
+  // Importing the module should not be enough to keep a process alive.
+  it('does not hold the event loop open', async () => {
+    const { sweepIntervalForTests } = await import('../../src/flows/dynamic_tools.js');
+    expect(typeof (sweepIntervalForTests as any).hasRef).toBe('function');
+    expect((sweepIntervalForTests as any).hasRef()).toBe(false);
   });
 });

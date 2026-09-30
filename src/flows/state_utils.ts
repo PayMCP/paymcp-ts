@@ -24,6 +24,8 @@ export interface CachedResult {
     hasResult: boolean;
     /** The value the caller should be handed back. */
     result?: unknown;
+    /** The payment this result was produced for, when it was recorded. */
+    paymentId?: string;
     /** Identifies the stored entry, so whoever serves it can clear exactly that one. */
     token?: string;
 }
@@ -43,6 +45,9 @@ interface ResultPayload {
      */
     hasResult: true;
     tool: string;
+    /** The payment this result was produced for, so the session-keyed flows can
+     *  retire that record and no one else's. */
+    paymentId?: string;
     token: string;
     fingerprint?: string;
 }
@@ -253,12 +258,14 @@ export async function saveCompletedResult(
     namespace: ResultNamespace,
     tool: string,
     fingerprint?: string,
-    log?: Logger
+    log?: Logger,
+    paymentId?: string
 ): Promise<boolean> {
     if (!stateStore || key === undefined || key === null) return false;
 
     const payload: ResultPayload = { result, hasResult: true, tool, token: randomUUID() };
     if (fingerprint !== undefined) payload.fingerprint = fingerprint;
+    if (paymentId !== undefined) payload.paymentId = paymentId;
 
     try {
         // The value is handed over as it is rather than checked first: an
@@ -318,7 +325,12 @@ export async function peekCompletedResult(
         return miss;
     }
 
-    return { hasResult: true, result: payload.result, token: payload.token };
+    return {
+        hasResult: true,
+        result: payload.result,
+        token: payload.token,
+        paymentId: payload.paymentId,
+    };
 }
 
 /**
@@ -334,6 +346,14 @@ export async function peekCompletedResult(
  * entry written between the two calls is still deleted. That window is one
  * round trip, where clearing by key alone left it open across the caller's own
  * awaits, but it is narrowed rather than closed.
+ *
+ * A read that fails here leaves the entry in place, which is the opposite of
+ * what `deletePaymentRecordIfCurrent` does with the payment record, and
+ * deliberately so. A payment left behind is spendable by any later call to that
+ * tool with any arguments; a result left behind is only servable to a call whose
+ * arguments fingerprint matches exactly. So removing a result blindly risks
+ * destroying someone else's paid and undelivered answer - they pay again and the
+ * tool runs again - while removing a payment blindly usually costs nothing.
  */
 export async function clearCompletedResult(
     stateStore: StateStore | undefined,
@@ -415,4 +435,113 @@ export async function withPaymentLock<T>(
         return fn();
     }
     return stateStore.lock(key, fn);
+}
+
+/** What a record's payment id is, or that it could not be determined. */
+type RecordOwner = { known: true; paymentId: string | undefined } | { known: false };
+
+/**
+ * Read the payment id a session's record currently holds.
+ *
+ * The session-keyed flows key their payment record on tool and session, which
+ * every call that session makes to that tool shares, and they hold no lock. So
+ * a record read a moment ago may already have been replaced by a concurrent
+ * call's payment, and deleting by key alone would throw away a payment the user
+ * has since made - they would be asked to pay a second time.
+ *
+ * Reports `known: false` for a record it cannot make sense of, which is not the
+ * same as a record that holds no payment id: the caller treats the two
+ * differently.
+ */
+async function recordOwner(stateStore: StateStore, key: string): Promise<RecordOwner> {
+    const stored = await stateStore.get(key);
+    if (stored === undefined) return { known: true, paymentId: undefined };
+    const record = stored.args;
+    if (!record || typeof record !== "object") return { known: false };
+    return { known: true, paymentId: (record as { paymentId?: string }).paymentId };
+}
+
+/**
+ * Delete a session's payment record, but only while it is still the record this
+ * call was working with. Store failures reach the caller.
+ *
+ * For the paths that run before any money has moved: a failure there has to be
+ * seen, or the flow carries on as though the record were gone.
+ *
+ * Not being able to check must not become "leave the paid payment for whoever
+ * calls next", so the two ways of not knowing pull in opposite directions:
+ *
+ * - the record cannot be read, or is not in a shape this understands: remove it
+ *   anyway and say so. Losing a concurrent call's record usually costs nothing,
+ *   because that call holds its own payment id locally and finishes on it;
+ * - this call does not know which payment it is retiring: leave the record
+ *   alone. There is nothing to compare against, and deleting on that basis is
+ *   how a concurrent call's payment gets thrown away.
+ */
+export async function deletePaymentRecordIfCurrent(
+    stateStore: StateStore | undefined,
+    key: string | undefined,
+    paymentId: string | undefined,
+    log?: Logger
+): Promise<void> {
+    if (!stateStore || !key) return;
+
+    if (paymentId === undefined) {
+        log?.debug?.(
+            `[PayMCP] Not retiring the payment record for ${key}: this call does not know which payment it holds.`
+        );
+        return;
+    }
+
+    let owner: RecordOwner;
+    try {
+        owner = await recordOwner(stateStore, key);
+    } catch (err) {
+        log?.warn?.(
+            `[PayMCP] Could not check whose payment record ${key} is, so removing it: ${describeError(err)}`
+        );
+        await stateStore.delete(key);
+        return;
+    }
+
+    if (!owner.known) {
+        log?.warn?.(
+            `[PayMCP] Payment record for ${key} is not in a shape PayMCP can read, so removing it.`
+        );
+        await stateStore.delete(key);
+        return;
+    }
+
+    if (owner.paymentId !== paymentId) {
+        log?.debug?.(
+            `[PayMCP] Payment record for ${key} is no longer the one this call held; keeping it.`
+        );
+        return;
+    }
+
+    await stateStore.delete(key);
+}
+
+/**
+ * The same compare-then-delete, for the paths past the point where the caller's
+ * money has moved, where a store failure must not cost them their result.
+ *
+ * The check is read-then-delete, which these stores cannot do atomically: a
+ * record written between the two calls is still deleted. That window is one
+ * round trip, against one that previously stayed open across the caller's own
+ * awaits.
+ */
+export async function discardSpentPaymentRecord(
+    stateStore: StateStore | undefined,
+    key: string | undefined,
+    paymentId: string | undefined,
+    log?: Logger
+): Promise<void> {
+    try {
+        await deletePaymentRecordIfCurrent(stateStore, key, paymentId, log);
+    } catch (err) {
+        log?.warn?.(
+            `[PayMCP] Failed to clear spent payment record for ${key}; a later call may reuse it: ${describeError(err)}`
+        );
+    }
 }

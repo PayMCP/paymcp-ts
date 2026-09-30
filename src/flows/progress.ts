@@ -14,7 +14,8 @@ import { callOriginal } from "../utils/tool.js";
 import {
     RESULT_NS_SESSION,
     callFingerprint,
-    discardSpentState,
+    deletePaymentRecordIfCurrent,
+    discardSpentPaymentRecord,
     clearCompletedResult,
     peekCompletedResult,
     saveCompletedResult,
@@ -96,7 +97,12 @@ export const makePaidWrapper: PaidWrapperFactory = (
                     // that means a free run of the paid tool. But failing to
                     // remove it must not cost the caller the result they paid
                     // for, so the hand-off wins and the failure is only logged.
-                    await discardSpentState(stateStore, sessionKey, log);
+                    // Only this call's own payment record goes: the key is
+                    // shared with every call this session makes to this tool,
+                    // and a concurrent one may already have written its own
+                    // payment there. The payment id was recorded with the
+                    // result, so there is something to compare against.
+                    await discardSpentPaymentRecord(stateStore, sessionKey, cached.paymentId, log);
                     return cached.result;
                 }
             }
@@ -120,11 +126,11 @@ export const makePaidWrapper: PaidWrapperFactory = (
                             status = "pending";
                             log?.debug?.(`[PayMCP:Progress] reused pending payment id=${paymentId} url=${paymentUrl}`);
                         } else {
-                            await stateStore.delete(sessionKey);
+                            await deletePaymentRecordIfCurrent(stateStore, sessionKey, existing.args?.paymentId, log);
                         }
                     } catch (err) {
                         log?.warn?.(`[PayMCP:Progress] failed to reuse existing payment: ${String(err)}`);
-                        await stateStore.delete(sessionKey);
+                        await deletePaymentRecordIfCurrent(stateStore, sessionKey, existing.args?.paymentId, log);
                     }
                 }
             }
@@ -201,7 +207,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
                 }
 
                 if (status === "canceled") {
-                    if (stateStore && sessionKey) await stateStore.delete(sessionKey);
+                    await deletePaymentRecordIfCurrent(stateStore, sessionKey, paymentId, log);
                     await safeReportProgress(
                         extra,
                         log,
@@ -232,7 +238,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
 
             if (status !== "paid") {
                 // Timed out waiting for payment
-                if (stateStore && sessionKey) await stateStore.delete(sessionKey);
+                await deletePaymentRecordIfCurrent(stateStore, sessionKey, paymentId, log);
                 log?.warn?.(
                     `[PayMCP:Progress] timeout waiting for payment paymentId=${paymentId}`
                 );
@@ -268,7 +274,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
             if (abortWatcher.aborted) {
                 log?.warn?.(`[PayMCP:Progress] aborted after payment confirmation but before returning tool result.`);
                 await saveCompletedResult(
-                    stateStore, sessionKey, toolResult, RESULT_NS_SESSION, toolName, fingerprint, log
+                    stateStore, sessionKey, toolResult, RESULT_NS_SESSION, toolName, fingerprint, log, paymentId
                 );
                 return {
                     content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
@@ -281,7 +287,7 @@ export const makePaidWrapper: PaidWrapperFactory = (
             }
             // The tool has already run; a store that cannot delete must not cost
             // the caller the result they paid for.
-            await discardSpentState(stateStore, sessionKey, log);
+            await discardSpentPaymentRecord(stateStore, sessionKey, paymentId, log);
             return toolResult;
         } finally {
             abortWatcher.dispose();

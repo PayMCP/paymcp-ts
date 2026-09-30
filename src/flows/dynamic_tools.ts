@@ -39,8 +39,20 @@ const PAYMENTS = new Map<string, PaymentSession>();  // paymentId -> PaymentSess
 const HIDDEN_TOOLS = new Map<string, Map<string, any>>();  // sessionId -> {toolName -> state}
 const CONFIRMATION_TOOLS = new Map<string, string>();  // confirmToolName -> sessionId
 
-// Cleanup old pending args after 10 minutes
-const CLEANUP_INTERVAL = 10 * 60 * 1000;
+// How long an unconfirmed payment session is kept, and how often the sweep runs.
+//
+// This has to be longer than anything the library is willing to wait for a
+// payment, or a slow payer loses a purchase mid-flow: PROGRESS gives up after
+// MAX_WAIT_MS (15 minutes) and both session-keyed flows will reuse a pending
+// payment for an hour. It also holds a paid-for result that the client dropped
+// before receiving, so a short window throws away work already paid for. An
+// hour matches the default TTL of both state stores.
+export const CLEANUP_INTERVAL = 60 * 60 * 1000;
+
+// The sweep runs more often than the window it enforces. When one constant was
+// both, a session created just after a tick survived until the tick after next,
+// so "an hour" was really one to two hours.
+const SWEEP_EVERY = 10 * 60 * 1000;
 
 // Helper: cleanup session's hidden tools
 function cleanupSessionTool(sessionId: string, toolName: string) {
@@ -340,12 +352,22 @@ export const makePaidWrapper: PaidWrapperFactory = (
 };
 
 // Cleanup old payments periodically
-setInterval(() => {
+const sweepInterval = setInterval(() => {
   const now = Date.now();
   for (const [key, data] of PAYMENTS.entries()) {
     if (now - data.ts > CLEANUP_INTERVAL) PAYMENTS.delete(key);
   }
-}, CLEANUP_INTERVAL);
+}, SWEEP_EVERY);
+
+// Importing this module should not be enough to keep a process alive; a pending
+// interval holds the event loop open. InMemoryStateStore's sweeper already does
+// this, and now that the interval is an hour rather than ten minutes it would
+// hold it that much longer.
+sweepInterval.unref?.();
+
+// Exported so a test can assert the timer does not hold the loop open; nothing
+// else should touch it.
+export { sweepInterval as sweepIntervalForTests };
 
 /**
  * Setup: patches server for per-session tool filtering.

@@ -22,14 +22,37 @@ interface PaymentSession {
   sessionId: string;
   args: any;
   ts: number;
+  // Set while a confirm is inside the paid tool. This flow keeps its sessions
+  // in this process and takes no store lock, and the payment is consumed only
+  // once the tool has returned - so without this a second confirm arriving
+  // mid-execution would find the session still there and run the tool again.
+  inFlight?: boolean;
+  // Set once the paid tool has run but the client dropped before receiving the
+  // result, so a retry is answered from here instead of running the tool again.
+  // This flow keeps its sessions in this process, so the result rides along on
+  // the session object rather than going to the state store.
+  hasResult?: boolean;
+  result?: any;
 }
 
 const PAYMENTS = new Map<string, PaymentSession>();  // paymentId -> PaymentSession
 const HIDDEN_TOOLS = new Map<string, Map<string, any>>();  // sessionId -> {toolName -> state}
 const CONFIRMATION_TOOLS = new Map<string, string>();  // confirmToolName -> sessionId
 
-// Cleanup old pending args after 10 minutes
-const CLEANUP_INTERVAL = 10 * 60 * 1000;
+// How long an unconfirmed payment session is kept, and how often the sweep runs.
+//
+// This has to be longer than anything the library is willing to wait for a
+// payment, or a slow payer loses a purchase mid-flow: PROGRESS gives up after
+// MAX_WAIT_MS (15 minutes) and both session-keyed flows will reuse a pending
+// payment for an hour. It also holds a paid-for result that the client dropped
+// before receiving, so a short window throws away work already paid for. An
+// hour matches the default TTL of both state stores.
+export const CLEANUP_INTERVAL = 60 * 60 * 1000;
+
+// The sweep runs more often than the window it enforces. When one constant was
+// both, a session created just after a tick survived until the tick after next,
+// so "an hour" was really one to two hours.
+const SWEEP_EVERY = 10 * 60 * 1000;
 
 // Helper: cleanup session's hidden tools
 function cleanupSessionTool(sessionId: string, toolName: string) {
@@ -38,6 +61,25 @@ function cleanupSessionTool(sessionId: string, toolName: string) {
     sessionHidden.delete(toolName);
     if (sessionHidden.size === 0) HIDDEN_TOOLS.delete(sessionId);
   }
+}
+
+// Helper: drop the payment session, unhide the paid tool and remove its confirm tool.
+function cleanupPayment(
+  server: any,
+  sessionId: string,
+  pidStr: string,
+  toolName: string,
+  confirmName: string
+) {
+  PAYMENTS.delete(pidStr);
+  cleanupSessionTool(sessionId, toolName);
+
+  if (server?._registeredTools?.[confirmName]) {
+    delete server._registeredTools[confirmName];
+  } else if (server?.tools?.has(confirmName)) {
+    server.tools.delete(confirmName);
+  }
+  CONFIRMATION_TOOLS.delete(confirmName);
 }
 
 export const makePaidWrapper: PaidWrapperFactory = (
@@ -101,8 +143,34 @@ export const makePaidWrapper: PaidWrapperFactory = (
           description: `Confirm payment ${pidStr} and execute ${toolName}()`,
           ...config?._meta ? {_meta:{...config._meta,price:undefined}}: {}
         },
-        async (_params: any, confirmExtra?: any) => {
+        async (paramsOrExtra?: any, maybeExtra?: any) => {
+          // This tool is registered without an inputSchema, so the SDK calls it
+          // with the request extra as its only argument. Reading the second
+          // parameter alone left the abort signal - the only thing this handler
+          // needs from the request - permanently undefined, and with it the
+          // disconnect branch below unreachable. Accept either shape.
+          //
+          // Not the `arguments.length === 2` idiom the wrappers use: this is an
+          // arrow nested inside dynamicToolsWrapper, so `arguments` would be
+          // that function's - the very mistake this change removes from
+          // two_step.
+          const offered = maybeExtra !== undefined ? maybeExtra : paramsOrExtra;
+          // The official SDK always passes an extra object, but this module
+          // supports other server implementations too, and a host that calls
+          // the tool with no arguments - or with something that is not an extra
+          // - would otherwise hand `undefined` to the paid tool. Any tool that
+          // touches `extra` then throws, after the payment session has been
+          // consumed, so the paid result is lost outright. The initiating
+          // request's extra is stale, so its signal is dropped: keeping it
+          // would make the confirm look permanently cancelled.
+          const confirmExtra =
+            offered && typeof offered === "object"
+              ? offered
+              : (extra && typeof extra === "object" ? { ...extra, signal: undefined } : extra);
           const abortWatcher = new AbortWatcher((confirmExtra as any)?.signal, logger);
+          // Opened here, not below, so the early returns for an unknown payment
+          // session and for a cached result also reach `dispose()`.
+          try {
           const payment = PAYMENTS.get(pidStr);
           if (!payment) {
             return {
@@ -115,6 +183,55 @@ export const makePaidWrapper: PaidWrapperFactory = (
               payment_id: pidStr
             };
           }
+
+          // The tool already ran for this payment but the client dropped before
+          // receiving the result: hand back the stored one instead of charging
+          // the server a second execution.
+          if (payment.hasResult) {
+            if (abortWatcher.aborted) {
+              logger?.warn?.(`[PayMCP:DynamicTools] Still disconnected; keeping cached result for the next retry`);
+              return {
+                content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
+                annotations: { payment: { status: "paid", payment_id: pidStr } },
+                payment_id: pidStr,
+                payment_url: paymentUrl,
+                status: "pending",
+                message: "Connection aborted. Call the tool again to retrieve the result.",
+              };
+            }
+            logger?.info?.(`[PayMCP:DynamicTools] Returning cached result for payment_id=${pidStr}`);
+            // `payment` still references the session object after it leaves the
+            // map, so this local is only for clarity - what actually protects
+            // the result is the guard around the announcement below, since a
+            // throw there would leave the caller with nothing and no session to
+            // retry against.
+            const cachedResult = payment.result;
+            cleanupPayment(server, payment.sessionId, pidStr, toolName, confirmName);
+            try {
+              (server as any).sendNotification?.({
+                method: "notifications/tools/list_changed"
+              })?.catch?.(() => {});
+            } catch (err) {
+              logger?.warn?.(`[PayMCP:DynamicTools] Failed to announce the tool list change: ${String(err)}`);
+            }
+            return cachedResult;
+          }
+
+            // Claimed synchronously, between finding the session and the first
+            // await, so two confirms cannot both get past here.
+            if (payment.inFlight) {
+              logger?.warn?.(`[PayMCP:DynamicTools] a confirm is already running for payment_id=${pidStr}`);
+              return {
+                content: [{
+                  type: "text",
+                  text: `Inform user: Payment ${pidStr} is already being processed. Ask them to wait a moment and try again.`
+                }],
+                status: "pending",
+                message: "A confirm for this payment is already running",
+                payment_id: pidStr
+              };
+            }
+            payment.inFlight = true;
 
             try {
               const status = await provider.getPaymentStatus(paymentId);
@@ -131,13 +248,27 @@ export const makePaidWrapper: PaidWrapperFactory = (
             }
 
               // Execute original, cleanup state
-              PAYMENTS.delete(pidStr);
+              // Run first, consume after. The paid tool now sees a live abort
+              // signal, so a tool that honours it throws on cancellation, and
+              // any tool can fail for its own reasons; consuming the session
+              // first left the caller charged with an unknown payment id and no
+              // way back to it. RESUBMIT has always worked this way.
               const result = hasArgs
-                ? await func(payment.args, confirmExtra || extra)
-                : await func(confirmExtra || extra);
+                ? await func(payment.args, confirmExtra)
+                : await func(confirmExtra);
 
               if (abortWatcher.aborted) {
                 logger?.warn?.(`[PayMCP:DynamicTools] aborted after payment confirmation but before returning tool result.`);
+                // Keep the session, now carrying the result the caller paid for.
+                // The timestamp is refreshed so the sweeper gives them the full
+                // window from here to come back for it; it happens once, because
+                // the retry either takes the result or returns this same stub
+                // without touching the session again.
+                // `inFlight` is transient, so it is not carried into the stored copy.
+                // Nothing reads it there today - the cached-result branch runs
+                // before the claim is checked - but storing a claim that no one
+                // holds would be a lie waiting to be believed.
+                PAYMENTS.set(pidStr, { ...payment, ts: Date.now(), inFlight: false, hasResult: true, result });
                 return {
                   content: [{ type: "text", text: "Connection aborted. Call the tool again to retrieve the result." }],
                   annotations: { payment: { status: "paid", payment_id: pidStr } },
@@ -148,20 +279,22 @@ export const makePaidWrapper: PaidWrapperFactory = (
                 };
               }
 
-              cleanupSessionTool(payment.sessionId, toolName);
+              // Consumed only now, with a result in hand: a tool that threw
+              // leaves the payment where it was, the way RESUBMIT does.
+              cleanupPayment(server, payment.sessionId, pidStr, toolName, confirmName);
 
-              // Remove confirmation tool
-              if ((server as any)._registeredTools?.[confirmName]) {
-              delete (server as any)._registeredTools[confirmName];
-            } else if ((server as any).tools?.has(confirmName)) {
-              (server as any).tools.delete(confirmName);
+            // Emit tools/list_changed notification (fire-and-forget). The tool
+            // has run and its session is gone, so a transport that cannot take
+            // the notification must not cost the caller the result: without
+            // this the throw reaches the catch below and answers with an error
+            // the caller can no longer retry out of.
+            try {
+              (server as any).sendNotification?.({
+                method: "notifications/tools/list_changed"
+              })?.catch?.(() => {});
+            } catch (err) {
+              logger?.warn?.(`[PayMCP:DynamicTools] Failed to announce the tool list change: ${String(err)}`);
             }
-            CONFIRMATION_TOOLS.delete(confirmName);
-
-            // Emit tools/list_changed notification (fire-and-forget)
-            (server as any).sendNotification?.({
-              method: "notifications/tools/list_changed"
-            }).catch(() => {});
 
               return result;
 
@@ -176,6 +309,12 @@ export const makePaidWrapper: PaidWrapperFactory = (
               message: "Technical error confirming payment - inform user to retry",
               payment_id: pidStr
             };
+            } finally {
+              // Released however this attempt ended. On the paths that consume
+              // the session the object is already out of the map, so this only
+              // matters for the ones that leave it there.
+              payment.inFlight = false;
+            }
           } finally {
             abortWatcher.dispose();
           }
@@ -213,12 +352,22 @@ export const makePaidWrapper: PaidWrapperFactory = (
 };
 
 // Cleanup old payments periodically
-setInterval(() => {
+const sweepInterval = setInterval(() => {
   const now = Date.now();
   for (const [key, data] of PAYMENTS.entries()) {
     if (now - data.ts > CLEANUP_INTERVAL) PAYMENTS.delete(key);
   }
-}, CLEANUP_INTERVAL);
+}, SWEEP_EVERY);
+
+// Importing this module should not be enough to keep a process alive; a pending
+// interval holds the event loop open. InMemoryStateStore's sweeper already does
+// this, and now that the interval is an hour rather than ten minutes it would
+// hold it that much longer.
+sweepInterval.unref?.();
+
+// Exported so a test can assert the timer does not hold the loop open; nothing
+// else should touch it.
+export { sweepInterval as sweepIntervalForTests };
 
 /**
  * Setup: patches server for per-session tool filtering.

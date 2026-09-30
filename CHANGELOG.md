@@ -1,5 +1,21 @@
 # Changelog
 
+# 0.9.1
+### Fixed
+- The in-memory state store's per-payment lock was not exclusive: it discarded a key's lock as soon as its holder released it, so a caller arriving while others were still queued built a second lock for the same key and ran alongside them. `RESUBMIT` and `TWO_STEP` could therefore run the paid tool twice on one payment. The Redis store was unaffected.
+- A client that goes away after a paid tool has run no longer costs it a second execution. Every flow returned "Connection aborted. Call the tool again to retrieve the result." while storing nothing, so the retry ran the tool again on one payment and the first result was discarded. The result is now kept and served on the retry. Note this covers a client that *cancels* its request: the SDK aborts a handler's signal only on an explicit `notifications/cancelled`, not on a dropped connection.
+- `ELICITATION` checked the connection only after the branch that synthesizes a missing `content` field, so a tool whose result is not MCP-shaped skipped the check entirely.
+- `ELICITATION` and `PROGRESS` deleted their session payment record without checking whose it was. That record is keyed on tool and session, which every call a session makes to that tool shares, and neither flow holds a lock — so a call could delete a payment a concurrent call had just created, and the user would be asked to pay a second time. Each path now retires only the record it was itself working with.
+- `DYNAMIC_TOOLS` discarded unconfirmed payment sessions after ten minutes, shorter than anything else in the library is prepared to wait for a payment, so a slow payer lost the purchase mid-flow — and with it any result the client had dropped before receiving. The window is now an hour, matching the default TTL of both state stores.
+- `TWO_STEP` retired the payment before checking whether the client was still connected, so a result that could not be cached was lost along with the payment that produced it.
+- The `X402` flow consumed its state strictly after settlement but before running the tool. Its provider settles inside `getPaymentStatus`, so a store that could not delete failed the call with the caller already charged, and the retry settled a second time.
+
+### Changed
+- In `RESUBMIT` and `TWO_STEP` a delivered result stays retrievable under the same `payment_id` until the state store expires it — one hour by default. The tool is not run again, but anyone holding that id can fetch the result a second time. Handing a result back can fail the same way the first attempt did, and the caller has already paid, so it is kept rather than dropped on delivery. The session-keyed flows (`ELICITATION`, `PROGRESS`) drop theirs once delivered, because their key is reused by every later call to the same tool.
+- In `ELICITATION`, a tool whose result is not MCP-shaped now consumes the payment. It previously returned before the state was deleted, leaving the payment reusable.
+- The confirm tools of `TWO_STEP` and `DYNAMIC_TOOLS` now pass their own request's `extra` to the paid tool. `TWO_STEP` passed the params object, which carries no `sendRequest`, progress token or session, so a paid tool that reported progress or elicited under that flow would have thrown; `DYNAMIC_TOOLS` passed the extra of the initiating request, whose closures target a request the client has already closed. A paid tool under either flow now also receives a live abort signal for the first time.
+- `TWO_STEP` and `DYNAMIC_TOOLS` consume the payment only once the paid tool has returned, as `RESUBMIT` always has. A tool that fails — including one that throws because the request was cancelled — leaves the payment where it was instead of leaving the caller charged with an unusable payment id. A failed execution therefore does not consume the payment and can be retried.
+
 # 0.9.0
 ### Breaking Changes
 - x402 v2 challenges now carry the resource description under `resource`, the field name the v2 `PaymentRequired` schema defines. It was previously emitted as `resourceInfo`, which is not an x402 field, so v2 clients never found it. Anyone reading the old key must switch. The `resourceInfo` constructor option keeps its name.

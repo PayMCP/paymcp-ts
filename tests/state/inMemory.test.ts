@@ -336,3 +336,118 @@ describe('InMemoryStateStore', () => {
     });
   });
 });
+
+describe('InMemoryStateStore lock exclusivity', () => {
+  /** Runs `fn` under the lock while tracking how many bodies overlap. */
+  function overlapTracker() {
+    const state = { inside: 0, max: 0, order: [] as string[] };
+    const body = (label: string, ms = 20) => async () => {
+      state.inside++;
+      state.max = Math.max(state.max, state.inside);
+      state.order.push(label);
+      await new Promise((r) => setTimeout(r, ms));
+      state.inside--;
+    };
+    return { state, body };
+  }
+
+  // The lock entry used to be discarded as soon as its holder finished, so a
+  // caller arriving after that built a second lock for the same key and ran
+  // alongside whoever was still queued on the first.
+  it('serialises a third contender that arrives after the first one finishes', async () => {
+    const store = new InMemoryStateStore();
+    const { state, body } = overlapTracker();
+
+    const first = store.lock('pay_1', body('first', 10));
+    const second = store.lock('pay_1', body('second', 40));
+    // Let `first` finish and clean up while `second` is still queued.
+    await new Promise((r) => setTimeout(r, 20));
+    const third = store.lock('pay_1', body('third', 10));
+
+    await Promise.all([first, second, third]);
+    expect(state.max).toBe(1);
+    expect(state.order).toEqual(['first', 'second', 'third']);
+  });
+
+  // Arrivals are staggered so the queue drains between them: contenders that
+  // all queue up at once never expose the discarded-entry hole, because the
+  // entry outlives them.
+  it('serialises contenders that keep arriving as the queue drains', async () => {
+    const store = new InMemoryStateStore();
+    const { state, body } = overlapTracker();
+
+    const running: Promise<unknown>[] = [];
+    for (let i = 0; i < 8; i++) {
+      running.push(store.lock('pay_1', body(`c${i}`, 12)));
+      await new Promise((r) => setTimeout(r, 8));
+    }
+    await Promise.all(running);
+    expect(state.max).toBe(1);
+    expect(state.order).toHaveLength(8);
+  });
+
+  // A control on the fix rather than on the bug: over-serialising would be a
+  // regression of its own.
+  it('still lets different keys run at the same time', async () => {
+    const store = new InMemoryStateStore();
+    const { state, body } = overlapTracker();
+
+    await Promise.all([
+      store.lock('pay_1', body('a', 20)),
+      store.lock('pay_2', body('b', 20)),
+    ]);
+    expect(state.max).toBe(2);
+  });
+
+  it('releases the lock when the body throws, and keeps serialising after', async () => {
+    const store = new InMemoryStateStore();
+    const { state, body } = overlapTracker();
+
+    await expect(
+      store.lock('pay_1', async () => { throw new Error('boom'); })
+    ).rejects.toThrow('boom');
+
+    // Staggered for the same reason as above.
+    const first = store.lock('pay_1', body('after1', 20));
+    const second = store.lock('pay_1', body('after2', 20));
+    await new Promise((r) => setTimeout(r, 30));
+    const third = store.lock('pay_1', body('after3', 10));
+    await Promise.all([first, second, third]);
+    expect(state.max).toBe(1);
+  });
+
+  // The registry lock was released twice when the body threw - once in the
+  // inner path and again in the outer catch - which let a second caller past
+  // it while the first still believed it held it.
+  it('releases the registry lock exactly once per call', async () => {
+    const store = new InMemoryStateStore();
+    const registry: any = (store as any).locksLock;
+    const realAcquire = registry.acquire.bind(registry);
+    let acquires = 0;
+    let releases = 0;
+    registry.acquire = async () => {
+      acquires++;
+      const release = await realAcquire();
+      return () => { releases++; release(); };
+    };
+
+    await store.lock('pay_1', async () => 'ok');
+    await store.lock('pay_1', async () => { throw new Error('boom'); }).catch(() => {});
+
+    expect(acquires).toBeGreaterThan(0);
+    expect(releases).toBe(acquires);
+  });
+
+  // Also a control on the fix: the user count must reach zero again, or the
+  // registry grows a permanent entry for every payment id ever locked.
+  it('does not retain a lock entry once nobody is using the key', async () => {
+    const store = new InMemoryStateStore();
+    const locks: Map<string, unknown> = (store as any).paymentLocks;
+
+    await Promise.all([
+      store.lock('pay_1', async () => {}),
+      store.lock('pay_1', async () => {}),
+    ]);
+    expect(locks.size).toBe(0);
+  });
+});
